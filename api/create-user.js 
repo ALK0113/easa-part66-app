@@ -1,0 +1,74 @@
+import { createClient } from '@supabase/supabase-js'
+
+export default async function handler(req, res) {
+  // Solo permitir POST
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método no permitido' })
+  }
+
+  // Validar que el usuario es admin (verificar token)
+  const authHeader = req.headers.authorization
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No autorizado' })
+  }
+
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+
+  // Verificar que el usuario que llama es admin
+  const { data: { user }, error: authError } = await supabase.auth.getUser(
+    authHeader.replace('Bearer ', '')
+  )
+
+  if (authError || !user) {
+    return res.status(401).json({ error: 'Token inválido' })
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'admin') {
+    return res.status(403).json({ error: 'Solo administradores pueden crear usuarios' })
+  }
+
+  // Crear el usuario
+  const { email, full_name, role, phone, bio } = req.body
+
+  const { data: authData, error: authError2 } = await supabase.auth.admin.createUser({
+    email,
+    password: 'TempPass123!',
+    email_confirm: true,
+    user_metadata: { full_name, role }
+  })
+
+  if (authError2) {
+    return res.status(500).json({ error: authError2.message })
+  }
+
+  // Crear perfil
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      id: authData.user.id,
+      full_name,
+      email,
+      phone: phone || '',
+      bio: bio || '',
+      role
+    })
+
+  if (profileError) {
+    return res.status(500).json({ error: profileError.message })
+  }
+
+  return res.status(200).json({ 
+    success: true, 
+    message: 'Usuario creado correctamente',
+    userId: authData.user.id 
+  })
+}

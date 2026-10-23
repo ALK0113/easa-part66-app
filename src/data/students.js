@@ -1,0 +1,20 @@
+export const students = [
+  { id: 1, name: 'Balbas Mora, Daniel', group: '2ºB', promo: '2025' },
+  { id: 2, name: 'Ballesteros León, Asier', group: '2ºA', promo: '2025' },
+  { id: 3, name: 'Bordoy Torres, Eric', group: '2ºA', promo: '2025' },
+  { id: 4, name: 'Cabanillas Tome, Eduard', group: '2ºA', promo: '2025' },
+  { id: 5, name: 'Cabezas Villarraso, Marcos', group: '2ºA', promo: '2025' },
+  { id: 6, name: 'Casals Picornell, Miquel', group: '2ºB', promo: '2025' },
+  { id: 7, name: 'Clua Vich, Pau', group: '2ºA', promo: '2025' },
+  { id: 8, name: 'Cruells Pérez, Berta', group: '2ºB', promo: '2025' },
+  { id: 9, name: 'Gómez Pons, Lucas', group: '2ºA', promo: '2025' },
+  { id: 10, name: 'Lin, Yesheng', group: '2ºB', promo: '2025' },
+  { id: 11, name: 'Masmitjà López, Martí', group: '2ºB', promo: '2025' },
+  { id: 12, name: 'Molino Martín, Ian', group: '2ºA', promo: '2025' },
+  { id: 13, name: 'Oliva Cuadrado, Pau', group: '2ºB', promo: '2025' },
+  { id: 14, name: 'Pérez López, Joan Noé', group: '2ºB', promo: '2025' },
+  { id: 15, name: 'Romero Marcos, Bruno', group: '2ºA', promo: '2025' },
+  { id: 16, name: 'Saini Lal, Aryan', group: '2ºA', promo: '2025' },
+  { id: 17, name: 'Sauseda Aleman, Jeremy Seidel', group: '2ºA', promo: '2025' },
+  { id: 18, name: 'Vlach Porcel, Hugo', group: '2ºA', promo: '2025' }
+];
