@@ -16,7 +16,6 @@ const AircraftPage = lazy(() => loadManagementPages().then((module) => ({ defaul
 const ReportsPage = lazy(() => loadManagementPages().then((module) => ({ default: module.ReportsPage })))
 const SettingsPage = lazy(() => loadManagementPages().then((module) => ({ default: module.SettingsPage })))
 
-// 🆕 Importamos los nuevos componentes de gestión de perfiles
 const ProfileManagement = lazy(() => import('./components/ProfileManagement.jsx'))
 const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
 
@@ -44,7 +43,6 @@ function App() {
     setLoading(false)
   }
 
-  // Comprobar si hay sesión activa al cargar la app
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -54,7 +52,6 @@ function App() {
       }
     })
 
-    // Escuchar cambios de autenticación (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         loadUserProfile(session.user)
@@ -82,12 +79,10 @@ function App() {
     )
   }
 
-  // Si no hay usuario, mostrar Login
   if (!user) {
     return <Login onLoginSuccess={setUser} />
   }
 
-  // Si hay usuario, mostrar la app
   const renderPage = () => {
     switch (activePage) {
       case 'students': return <StudentList user={user} />
@@ -97,12 +92,13 @@ function App() {
       case 'modules': return <ModulesPage user={user} onOpenModule={(moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} />
       case 'assignments': return <AssignmentsPage user={user} />
-      case 'teachers': return <ProfileManagement user={user} /> // 🆕 Nuevo componente de gestión
+      case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
       case 'reports': return <ReportsPage />
       case 'settings': return <SettingsPage user={user} />
-      case 'mydata': return <ProfileSettings user={user} /> // 🆕 Nuevo componente de perfil
-      default: return <DashboardHome user={user} />
+      case 'mydata': return <ProfileSettings user={user} />
+      case 'dashboard': return <DashboardHome user={user} setActivePage={setActivePage} />
+      default: return <DashboardHome user={user} setActivePage={setActivePage} />
     }
   }
 
@@ -115,7 +111,7 @@ function App() {
     tlb: user.role === 'alumno' ? 'Mi Task Log Book' : 'Task Log Book',
     videos: 'Vídeos formativos',
     assignments: 'Asignaciones',
-    teachers: 'Gestión de perfiles', // 🆕 Título actualizado
+    teachers: 'Gestión de perfiles',
     aircraft: 'Tipos de avión',
     reports: 'Informes globales',
     settings: 'Configuración',
@@ -176,7 +172,7 @@ function App() {
   )
 }
 
-function DashboardHome({ user }) {
+function DashboardHome({ user, setActivePage }) {
   const [stats, setStats] = useState(null)
 
   useEffect(() => {
@@ -235,9 +231,10 @@ function DashboardHome({ user }) {
     return () => { cancelled = true; unsubscribe() }
   }, [user.id, user.role])
 
+  // 4 PESTAÑAS: Alumnos, Módulos (antes Prácticas), TLB y Vídeos
   const cards = user.role === 'alumno'
-    ? [['modules', 'Mis módulos', '📚'], ['practices', 'Prácticas', '🔧'], ['tlbs', 'Task Log Books', '📋'], ['videos', 'Vídeos', '🎬']]
-    : [['students', user.role === 'profesor' ? 'Mis alumnos' : 'Alumnos', '👥'], ['practices', 'Prácticas', '🔧'], ['tlbs', 'Task Log Books', '📋'], ['videos', 'Vídeos', '🎬']]
+    ? [['modules', 'Mis módulos', '📚'], ['tlbs', 'Mi Task Log Book', '📋'], ['videos', 'Vídeos', '🎬'], ['practices', 'Prácticas', '🔧']]
+    : [['students', user.role === 'profesor' ? 'Mis alumnos' : 'Alumnos', '👥'], ['modules', 'Módulos EASA', '📚'], ['tlbs', 'Task Log Books', '📋'], ['videos', 'Vídeos formativos', '🎬']]
 
   return (
     <div className="space-y-6">
@@ -249,7 +246,12 @@ function DashboardHome({ user }) {
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(([key, label, icon], index) => (
-          <div key={key} className={`rounded-lg border border-[#e5e7eb] border-l-4 bg-white p-5 shadow-sm ${['border-l-[#1e88e5]', 'border-l-[#2e7d32]', 'border-l-[#ef6c00]', 'border-l-[#ffb300]'][index]}`}>
+          <div 
+            key={key} 
+            onClick={() => setActivePage(key === 'tlbs' ? 'tlb' : key)}
+            className="cursor-pointer rounded-lg border border-[#e5e7eb] border-l-4 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:-translate-y-1"
+            style={{ borderLeftColor: ['#1e88e5', '#2e7d32', '#ef6c00', '#ffb300'][index] }}
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase text-[#6b7280]">{label}</h3>
               <span aria-hidden="true" className="text-lg">{icon}</span>
