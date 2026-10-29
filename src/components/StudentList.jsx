@@ -21,7 +21,9 @@ export default function StudentList({ user }) {
   const [filterGroup, setFilterGroup] = useState('')
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState(null)
+  const [viewingStudent, setViewingStudent] = useState(null)
   const [formData, setFormData] = useState({})
   const [originalData, setOriginalData] = useState({})
   const [sensitiveUnlocked, setSensitiveUnlocked] = useState(false)
@@ -133,6 +135,11 @@ export default function StudentList({ user }) {
     setMessage('')
   }
 
+  function openDetailModal(student) {
+    setViewingStudent(student)
+    setDetailModalOpen(true)
+  }
+
   function openCreateModal() {
     setFormData({
       email: '',
@@ -220,7 +227,7 @@ export default function StudentList({ user }) {
         await loadStudents()
       }
     } catch (err) {
-      setMessage(' Error: ' + (err.message || 'Desconocido'))
+      setMessage('❌ Error: ' + (err.message || 'Desconocido'))
     } finally {
       setBusy(false)
     }
@@ -239,7 +246,6 @@ export default function StudentList({ user }) {
         return
       }
 
-      // 1. Crear usuario en Auth vía Edge Function
       const { data: inviteData, error: inviteError } = await supabase.functions.invoke('admin-create-user', {
         body: {
           email: email.trim().toLowerCase(),
@@ -258,7 +264,6 @@ export default function StudentList({ user }) {
 
       const userId = inviteData.user_id
 
-      // 2. Crear ficha de estudiante
       const finalGroupName = class_name && group_name ? `${class_name}${group_name}` : group_name || null
       const studentNumber = student_number ? parseInt(student_number) : null
 
@@ -275,18 +280,16 @@ export default function StudentList({ user }) {
         .single()
 
       if (studentError) {
-        setMessage('️ Usuario creado, pero error al crear ficha: ' + getSupabaseErrorMessage(studentError))
+        setMessage('⚠️ Usuario creado, pero error al crear ficha: ' + getSupabaseErrorMessage(studentError))
         setBusy(false)
         return
       }
 
-      // 3. Vincular profile con student
       await supabase.from('student_profiles').insert({
         profile_id: userId,
         student_id: newStudent.id
       })
 
-      // 4. Matricular en módulos
       if (selectedModules && selectedModules.length > 0) {
         const enrollments = selectedModules.map(moduleId => ({
           student_id: newStudent.id,
@@ -331,6 +334,10 @@ export default function StudentList({ user }) {
 
   function getModuleCount(student) {
     return student.student_modules?.length || 0
+  }
+
+  function getModuleIds(student) {
+    return (student.student_modules || []).map(m => m.module_id)
   }
 
   function toggleModule(moduleId) {
@@ -416,52 +423,72 @@ export default function StudentList({ user }) {
               <tr>
                 <th className="p-3">#</th>
                 <th className="p-3">Nombre</th>
-                <th className="p-3">Nº Alumno</th>
                 <th className="p-3">Clase</th>
                 <th className="p-3">Grupo</th>
                 <th className="p-3">Promoción</th>
                 <th className="p-3">Módulos</th>
-                {isAdmin && <th className="p-3 text-right">Acciones</th>}
+                <th className="p-3">Asistencia</th>
+                <th className="p-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e5e7eb]">
-              {filteredStudents.map((student, index) => (
-                <tr key={student.id} className="hover:bg-[#f9fafb]">
-                  <td className="p-3 text-[#6b7280]">{index + 1}</td>
-                  <td className="p-3 font-medium text-[#0a2540]">{student.name}</td>
-                  <td className="p-3 text-[#6b7280]">{student.student_number || '—'}</td>
-                  <td className="p-3">{student.class_name || '—'}</td>
-                  <td className="p-3">{student.group_name || '—'}</td>
-                  <td className="p-3">{student.promo || '—'}</td>
-                  <td className="p-3">
-                    <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-                      {getModuleCount(student)} módulos
-                    </span>
-                  </td>
-                  {isAdmin && (
+              {filteredStudents.map((student, index) => {
+                const moduleIds = getModuleIds(student)
+                return (
+                  <tr key={student.id} className="hover:bg-[#f9fafb]">
+                    <td className="p-3 text-[#6b7280]">{index + 1}</td>
+                    <td className="p-3 font-medium text-[#0a2540]">{student.name}</td>
+                    <td className="p-3">{student.class_name || '—'}</td>
+                    <td className="p-3">{student.group_name || '—'}</td>
+                    <td className="p-3">{student.promo || '—'}</td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-1">
+                        {moduleIds.map(modId => (
+                          <span key={modId} className="rounded bg-blue-50 px-2 py-0.5 text-xs font-mono font-semibold text-blue-700">
+                            {modId}
+                          </span>
+                        ))}
+                        {moduleIds.length === 0 && <span className="text-[#6b7280]">—</span>}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <span className="rounded bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">
+                        0%
+                      </span>
+                    </td>
                     <td className="p-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button
-                          className="rounded border border-[#d1d5db] px-3 py-1 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
-                          onClick={() => openEditModal(student)}
+                          className="rounded border border-[#1e88e5] px-3 py-1 text-xs font-semibold text-[#1e88e5] hover:bg-[#e3f2fd]"
+                          onClick={() => openDetailModal(student)}
                         >
-                          ✏️ Editar
+                          👁️ Ver
                         </button>
-                        <button
-                          className="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                          onClick={() => deleteStudent(student)}
-                          disabled={busy}
-                        >
-                          🗑️ Eliminar
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              className="rounded border border-[#d1d5db] px-3 py-1 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
+                              onClick={() => openEditModal(student)}
+                            >
+                              ✏️ Editar
+                            </button>
+                            <button
+                              className="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                              onClick={() => deleteStudent(student)}
+                              disabled={busy}
+                            >
+                              🗑️ Eliminar
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
-                  )}
-                </tr>
-              ))}
+                  </tr>
+                )
+              })}
               {filteredStudents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} className="p-8 text-center text-[#6b7280]">
+                  <td colSpan="8" className="p-8 text-center text-[#6b7280]">
                     No hay alumnos que coincidan con los filtros.
                   </td>
                 </tr>
@@ -471,6 +498,96 @@ export default function StudentList({ user }) {
         </div>
       </div>
 
+      {/* Modal de DETALLE del alumno */}
+      {detailModalOpen && viewingStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setDetailModalOpen(false)}>
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#0a2540]">
+                👁️ Detalle del Alumno
+              </h3>
+              <button
+                onClick={() => setDetailModalOpen(false)}
+                className="text-[#6b7280] hover:text-[#0a2540] text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Información personal */}
+              <div className="rounded-lg border border-[#e5e7eb] p-4">
+                <h4 className="mb-3 text-sm font-bold text-[#0a2540] uppercase">Información Personal</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-[#6b7280]">Nombre:</span>
+                    <p className="font-semibold text-[#0a2540]">{viewingStudent.name}</p>
+                  </div>
+                  <div>
+                    <span className="text-[#6b7280]">Nº Alumno:</span>
+                    <p className="font-semibold text-[#0a2540]">{viewingStudent.student_number || '—'}</p>
+                  </div>
+                  <div>
+                    <span className="text-[#6b7280]">Clase:</span>
+                    <p className="font-semibold text-[#0a2540]">{viewingStudent.class_name || '—'}</p>
+                  </div>
+                  <div>
+                    <span className="text-[#6b7280]">Grupo:</span>
+                    <p className="font-semibold text-[#0a2540]">{viewingStudent.group_name || '—'}</p>
+                  </div>
+                  <div>
+                    <span className="text-[#6b7280]">Promoción:</span>
+                    <p className="font-semibold text-[#0a2540]">{viewingStudent.promo || '—'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Módulos matriculados */}
+              <div className="rounded-lg border border-[#e5e7eb] p-4">
+                <h4 className="mb-3 text-sm font-bold text-[#0a2540] uppercase">
+                  Módulos Matriculados ({getModuleCount(viewingStudent)})
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {getModuleIds(viewingStudent).map(modId => {
+                    const mod = modules.find(m => m.id === modId)
+                    return (
+                      <div key={modId} className="rounded bg-blue-50 border border-blue-200 px-3 py-2">
+                        <div className="font-mono text-xs font-bold text-blue-700">{modId}</div>
+                        <div className="text-xs text-[#374151]">{mod?.name || '—'}</div>
+                      </div>
+                    )
+                  })}
+                  {getModuleIds(viewingStudent).length === 0 && (
+                    <p className="text-sm text-[#6b7280]">Sin módulos matriculados</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Asistencia y progreso */}
+              <div className="rounded-lg border border-[#e5e7eb] p-4">
+                <h4 className="mb-3 text-sm font-bold text-[#0a2540] uppercase">Progreso</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded bg-green-50 p-3">
+                    <div className="text-xs text-[#6b7280]">Asistencia</div>
+                    <div className="text-2xl font-bold text-green-700">0%</div>
+                  </div>
+                  <div className="rounded bg-blue-50 p-3">
+                    <div className="text-xs text-[#6b7280]">Aptos</div>
+                    <div className="text-2xl font-bold text-blue-700">0%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-[#e5e7eb]">
+              <button className={secondaryButton} onClick={() => setDetailModalOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de CREAR nuevo alumno */}
       {createModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setCreateModalOpen(false)}>
@@ -478,7 +595,6 @@ export default function StudentList({ user }) {
             <h3 className="mb-4 text-lg font-bold text-[#0a2540]">➕ Nuevo Alumno</h3>
             
             <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); performCreate() }}>
-              {/* Datos de usuario (Auth) */}
               <div className="rounded border border-blue-200 bg-blue-50 p-3">
                 <h4 className="mb-2 text-sm font-semibold text-[#0a2540]">📧 Cuenta de usuario</h4>
                 <div className="grid grid-cols-2 gap-3">
@@ -505,7 +621,6 @@ export default function StudentList({ user }) {
                   </div>
                 </div>
 
-                {/* Checkbox de invitación */}
                 <label className="mt-3 flex items-start gap-2 text-sm text-[#0a2540] cursor-pointer">
                   <input
                     type="checkbox"
@@ -524,9 +639,8 @@ export default function StudentList({ user }) {
                 </label>
               </div>
 
-              {/* Datos de estudiante */}
               <div className="rounded border border-gray-200 bg-gray-50 p-3">
-                <h4 className="mb-2 text-sm font-semibold text-[#0a2540]"> Ficha de alumno</h4>
+                <h4 className="mb-2 text-sm font-semibold text-[#0a2540]">📋 Ficha de alumno</h4>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Nº de Alumno</label>
@@ -591,7 +705,6 @@ export default function StudentList({ user }) {
                 </div>
               </div>
 
-              {/* Módulos */}
               <div className="rounded border border-gray-200 bg-gray-50 p-3">
                 <h4 className="mb-2 text-sm font-semibold text-[#0a2540]">📚 Módulos iniciales</h4>
                 <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
