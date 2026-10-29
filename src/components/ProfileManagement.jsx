@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
-import ImportUsers from './ImportUsers.jsx' // <-- Importación añadida al principio
+import ImportUsers from './ImportUsers.jsx'
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
 
-// Extrae el mensaje { error: "..." } que devuelven las Edge Functions
 async function getFunctionErrorMessage(error, fallback) {
   try {
     const body = await error.context.json()
@@ -29,9 +28,11 @@ export default function ProfileManagement({ user }) {
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState('alumno')
   const [busy, setBusy] = useState(false)
-  
-  // b) Estado para controlar la vista (lista o importación)
   const [view, setView] = useState('list')
+  
+  // Nuevos estados para filtros y búsqueda
+  const [search, setSearch] = useState('')
+  const [filterRole, setFilterRole] = useState('')
 
   useEffect(() => {
     loadProfiles()
@@ -48,6 +49,21 @@ export default function ProfileManagement({ user }) {
     else setProfiles(data || [])
     setLoading(false)
   }
+
+  // Filtrado de perfiles
+  const filteredProfiles = useMemo(() => {
+    return profiles.filter(p => {
+      const searchLower = search.toLowerCase()
+      const matchSearch = !search || 
+        (p.full_name && p.full_name.toLowerCase().includes(searchLower)) ||
+        (p.email && p.email.toLowerCase().includes(searchLower)) ||
+        (p.role && p.role.toLowerCase().includes(searchLower))
+      
+      const matchRole = !filterRole || p.role === filterRole
+      
+      return matchSearch && matchRole
+    })
+  }, [profiles, search, filterRole])
 
   function openEditModal(profile) {
     setEditingProfile(profile)
@@ -99,7 +115,6 @@ export default function ProfileManagement({ user }) {
     setBusy(true)
     setMessage('')
 
-    // Paso 1: la Edge Function invita al usuario y le asigna el rol
     const { data: inviteData, error: inviteError } = await supabase.functions.invoke(
       'admin-create-user',
       {
@@ -118,7 +133,6 @@ export default function ProfileManagement({ user }) {
       return
     }
 
-    // Paso 2: guardar teléfono y notas (el perfil ya existe; el admin puede editarlo)
     const phone = formData.phone.trim()
     const bio = formData.bio.trim()
     let extraError = null
@@ -133,7 +147,7 @@ export default function ProfileManagement({ user }) {
 
     setBusy(false)
     if (extraError) {
-      setMessage('⚠️ Invitación enviada, pero no se pudieron guardar teléfono y notas: ' + extraError.message)
+      setMessage('️ Invitación enviada, pero no se pudieron guardar teléfono y notas: ' + extraError.message)
     } else {
       setMessage(`✅ Invitación enviada a ${inviteData.email}. El usuario elegirá su contraseña desde el correo.`)
     }
@@ -147,7 +161,6 @@ export default function ProfileManagement({ user }) {
     setBusy(true)
     setMessage('')
 
-    // La Edge Function borra el usuario de Auth; su perfil se elimina en cascada
     const { error } = await supabase.functions.invoke('admin-delete-user', {
       body: { user_id: profile.id }
     })
@@ -162,7 +175,6 @@ export default function ProfileManagement({ user }) {
     }
   }
 
-  // c) Justo antes de la línea if (loading) return ..., añade:
   if (view === 'import') {
     return <ImportUsers onBack={() => setView('list')} onImported={loadProfiles} />
   }
@@ -176,8 +188,6 @@ export default function ProfileManagement({ user }) {
           <h2 className="text-xl font-bold text-[#0a2540]">Gestión de Perfiles</h2>
           <p className="text-sm text-[#6b7280]">Administra todos los usuarios del sistema.</p>
         </div>
-        
-        {/* d) Sustituye el botón «Añadir Usuario» de la cabecera por este bloque: */}
         <div className="flex gap-2">
           <button
             className="rounded border border-[#1e88e5] px-4 py-2 text-sm font-semibold text-[#1e88e5] hover:bg-[#e3f2fd]"
@@ -197,6 +207,37 @@ export default function ProfileManagement({ user }) {
         </div>
       )}
 
+      {/* Filtros y búsqueda */}
+      <div className="rounded-lg border border-[#e5e7eb] bg-white p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <input
+              className={inputClass}
+              type="text"
+              placeholder="Buscar por nombre, email o rol..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select className={inputClass} value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
+            <option value="">Todos los roles</option>
+            <option value="admin">Administrador</option>
+            <option value="profesor">Profesor</option>
+            <option value="alumno">Alumno</option>
+          </select>
+        </div>
+        {(search || filterRole) && (
+          <div className="mt-3">
+            <button 
+              className="rounded border border-[#d1d5db] bg-white px-4 py-2 text-sm font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
+              onClick={() => { setSearch(''); setFilterRole('') }}
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
         <table className="w-full text-left text-sm">
           <thead className="bg-[#0a2540] text-xs uppercase text-white">
@@ -209,7 +250,7 @@ export default function ProfileManagement({ user }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e5e7eb]">
-            {profiles.map((profile) => (
+            {filteredProfiles.map((profile) => (
               <tr key={profile.id} className="hover:bg-[#f9fafb]">
                 <td className="p-4 font-medium text-[#0a2540]">{profile.full_name || 'Sin nombre'}</td>
                 <td className="p-4 text-[#6b7280]">{profile.email || '—'}</td>
@@ -244,9 +285,11 @@ export default function ProfileManagement({ user }) {
                 </td>
               </tr>
             ))}
-            {profiles.length === 0 && (
+            {filteredProfiles.length === 0 && (
               <tr>
-                <td colSpan="5" className="p-8 text-center text-[#6b7280]">No hay perfiles registrados.</td>
+                <td colSpan="5" className="p-8 text-center text-[#6b7280]">
+                  {profiles.length === 0 ? 'No hay perfiles registrados.' : 'No hay perfiles que coincidan con los filtros.'}
+                </td>
               </tr>
             )}
           </tbody>
