@@ -35,9 +35,9 @@ export default function SetPassword({ onDone }) {
 
     setBusy(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
-    setBusy(false)
 
     if (updateError) {
+      setBusy(false)
       setError(
         updateError.message.includes('different from the old')
           ? 'La nueva contraseña debe ser distinta de la anterior.'
@@ -45,6 +45,14 @@ export default function SetPassword({ onDone }) {
       )
       return
     }
+
+    // Cierra todas las demás sesiones abiertas y conserva la actual
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' })
+    if (signOutError) {
+      console.error('No se pudieron cerrar las otras sesiones:', signOutError.message)
+    }
+
+    setBusy(false)
     onDone()
   }
 
