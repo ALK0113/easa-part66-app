@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import ImportUsers from './ImportUsers.jsx' // <-- Importación añadida al principio
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
@@ -28,6 +29,9 @@ export default function ProfileManagement({ user }) {
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState('alumno')
   const [busy, setBusy] = useState(false)
+  
+  // b) Estado para controlar la vista (lista o importación)
+  const [view, setView] = useState('list')
 
   useEffect(() => {
     loadProfiles()
@@ -158,6 +162,11 @@ export default function ProfileManagement({ user }) {
     }
   }
 
+  // c) Justo antes de la línea if (loading) return ..., añade:
+  if (view === 'import') {
+    return <ImportUsers onBack={() => setView('list')} onImported={loadProfiles} />
+  }
+
   if (loading) return <div className="p-8 text-center text-[#0a2540]">Cargando perfiles...</div>
 
   return (
@@ -167,9 +176,19 @@ export default function ProfileManagement({ user }) {
           <h2 className="text-xl font-bold text-[#0a2540]">Gestión de Perfiles</h2>
           <p className="text-sm text-[#6b7280]">Administra todos los usuarios del sistema.</p>
         </div>
-        <button className={buttonClass} onClick={openAddModal}>
-          ➕ Añadir Usuario
-        </button>
+        
+        {/* d) Sustituye el botón «Añadir Usuario» de la cabecera por este bloque: */}
+        <div className="flex gap-2">
+          <button
+            className="rounded border border-[#1e88e5] px-4 py-2 text-sm font-semibold text-[#1e88e5] hover:bg-[#e3f2fd]"
+            onClick={() => setView('import')}
+          >
+            📥 Importar usuarios
+          </button>
+          <button className={buttonClass} onClick={openAddModal}>
+            ➕ Añadir Usuario
+          </button>
+        </div>
       </div>
 
       {message && (
