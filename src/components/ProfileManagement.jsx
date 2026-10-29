@@ -3,7 +3,17 @@ import { supabase } from '../lib/supabase.js'
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
-const dangerButtonClass = 'rounded bg-[#c62828] px-4 py-2 text-sm font-semibold text-white hover:bg-[#b71c1c] disabled:opacity-50'
+
+// Extrae el mensaje { error: "..." } que devuelven las Edge Functions
+async function getFunctionErrorMessage(error, fallback) {
+  try {
+    const body = await error.context.json()
+    if (body?.error) return body.error
+  } catch {
+    // sin cuerpo (por ejemplo, error de red o de CORS): se usa el mensaje genérico
+  }
+  return fallback
+}
 
 export default function ProfileManagement({ user }) {
   const [profiles, setProfiles] = useState([])
@@ -12,8 +22,8 @@ export default function ProfileManagement({ user }) {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState(null)
-  const [formData, setFormData] = useState({ 
-    full_name: '', email: '', phone: '', bio: '', role: 'alumno' 
+  const [formData, setFormData] = useState({
+    full_name: '', email: '', phone: '', bio: '', role: 'alumno'
   })
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState('alumno')
@@ -29,7 +39,7 @@ export default function ProfileManagement({ user }) {
       .from('profiles')
       .select('id, full_name, email, phone, bio, role, created_at')
       .order('full_name', { ascending: true })
-    
+
     if (error) setMessage('Error al cargar perfiles: ' + error.message)
     else setProfiles(data || [])
     setLoading(false)
@@ -59,7 +69,7 @@ export default function ProfileManagement({ user }) {
   async function saveProfile(event) {
     event.preventDefault()
     setBusy(true)
-    
+
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -85,61 +95,65 @@ export default function ProfileManagement({ user }) {
     setBusy(true)
     setMessage('')
 
-    // Paso 1: Crear usuario en Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: newUserEmail,
-      password: 'TempPass123!', // Contraseña temporal
-      email_confirm: true,
-      user_metadata: { 
-        full_name: formData.full_name.trim(),
-        role: newUserRole 
+    // Paso 1: la Edge Function invita al usuario y le asigna el rol
+    const { data: inviteData, error: inviteError } = await supabase.functions.invoke(
+      'admin-create-user',
+      {
+        body: {
+          email: newUserEmail.trim().toLowerCase(),
+          full_name: formData.full_name.trim(),
+          role: newUserRole
+        }
       }
-    })
+    )
 
-    if (authError) {
+    if (inviteError) {
+      const msg = await getFunctionErrorMessage(inviteError, 'No se pudo crear el usuario.')
       setBusy(false)
-      setMessage(' Error al crear usuario: ' + authError.message)
+      setMessage('❌ ' + msg)
       return
     }
 
-    // Paso 2: Crear perfil en la tabla profiles
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: authData.user.id,
-        full_name: formData.full_name.trim(),
-        email: newUserEmail,
-        phone: formData.phone.trim(),
-        bio: formData.bio.trim(),
-        role: newUserRole
-      })
+    // Paso 2: guardar teléfono y notas (el perfil ya existe; el admin puede editarlo)
+    const phone = formData.phone.trim()
+    const bio = formData.bio.trim()
+    let extraError = null
+
+    if (phone || bio) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ phone, bio })
+        .eq('id', inviteData.user_id)
+      extraError = error
+    }
 
     setBusy(false)
-    if (profileError) {
-      setMessage('⚠️ Usuario creado pero error al guardar perfil: ' + profileError.message)
+    if (extraError) {
+      setMessage('⚠️ Invitación enviada, pero no se pudieron guardar teléfono y notas: ' + extraError.message)
     } else {
-      setMessage('✅ Usuario y perfil creados correctamente. Contraseña temporal: TempPass123!')
-      setAddModalOpen(false)
-      loadProfiles()
+      setMessage(`✅ Invitación enviada a ${inviteData.email}. El usuario elegirá su contraseña desde el correo.`)
     }
+    setAddModalOpen(false)
+    loadProfiles()
   }
 
   async function deleteProfile(profile) {
-    if (!window.confirm(`¿Eliminar permanentemente el perfil de ${profile.full_name}?`)) return
-    
+    if (!window.confirm(`¿Eliminar permanentemente a ${profile.full_name || profile.email}?`)) return
+
     setBusy(true)
-    
-    // Eliminar de la tabla profiles
-    const { error } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', profile.id)
+    setMessage('')
+
+    // La Edge Function borra el usuario de Auth; su perfil se elimina en cascada
+    const { error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { user_id: profile.id }
+    })
 
     setBusy(false)
     if (error) {
-      setMessage('❌ Error al eliminar: ' + error.message)
+      const msg = await getFunctionErrorMessage(error, 'No se pudo eliminar el usuario.')
+      setMessage('❌ ' + msg)
     } else {
-      setMessage('✅ Perfil eliminado correctamente.')
+      setMessage('✅ Usuario eliminado correctamente.')
       loadProfiles()
     }
   }
@@ -192,14 +206,14 @@ export default function ProfileManagement({ user }) {
                 <td className="p-4 text-[#6b7280]">{profile.phone || '—'}</td>
                 <td className="p-4 text-right">
                   <div className="flex justify-end gap-2">
-                    <button 
+                    <button
                       className="rounded border border-[#d1d5db] px-3 py-1.5 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
                       onClick={() => openEditModal(profile)}
                     >
                       ✏️ Editar
                     </button>
                     {profile.id !== user.id && (
-                      <button 
+                      <button
                         className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
                         onClick={() => deleteProfile(profile)}
                         disabled={busy}
@@ -228,14 +242,14 @@ export default function ProfileManagement({ user }) {
             <form className="space-y-4" onSubmit={saveProfile}>
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nombre Completo</label>
-                <input 
-                  className={inputClass} 
-                  value={formData.full_name} 
-                  onChange={(e) => setFormData({...formData, full_name: e.target.value})} 
-                  required 
+                <input
+                  className={inputClass}
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  required
                 />
               </div>
-              
+
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Correo Electrónico</label>
                 <input className={`${inputClass} bg-[#f3f4f6] text-[#6b7280]`} value={formData.email} disabled />
@@ -243,34 +257,38 @@ export default function ProfileManagement({ user }) {
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Rol</label>
-                <select 
-                  className={inputClass} 
-                  value={formData.role} 
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
+                <select
+                  className={inputClass}
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  disabled={editingProfile.id === user.id}
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
                   <option value="admin">Administrador</option>
                 </select>
+                {editingProfile.id === user.id && (
+                  <p className="mt-1 text-xs text-[#6b7280]">No puedes cambiar tu propio rol.</p>
+                )}
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Teléfono</label>
-                <input 
-                  className={inputClass} 
-                  value={formData.phone} 
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+                <input
+                  className={inputClass}
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+34 600 000 000"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Biografía / Notas</label>
-                <textarea 
-                  className={inputClass} 
-                  rows="3" 
-                  value={formData.bio} 
-                  onChange={(e) => setFormData({...formData, bio: e.target.value})} 
+                <textarea
+                  className={inputClass}
+                  rows="3"
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                   placeholder="Especialidad, horarios, notas internas..."
                 />
               </div>
@@ -292,68 +310,68 @@ export default function ProfileManagement({ user }) {
             <form className="space-y-4" onSubmit={addNewProfile}>
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Correo Electrónico *</label>
-                <input 
-                  className={inputClass} 
+                <input
+                  className={inputClass}
                   type="email"
-                  value={newUserEmail} 
-                  onChange={(e) => setNewUserEmail(e.target.value)} 
-                  required 
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  required
                   placeholder="usuario@escuela.com"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nombre Completo *</label>
-                <input 
-                  className={inputClass} 
-                  value={formData.full_name} 
-                  onChange={(e) => setFormData({...formData, full_name: e.target.value})} 
-                  required 
+                <input
+                  className={inputClass}
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  required
+                  maxLength={100}
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Rol *</label>
-                <select 
-                  className={inputClass} 
-                  value={newUserRole} 
+                <select
+                  className={inputClass}
+                  value={newUserRole}
                   onChange={(e) => setNewUserRole(e.target.value)}
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
-                  <option value="admin">Administrador</option>
                 </select>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Teléfono</label>
-                <input 
-                  className={inputClass} 
-                  value={formData.phone} 
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+                <input
+                  className={inputClass}
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+34 600 000 000"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Biografía / Notas</label>
-                <textarea 
-                  className={inputClass} 
-                  rows="3" 
-                  value={formData.bio} 
-                  onChange={(e) => setFormData({...formData, bio: e.target.value})} 
+                <textarea
+                  className={inputClass}
+                  rows="3"
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                   placeholder="Especialidad, horarios, notas internas..."
                 />
               </div>
 
               <div className="rounded bg-amber-50 p-3 text-xs text-amber-800">
-                ️ Se creará el usuario con contraseña temporal: <strong>TempPass123!</strong><br/>
-                El usuario deberá cambiarla en su primer inicio de sesión.
+                Se enviará una invitación por correo. El usuario elegirá su contraseña al aceptarla.
+                Para crear administradores, cambia el rol después desde "Editar".
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setAddModalOpen(false)}>Cancelar</button>
-                <button className={buttonClass} disabled={busy}>{busy ? 'Creando...' : 'Crear Usuario'}</button>
+                <button className={buttonClass} disabled={busy}>{busy ? 'Enviando...' : 'Enviar invitación'}</button>
               </div>
             </form>
           </div>
