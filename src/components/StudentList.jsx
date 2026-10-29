@@ -1,224 +1,781 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
+import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
+const secondaryButton = 'rounded border border-[#d1d5db] bg-white px-4 py-2 text-sm font-semibold text-[#0a2540] hover:bg-[#f4f6f9]'
+const dangerButton = 'rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50'
+
+const CLASS_OPTIONS = ['1º', '2º', '3º']
+const GROUP_OPTIONS = ['A', 'B', 'C', 'D']
 
 export default function StudentList({ user }) {
   const [students, setStudents] = useState([])
   const [modules, setModules] = useState([])
-  const [studentModules, setStudentModules] = useState([])
-  const [records, setRecords] = useState([])
-  const [practices, setPractices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [setupNotice, setSetupNotice] = useState('')
-  const [message, setMessage] = useState('')
   const [search, setSearch] = useState('')
-  const [promo, setPromo] = useState('')
-  const [formOpen, setFormOpen] = useState(false)
-  const [viewing, setViewing] = useState(null)
-  const [editing, setEditing] = useState(null)
+  const [filterPromo, setFilterPromo] = useState('')
+  const [filterClass, setFilterClass] = useState('')
+  const [filterGroup, setFilterGroup] = useState('')
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [editingStudent, setEditingStudent] = useState(null)
+  const [formData, setFormData] = useState({})
+  const [originalData, setOriginalData] = useState({})
+  const [sensitiveUnlocked, setSensitiveUnlocked] = useState(false)
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
+  const [sendInvite, setSendInvite] = useState(true)
+  const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ student_number: '', name: '', group_name: '', promo: '', email: '', moduleIds: [] })
 
-  async function reload() {
-    const [studentResult, moduleResult, membershipResult, recordResult, practiceResult] = await Promise.all([
-      supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }),
-      supabase.from('modules').select('id,name'),
-      supabase.from('student_modules').select('student_id,module_id'),
-      supabase.from('practice_records').select('student_id,attendance,evaluation'),
-      supabase.from('practices').select('id,module_id,ata,title,date,start_time'),
-    ])
-    const requiredError = studentResult.error || moduleResult.error || practiceResult.error
-    const optionalErrors = [membershipResult.error, recordResult.error].filter(Boolean)
-    if (requiredError) setError(requiredError.message)
-    else {
-      setStudents(studentResult.data || [])
-      setModules(moduleResult.data || [])
-      setStudentModules(membershipResult.error ? [] : membershipResult.data || [])
-      setRecords(recordResult.error ? [] : recordResult.data || [])
-      setPractices(practiceResult.data || [])
-      setError('')
-      setSetupNotice(optionalErrors.some(isMissingTable)
-        ? 'La migración de asignaciones/asistencia aún no está aplicada. Puedes consultar los alumnos; matrículas e informes se activarán al aplicarla.'
-        : optionalErrors[0]?.message || '')
-    }
-    setLoading(false)
-  }
+  const isAdmin = user?.role === 'admin'
+  const isTeacher = user?.role === 'profesor'
 
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      const [studentResult, moduleResult, membershipResult, recordResult, practiceResult] = await Promise.all([
-        supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }),
-        supabase.from('modules').select('id,name'),
-        supabase.from('student_modules').select('student_id,module_id'),
-        supabase.from('practice_records').select('student_id,attendance,evaluation'),
-        supabase.from('practices').select('id,module_id,ata,title,date,start_time'),
-      ])
-      if (cancelled) return
-      const requiredError = studentResult.error || moduleResult.error || practiceResult.error
-      const optionalErrors = [membershipResult.error, recordResult.error].filter(Boolean)
-      if (requiredError) setError(requiredError.message)
-      else {
-        setStudents(studentResult.data || [])
-        setModules(moduleResult.data || [])
-        setStudentModules(membershipResult.error ? [] : membershipResult.data || [])
-        setRecords(recordResult.error ? [] : recordResult.data || [])
-        setPractices(practiceResult.data || [])
-        setSetupNotice(optionalErrors.some(isMissingTable)
-          ? 'La migración de asignaciones/asistencia aún no está aplicada. Puedes consultar los alumnos; matrículas e informes se activarán al aplicarla.'
-          : optionalErrors[0]?.message || '')
-      }
-      setLoading(false)
-    }
-    load()
-    const unsubscribe = subscribeToTables(['students', 'modules', 'student_modules', 'practice_records', 'practices'], load, 'student-list')
-    return () => { cancelled = true; unsubscribe() }
-  }, [])
+    loadStudents()
+    loadModules()
+    const unsub = subscribeToTables(['students', 'student_modules', 'student_profiles'], () => loadStudents(), 'students-list')
+    return () => unsub()
+  }, [user?.id])
 
-  function openForm(student = null) {
-    setEditing(student)
-    setForm({
-      student_number: student?.student_number ?? '',
-      name: student?.name ?? '',
-      group_name: student?.group_name ?? '',
-      promo: student?.promo ?? '',
-      email: '',
-      moduleIds: student ? studentModules.filter((entry) => entry.student_id === String(student.id)).map((entry) => entry.module_id) : [],
-    })
-    setMessage('')
-    setFormOpen(true)
+  async function loadModules() {
+    const { data } = await supabase.from('modules').select('id, name').order('id')
+    setModules(data || [])
   }
 
-  async function saveStudent(event) {
-    event.preventDefault()
+  async function loadStudents() {
+    setLoading(true)
+    setMessage('')
+    try {
+      let query = supabase
+        .from('students')
+        .select(`
+          id,
+          student_number,
+          name,
+          class_name,
+          group_name,
+          promo,
+          student_modules (module_id)
+        `)
+        .order('name')
+
+      if (isTeacher) {
+        const { data: teacherModules, error: tmError } = await supabase
+          .from('teacher_modules')
+          .select('module_id')
+          .eq('profile_id', user.id)
+        
+        if (tmError) throw tmError
+        const moduleIds = (teacherModules || []).map(m => m.module_id)
+        
+        if (moduleIds.length === 0) {
+          setStudents([])
+          setLoading(false)
+          return
+        }
+
+        const { data: studentIds } = await supabase
+          .from('student_modules')
+          .select('student_id')
+          .in('module_id', moduleIds)
+        
+        const uniqueIds = [...new Set((studentIds || []).map(s => s.student_id))]
+        query = query.in('id', uniqueIds)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      setStudents(data || [])
+    } catch (err) {
+      setMessage('Error al cargar alumnos: ' + getSupabaseErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      const searchLower = search.toLowerCase()
+      const matchSearch = !search || 
+        s.name.toLowerCase().includes(searchLower) ||
+        String(s.student_number || '').includes(searchLower) ||
+        (s.class_name && s.class_name.toLowerCase().includes(searchLower)) ||
+        (s.group_name && s.group_name.toLowerCase().includes(searchLower))
+      
+      const matchPromo = !filterPromo || s.promo === filterPromo
+      const matchClass = !filterClass || s.class_name === filterClass
+      const matchGroup = !filterGroup || s.group_name === filterGroup
+      
+      return matchSearch && matchPromo && matchClass && matchGroup
+    })
+  }, [students, search, filterPromo, filterClass, filterGroup])
+
+  const uniquePromos = [...new Set(students.map(s => s.promo).filter(Boolean))].sort()
+  const uniqueClasses = [...new Set(students.map(s => s.class_name).filter(Boolean))].sort()
+  const uniqueGroups = [...new Set(students.map(s => s.group_name).filter(Boolean))].sort()
+
+  function openEditModal(student) {
+    const data = {
+      student_number: student.student_number || '',
+      name: student.name || '',
+      class_name: student.class_name || '',
+      group_name: student.group_name || '',
+      promo: student.promo || '',
+    }
+    setEditingStudent(student)
+    setFormData(data)
+    setOriginalData({ ...data })
+    setSensitiveUnlocked(false)
+    setEditModalOpen(true)
+    setMessage('')
+  }
+
+  function openCreateModal() {
+    setFormData({
+      email: '',
+      full_name: '',
+      student_number: '',
+      class_name: '',
+      group_name: '',
+      promo: '',
+      identification: '',
+      birth_date: '',
+      selectedModules: [],
+    })
+    setSendInvite(true)
+    setCreateModalOpen(true)
+    setMessage('')
+  }
+
+  function handleUnlockSensitive() {
+    if (window.confirm(
+      'Cambiar el nombre, el número o la promoción afecta a las asistencias, evaluaciones e informes del alumno.\n\n¿Seguro que quieres modificarlos?'
+    )) {
+      setSensitiveUnlocked(true)
+    }
+  }
+
+  function handleSaveClick() {
+    const nameChanged = formData.name !== originalData.name
+    const numberChanged = String(formData.student_number) !== String(originalData.student_number)
+    const promoChanged = formData.promo !== originalData.promo
+
+    if (nameChanged || numberChanged || promoChanged) {
+      setConfirmSaveOpen(true)
+    } else {
+      performSave()
+    }
+  }
+
+  async function performSave() {
+    setBusy(true)
+    setConfirmSaveOpen(false)
+    setMessage('')
+
+    try {
+      if (formData.student_number && formData.student_number !== originalData.student_number) {
+        const { data: existing } = await supabase
+          .from('students')
+          .select('id')
+          .eq('student_number', parseInt(formData.student_number))
+          .neq('id', editingStudent.id)
+          .maybeSingle()
+        
+        if (existing) {
+          setMessage(`❌ El número de alumno ${formData.student_number} ya está asignado a otro alumno.`)
+          setBusy(false)
+          return
+        }
+      }
+
+      const finalGroupName = formData.class_name && formData.group_name 
+        ? `${formData.class_name}${formData.group_name}` 
+        : formData.group_name || null
+
+      const updateData = {
+        student_number: formData.student_number ? parseInt(formData.student_number) : null,
+        name: formData.name.trim(),
+        class_name: formData.class_name || null,
+        group_name: finalGroupName,
+        promo: formData.promo.trim() || null,
+      }
+
+      const { error } = await supabase
+        .from('students')
+        .update(updateData)
+        .eq('id', editingStudent.id)
+
+      if (error) {
+        if (error.code === '23505') {
+          setMessage('❌ El número de alumno ya existe en la base de datos.')
+        } else {
+          setMessage('❌ Error al guardar: ' + getSupabaseErrorMessage(error))
+        }
+      } else {
+        setMessage('✅ Alumno actualizado correctamente.')
+        setEditModalOpen(false)
+        await loadStudents()
+      }
+    } catch (err) {
+      setMessage(' Error: ' + (err.message || 'Desconocido'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function performCreate() {
     setBusy(true)
     setMessage('')
-    const payload = {
-      student_number: form.student_number.trim(),
-      name: form.name.trim(),
-      group_name: form.group_name.trim(),
-      promo: form.promo.trim(),
-    }
 
-    if (editing) {
-      const { error: updateError } = await supabase.rpc('admin_update_student_with_modules', {
-        p_student_id: String(editing.id),
-        p_student: payload,
-        p_module_ids: form.moduleIds,
-      })
-      if (updateError) { setMessage(getSupabaseErrorMessage(updateError)); setBusy(false); return }
-      setMessage('Alumno actualizado.')
-    } else {
-      const { data: invite, error: inviteError } = await supabase.functions.invoke('admin-create-user', {
-        body: {
-          email: form.email.trim(),
-          full_name: payload.name,
-          role: 'alumno',
-          student: payload,
-          module_ids: form.moduleIds,
-        },
-      })
-      if (inviteError || invite?.error) {
-        setMessage(inviteError?.message || invite.error)
+    try {
+      const { email, full_name, student_number, class_name, group_name, promo, identification, birth_date, selectedModules } = formData
+
+      if (!email || !full_name) {
+        setMessage('❌ Email y nombre son obligatorios.')
         setBusy(false)
         return
       }
-      setMessage('Alumno creado y cuenta invitada por correo.')
-    }
 
-    setBusy(false)
-    setFormOpen(false)
-    await reload()
+      // 1. Crear usuario en Auth vía Edge Function
+      const { data: inviteData, error: inviteError } = await supabase.functions.invoke('admin-create-user', {
+        body: {
+          email: email.trim().toLowerCase(),
+          full_name: full_name.trim(),
+          role: 'alumno',
+          send_invite: sendInvite
+        }
+      })
+
+      if (inviteError) {
+        const msg = inviteError.context?.error || inviteError.message || 'No se pudo crear el usuario.'
+        setMessage('❌ ' + msg)
+        setBusy(false)
+        return
+      }
+
+      const userId = inviteData.user_id
+
+      // 2. Crear ficha de estudiante
+      const finalGroupName = class_name && group_name ? `${class_name}${group_name}` : group_name || null
+      const studentNumber = student_number ? parseInt(student_number) : null
+
+      const { data: newStudent, error: studentError } = await supabase
+        .from('students')
+        .insert({
+          student_number: studentNumber,
+          name: full_name.trim(),
+          class_name: class_name || null,
+          group_name: finalGroupName,
+          promo: promo || null,
+        })
+        .select('id')
+        .single()
+
+      if (studentError) {
+        setMessage('️ Usuario creado, pero error al crear ficha: ' + getSupabaseErrorMessage(studentError))
+        setBusy(false)
+        return
+      }
+
+      // 3. Vincular profile con student
+      await supabase.from('student_profiles').insert({
+        profile_id: userId,
+        student_id: newStudent.id
+      })
+
+      // 4. Matricular en módulos
+      if (selectedModules && selectedModules.length > 0) {
+        const enrollments = selectedModules.map(moduleId => ({
+          student_id: newStudent.id,
+          module_id: moduleId
+        }))
+        await supabase.from('student_modules').insert(enrollments)
+      }
+
+      const inviteMsg = sendInvite 
+        ? 'Se ha enviado la invitación por correo.' 
+        : 'Usuario creado sin enviar correo (contraseña temporal generada).'
+      setMessage(`✅ Alumno creado correctamente. ${inviteMsg}`)
+      setCreateModalOpen(false)
+      await loadStudents()
+    } catch (err) {
+      setMessage('❌ Error: ' + (err.message || 'Desconocido'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function deleteStudent(student) {
-    if (!window.confirm(`¿Eliminar a ${student.name}? Se quitarán sus matrículas y registros, pero la cuenta de acceso no se borrará.`)) return
+    if (!window.confirm(`¿Eliminar permanentemente a ${student.name}? Esta acción no se puede deshacer.`)) return
+    
     setBusy(true)
-    const { error: deleteError } = await supabase.rpc('admin_delete_student', { p_student_id: String(student.id) })
-    if (deleteError) setMessage(getSupabaseErrorMessage(deleteError))
-    else { setMessage('Alumno eliminado. La cuenta Auth se conserva para evitar eliminarla accidentalmente.'); await reload() }
-    setBusy(false)
+    setMessage('')
+    try {
+      await supabase.from('student_modules').delete().eq('student_id', student.id)
+      await supabase.from('student_profiles').delete().eq('student_id', student.id)
+      
+      const { error } = await supabase.from('students').delete().eq('id', student.id)
+      if (error) throw error
+      
+      setMessage('✅ Alumno eliminado correctamente.')
+      await loadStudents()
+    } catch (err) {
+      setMessage('❌ Error al eliminar: ' + getSupabaseErrorMessage(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const promos = [...new Set(students.map((student) => student.promo).filter(Boolean))].sort()
-  const filtered = students.filter((student) => {
-    const query = search.trim().toLowerCase()
-    const matchesQuery = !query || [student.name, student.student_number, student.group_name].some((value) => String(value || '').toLowerCase().includes(query))
-    return matchesQuery && (!promo || String(student.promo) === promo)
-  })
-  const isAdmin = user?.role === 'admin'
+  function getModuleCount(student) {
+    return student.student_modules?.length || 0
+  }
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-[#0a2540]">Cargando alumnos…</div>
-  if (error) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">Error al cargar alumnos: {error}</div>
+  function toggleModule(moduleId) {
+    setFormData(prev => {
+      const current = prev.selectedModules || []
+      const updated = current.includes(moduleId)
+        ? current.filter(id => id !== moduleId)
+        : [...current, moduleId]
+      return { ...prev, selectedModules: updated }
+    })
+  }
+
+  if (loading) return <div className="p-8 text-center text-[#0a2540]">Cargando alumnos...</div>
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><h2 className="text-lg font-bold text-[#0a2540]">Alumnos ({filtered.length})</h2><p className="mt-1 text-sm text-[#6b7280]">Filtra por nombre, número, grupo o promoción.</p></div>
-          {isAdmin && <button className={buttonClass} onClick={() => openForm()}>+ Nuevo alumno</button>}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-[#0a2540]">
+            Alumnos ({filteredStudents.length})
+          </h2>
+          <p className="text-sm text-[#6b7280]">
+            {isTeacher ? 'Alumnos matriculados en tus módulos' : 'Gestión completa de alumnos'}
+          </p>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_220px]">
-          <input className={inputClass} placeholder="Buscar alumno…" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <select className={inputClass} value={promo} onChange={(event) => setPromo(event.target.value)}><option value="">Todas las promociones</option>{promos.map((item) => <option key={item}>{item}</option>)}</select>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <button className={buttonClass} onClick={openCreateModal}>
+              ➕ Nuevo alumno
+            </button>
+          </div>
+        )}
+      </div>
+
+      {message && (
+        <div className={`rounded p-3 text-sm ${message.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          {message}
         </div>
-        {setupNotice && <p role="status" className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-900">{setupNotice}</p>}
-        {message && <p role="status" className="mt-3 rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
-      </section>
+      )}
 
-      <section className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-sm">
-        <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{['#', 'Nombre', 'Grupo', 'Promoción', 'Módulos', 'Asistencia', 'Aptos', 'Acciones'].map((label) => <th key={label} className="px-4 py-3">{label}</th>)}</tr></thead>
-          <tbody>{filtered.map((student) => {
-            const id = String(student.id)
-            const attendance = records.filter((record) => record.student_id === id && record.attendance)
-            const present = attendance.filter((record) => record.attendance === 'P' || record.attendance === 'L').length
-            const rate = attendance.length ? Math.round((present / attendance.length) * 100) : 0
-            const evaluated = records.filter((record) => record.student_id === id && record.evaluation)
-            const apto = evaluated.length ? Math.round((evaluated.filter((record) => record.evaluation === 'Apto').length / evaluated.length) * 100) : 0
-            const moduleIds = studentModules.filter((entry) => entry.student_id === id).map((entry) => entry.module_id)
-            return <tr key={student.id} className="border-b border-[#e5e7eb] hover:bg-gray-50">
-              <td className="px-4 py-3 text-[#6b7280]">{student.student_number}</td><td className="px-4 py-3 font-semibold">{student.name}</td><td className="px-4 py-3">{student.group_name || '—'}</td><td className="px-4 py-3">{student.promo || '—'}</td>
-              <td className="px-4 py-3">{moduleIds.length ? moduleIds.map((idValue) => <span key={idValue} className="mr-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-900">{idValue}</span>) : '—'}</td><td className="px-4 py-3">{rate}%</td><td className="px-4 py-3">{apto}%</td>
-              <td className="px-4 py-3"><div className="flex gap-3"><button className="font-semibold text-[#1565c0]" onClick={() => setViewing(student)}>Ver</button>{isAdmin && <><button className="font-semibold text-[#1565c0]" onClick={() => openForm(student)}>Editar</button><button className="font-semibold text-red-700" disabled={busy} onClick={() => deleteStudent(student)}>Eliminar</button></>}</div></td>
-            </tr>
-          })}</tbody>
-        </table></div>
-        {filtered.length === 0 && <p className="p-8 text-center text-sm text-[#6b7280]">{students.length === 0 ? 'No hay alumnos cargados. Administración puede usar Configuración para cargar los datos iniciales.' : 'No hay alumnos que coincidan con los filtros.'}</p>}
-      </section>
+      {/* Filtros y búsqueda */}
+      <div className="rounded-lg border border-[#e5e7eb] bg-white p-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <input
+              className={inputClass}
+              type="text"
+              placeholder="Buscar por nombre, número, clase..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select className={inputClass} value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
+            <option value="">Todas las clases</option>
+            {uniqueClasses.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className={inputClass} value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
+            <option value="">Todos los grupos</option>
+            {uniqueGroups.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <select className={inputClass} value={filterPromo} onChange={(e) => setFilterPromo(e.target.value)}>
+            <option value="">Todas las promociones</option>
+            {uniquePromos.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          {(search || filterPromo || filterClass || filterGroup) && (
+            <button 
+              className={secondaryButton} 
+              onClick={() => { setSearch(''); setFilterPromo(''); setFilterClass(''); setFilterGroup('') }}
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      </div>
 
-      {viewing && (() => {
-        const studentId = String(viewing.id)
-        const moduleIds = studentModules.filter((entry) => entry.student_id === studentId).map((entry) => entry.module_id)
-        const history = practices.filter((practice) => moduleIds.includes(practice.module_id)).sort((a, b) => String(a.date).localeCompare(String(b.date)))
-        const studentRecords = records.filter((record) => record.student_id === studentId)
-        const checked = (practiceId) => studentRecords.find((record) => record.practice_id === practiceId) || {}
-        const present = studentRecords.filter((record) => record.attendance === 'P' || record.attendance === 'L').length
-        const attended = studentRecords.filter((record) => record.attendance).length
-        const apto = studentRecords.filter((record) => record.evaluation === 'Apto').length
-        const evaluated = studentRecords.filter((record) => record.evaluation).length
-        return <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewing(null) }}><section role="dialog" aria-modal="true" aria-label={`Informe de ${viewing.name}`} className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-[#0a2540]">Informe · {viewing.name}</h2><p className="mt-1 text-sm text-[#6b7280]">Promoción {viewing.promo || '—'} · {viewing.group_name || 'Sin grupo'}</p></div><button type="button" className="px-2 text-2xl text-[#6b7280]" aria-label="Cerrar" onClick={() => setViewing(null)}>×</button></div><div className="my-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Asistencia', attended ? `${Math.round((present / attended) * 100)}%` : '0%'], ['Aptos', evaluated ? `${Math.round((apto / evaluated) * 100)}%` : '0%'], ['Prácticas', history.length], ['Módulos', moduleIds.length]].map(([label, value]) => <div key={label} className="rounded border border-[#e5e7eb] border-l-4 border-l-[#1e88e5] p-3"><p className="text-xs uppercase text-[#6b7280]">{label}</p><p className="mt-1 text-xl font-bold text-[#0a2540]">{value}</p></div>)}</div><div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{['Fecha', 'Hora', 'Módulo', 'Práctica', 'Asistencia', 'Evaluación'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{history.map((practice) => { const record = checked(practice.id); return <tr key={practice.id} className="border-b border-[#e5e7eb]"><td className="p-3">{practice.date || '—'}</td><td className="p-3">{practice.start_time || '—'}</td><td className="p-3">{practice.module_id}</td><td className="p-3">{practice.title}</td><td className="p-3">{({ P: 'Presente', L: 'Tarde', A: 'Falta' })[record.attendance] || 'Pendiente'}</td><td className="p-3">{record.evaluation || 'Pendiente'}</td></tr>})}</tbody></table></div></section></div>
-      })()}
+      {/* Tabla de alumnos */}
+      <div className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-[#0a2540] text-xs uppercase text-white">
+              <tr>
+                <th className="p-3">#</th>
+                <th className="p-3">Nombre</th>
+                <th className="p-3">Nº Alumno</th>
+                <th className="p-3">Clase</th>
+                <th className="p-3">Grupo</th>
+                <th className="p-3">Promoción</th>
+                <th className="p-3">Módulos</th>
+                {isAdmin && <th className="p-3 text-right">Acciones</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e5e7eb]">
+              {filteredStudents.map((student, index) => (
+                <tr key={student.id} className="hover:bg-[#f9fafb]">
+                  <td className="p-3 text-[#6b7280]">{index + 1}</td>
+                  <td className="p-3 font-medium text-[#0a2540]">{student.name}</td>
+                  <td className="p-3 text-[#6b7280]">{student.student_number || '—'}</td>
+                  <td className="p-3">{student.class_name || '—'}</td>
+                  <td className="p-3">{student.group_name || '—'}</td>
+                  <td className="p-3">{student.promo || '—'}</td>
+                  <td className="p-3">
+                    <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                      {getModuleCount(student)} módulos
+                    </span>
+                  </td>
+                  {isAdmin && (
+                    <td className="p-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          className="rounded border border-[#d1d5db] px-3 py-1 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
+                          onClick={() => openEditModal(student)}
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button
+                          className="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                          onClick={() => deleteStudent(student)}
+                          disabled={busy}
+                        >
+                          🗑️ Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan={isAdmin ? 8 : 7} className="p-8 text-center text-[#6b7280]">
+                    No hay alumnos que coincidan con los filtros.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      {formOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}>
-        <section role="dialog" aria-modal="true" aria-label={editing ? 'Editar alumno' : 'Nuevo alumno'} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
-          <h2 className="mb-4 text-lg font-bold text-[#0a2540]">{editing ? 'Editar alumno' : 'Nuevo alumno'}</h2>
-          <form className="space-y-4" onSubmit={saveStudent}>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Número de alumno<input className={inputClass} value={form.student_number} onChange={(event) => setForm({ ...form, student_number: event.target.value })} required /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Nombre completo<input className={inputClass} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
-            <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Grupo<input className={inputClass} value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} /></label><label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Promoción<input className={inputClass} value={form.promo} onChange={(event) => setForm({ ...form, promo: event.target.value })} /></label></div>
-            {!editing && <label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Correo para invitar<input className={inputClass} type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label>}
-            <fieldset className="grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2"><legend className="mb-2 text-sm font-semibold text-[#0a2540]">Módulos iniciales</legend>{modules.map((module) => <label key={module.id} className="flex items-center gap-2 rounded border border-[#e5e7eb] p-2 text-sm"><input type="checkbox" checked={form.moduleIds.includes(module.id)} onChange={(event) => setForm({ ...form, moduleIds: event.target.checked ? [...form.moduleIds, module.id] : form.moduleIds.filter((id) => id !== module.id) })} />{module.id} · {module.name}</label>)}</fieldset>
-            {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
-            <div className="flex justify-end gap-2"><button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
-          </form>
-        </section>
-      </div>}
+      {/* Modal de CREAR nuevo alumno */}
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setCreateModalOpen(false)}>
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="mb-4 text-lg font-bold text-[#0a2540]">➕ Nuevo Alumno</h3>
+            
+            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); performCreate() }}>
+              {/* Datos de usuario (Auth) */}
+              <div className="rounded border border-blue-200 bg-blue-50 p-3">
+                <h4 className="mb-2 text-sm font-semibold text-[#0a2540]">📧 Cuenta de usuario</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Email *</label>
+                    <input
+                      className={inputClass}
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      required
+                      placeholder="alumno@escuela.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Nombre Completo *</label>
+                    <input
+                      className={inputClass}
+                      value={formData.full_name}
+                      onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                      required
+                      placeholder="Apellido, Nombre"
+                    />
+                  </div>
+                </div>
+
+                {/* Checkbox de invitación */}
+                <label className="mt-3 flex items-start gap-2 text-sm text-[#0a2540] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sendInvite}
+                    onChange={(e) => setSendInvite(e.target.checked)}
+                    className="mt-1 rounded border-gray-300"
+                  />
+                  <div>
+                    <span className="font-semibold">📧 Enviar invitación por correo al alumno</span>
+                    <p className="mt-1 text-xs text-[#6b7280]">
+                      {sendInvite 
+                        ? 'El alumno recibirá un email para establecer su contraseña.' 
+                        : 'El alumno se creará sin enviar correo. Podrá entrar con "¿Olvidaste tu contraseña?".'}
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Datos de estudiante */}
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <h4 className="mb-2 text-sm font-semibold text-[#0a2540]"> Ficha de alumno</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Nº de Alumno</label>
+                    <input
+                      className={inputClass}
+                      type="number"
+                      value={formData.student_number}
+                      onChange={(e) => setFormData({ ...formData, student_number: e.target.value })}
+                      placeholder="12345"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Promoción</label>
+                    <input
+                      className={inputClass}
+                      type="text"
+                      value={formData.promo}
+                      onChange={(e) => setFormData({ ...formData, promo: e.target.value })}
+                      placeholder="2025"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Clase</label>
+                    <select
+                      className={inputClass}
+                      value={formData.class_name}
+                      onChange={(e) => setFormData({ ...formData, class_name: e.target.value })}
+                    >
+                      <option value="">Seleccionar</option>
+                      {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Grupo</label>
+                    <select
+                      className={inputClass}
+                      value={formData.group_name}
+                      onChange={(e) => setFormData({ ...formData, group_name: e.target.value })}
+                    >
+                      <option value="">Seleccionar</option>
+                      {GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Identificación (DNI/NIE)</label>
+                    <input
+                      className={inputClass}
+                      value={formData.identification}
+                      onChange={(e) => setFormData({ ...formData, identification: e.target.value })}
+                      placeholder="12345678Z"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[#0a2540]">Fecha de Nacimiento</label>
+                    <input
+                      className={inputClass}
+                      type="date"
+                      value={formData.birth_date}
+                      onChange={(e) => setFormData({ ...formData, birth_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Módulos */}
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <h4 className="mb-2 text-sm font-semibold text-[#0a2540]">📚 Módulos iniciales</h4>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  {modules.map(mod => (
+                    <label key={mod.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={(formData.selectedModules || []).includes(mod.id)}
+                        onChange={() => toggleModule(mod.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="font-mono text-xs text-[#1e88e5]">{mod.id}</span>
+                      <span className="text-[#374151] truncate">{mod.name}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-[#6b7280]">
+                  Seleccionados: {(formData.selectedModules || []).length} módulos
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className={secondaryButton} onClick={() => setCreateModalOpen(false)}>
+                  Cancelar
+                </button>
+                <button className={buttonClass} disabled={busy}>
+                  {busy ? 'Creando...' : 'Crear Alumno'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de edición */}
+      {editModalOpen && editingStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setEditModalOpen(false)}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="mb-4 text-lg font-bold text-[#0a2540]">
+              Editar Alumno: {editingStudent.name}
+            </h3>
+            
+            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSaveClick() }}>
+              <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-semibold text-[#0a2540]">Nombre Completo *</label>
+                  {!sensitiveUnlocked && (
+                    <button
+                      type="button"
+                      onClick={handleUnlockSensitive}
+                      className="text-xs text-[#1e88e5] hover:underline"
+                    >
+                      🔒 Desbloquear
+                    </button>
+                  )}
+                </div>
+                <input
+                  className={`${inputClass} ${!sensitiveUnlocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                  value={formData.name}
+                  onChange={(e) => sensitiveUnlocked && setFormData({ ...formData, name: e.target.value })}
+                  disabled={!sensitiveUnlocked}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                  <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nº de Alumno</label>
+                  <input
+                    className={`${inputClass} ${!sensitiveUnlocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                    type="number"
+                    value={formData.student_number}
+                    onChange={(e) => sensitiveUnlocked && setFormData({ ...formData, student_number: e.target.value })}
+                    disabled={!sensitiveUnlocked}
+                  />
+                </div>
+                <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                  <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Promoción</label>
+                  <input
+                    className={`${inputClass} ${!sensitiveUnlocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                    type="text"
+                    placeholder="2025"
+                    value={formData.promo}
+                    onChange={(e) => sensitiveUnlocked && setFormData({ ...formData, promo: e.target.value })}
+                    disabled={!sensitiveUnlocked}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Clase *</label>
+                  <select
+                    className={inputClass}
+                    value={formData.class_name}
+                    onChange={(e) => setFormData({ ...formData, class_name: e.target.value })}
+                  >
+                    <option value="">Seleccionar</option>
+                    {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Grupo *</label>
+                  <select
+                    className={inputClass}
+                    value={formData.group_name}
+                    onChange={(e) => setFormData({ ...formData, group_name: e.target.value })}
+                  >
+                    <option value="">Seleccionar</option>
+                    {GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {formData.class_name && formData.group_name && (
+                <div className="text-xs text-[#6b7280] bg-blue-50 p-2 rounded">
+                  <strong>Grupo completo:</strong> {formData.class_name}{formData.group_name}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className={secondaryButton} onClick={() => setEditModalOpen(false)}>
+                  Cancelar
+                </button>
+                <button className={buttonClass} disabled={busy}>
+                  {busy ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para cambios sensibles */}
+      {confirmSaveOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <h3 className="mb-3 text-lg font-bold text-[#0a2540]">⚠️ Confirmar cambios sensibles</h3>
+            <p className="mb-4 text-sm text-[#374151]">
+              Estás a punto de modificar datos que afectan a asistencias, evaluaciones e informes. Revisa los cambios:
+            </p>
+            
+            <div className="mb-4 space-y-2 rounded bg-amber-50 p-3 text-sm">
+              {formData.name !== originalData.name && (
+                <div>
+                  <span className="font-semibold">Nombre:</span>{' '}
+                  <span className="text-red-600 line-through">{originalData.name}</span>
+                  {' → '}
+                  <span className="text-green-700 font-semibold">{formData.name}</span>
+                </div>
+              )}
+              {String(formData.student_number) !== String(originalData.student_number) && (
+                <div>
+                  <span className="font-semibold">Nº Alumno:</span>{' '}
+                  <span className="text-red-600 line-through">{originalData.student_number || '—'}</span>
+                  {' → '}
+                  <span className="text-green-700 font-semibold">{formData.student_number || '—'}</span>
+                </div>
+              )}
+              {formData.promo !== originalData.promo && (
+                <div>
+                  <span className="font-semibold">Promoción:</span>{' '}
+                  <span className="text-red-600 line-through">{originalData.promo || '—'}</span>
+                  {' → '}
+                  <span className="text-green-700 font-semibold">{formData.promo || '—'}</span>
+                </div>
+              )}
+            </div>
+
+            <p className="mb-4 text-xs text-[#6b7280]">
+              Estos cambios no se pueden deshacer automáticamente. Asegúrate de que los datos son correctos.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button className={secondaryButton} onClick={() => setConfirmSaveOpen(false)}>
+                Cancelar
+              </button>
+              <button className={dangerButton} onClick={performSave} disabled={busy}>
+                {busy ? 'Guardando...' : 'Sí, guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

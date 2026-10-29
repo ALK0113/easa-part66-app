@@ -105,9 +105,18 @@ function validateRow(raw) {
   if (data.identification && !ID_RE.test(data.identification)) errors.push('Identificación no válida.')
   if (data.phone && !PHONE_RE.test(data.phone)) errors.push('Teléfono no válido.')
 
-  for (const [key, label] of [['class_name', 'Clase'], ['group_name', 'Grupo'], ['promo', 'Promoción']]) {
-    if (data[key].length > 50) errors.push(`${label} demasiado largo (máximo 50).`)
+  // Clase: 1, 1º, 2º... → "1º" · Grupo: una letra → mayúscula (en la BD se guarda como "2ºA")
+  if (data.class_name) {
+    const classMatch = data.class_name.match(/^([1-9]\d?)\s*[ºo°ª]?$/i)
+    if (classMatch) data.class_name = `${classMatch[1]}º`
+    else errors.push('Clase no válida (usa 1º, 2º, 3º...).')
   }
+  if (data.group_name) {
+    if (/^[A-Za-z]$/.test(data.group_name)) data.group_name = data.group_name.toUpperCase()
+    else errors.push('Grupo no válido (usa una letra: A, B, C...).')
+    if (!data.class_name) errors.push('Para indicar el Grupo hay que indicar también la Clase.')
+  }
+  if (data.promo.length > 50) errors.push('Promoción demasiado larga (máximo 50).')
 
   if (raw.birth_date?.error) errors.push(raw.birth_date.error)
   else data.birth_date = raw.birth_date?.value ?? null
@@ -121,7 +130,7 @@ function validateRow(raw) {
       data.modules.push(name)
     }
   }
-  if (data.modules.length > 30 || data.modules.some((m) => m.length > 50)) {
+  if (data.modules.length > 30 || data.modules.some((m) => m.length > 80)) {
     errors.push('Lista de módulos no válida.')
   }
 
@@ -173,7 +182,12 @@ export async function parseUsersFile(file) {
       const cell = colByKey[c.key] ? row.getCell(colByKey[c.key]) : null
       raw[c.key] = c.key === 'birth_date' ? parseBirthDate(cell) : cellText(cell)
     }
-    if (COLUMNS.every((c) => c.key === 'birth_date' ? !raw.birth_date.value && !raw.birth_date.error : !raw[c.key])) return
+
+    // Ignora las filas completamente vacías
+    const isEmpty = COLUMNS.every((c) =>
+      c.key === 'birth_date' ? !raw.birth_date.value && !raw.birth_date.error : !raw[c.key]
+    )
+    if (isEmpty) return
 
     rows.push({ rowNumber, ...validateRow(raw) })
   })
@@ -191,8 +205,11 @@ export async function parseUsersFile(file) {
       else emails.set(email, item.rowNumber)
     }
     if (identification) {
-      if (ids.has(identification)) item.errors.push(`Identificación repetida (también en la fila ${ids.get(identification)}).`)
-      else ids.set(identification, item.rowNumber)
+      if (ids.has(identification)) {
+        item.errors.push(`Identificación repetida (también en la fila ${ids.get(identification)}).`)
+      } else {
+        ids.set(identification, item.rowNumber)
+      }
     }
   }
 
@@ -226,9 +243,11 @@ export async function downloadTemplate() {
     '2. Los encabezados en ROJO son obligatorios (Nombre y Email). El resto es opcional.',
     '3. No cambies ni borres los encabezados. Puedes reordenar las columnas.',
     '4. Fecha de nacimiento: formato dd/mm/aaaa (por ejemplo, 15/03/2001).',
-    '5. Módulos: separa varios con punto y coma (por ejemplo, M1; M2; M3), tal como aparecen en la aplicación.',
+    '5. Módulos: separa varios con punto y coma (por ejemplo, M1; M2; M3) o escribe su nombre tal como aparece en la aplicación.',
     '6. Cada email debe ser único. Si un usuario ya existe, esa fila se marcará como error.',
     '7. Guarda el archivo como .xlsx y súbelo desde «Importar usuarios».',
+    '8. Clase: 1º, 2º, 3º... (también vale 1, 2, 3). Grupo: una letra (A, B, C...). Para indicar el Grupo hay que indicar la Clase.',
+    '9. Para PROFESORES solo se usan Nombre, Email, Teléfono y Módulos.',
   ]
   lines.forEach((text, i) => {
     const row = info.addRow([text])
