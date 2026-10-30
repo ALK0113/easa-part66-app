@@ -1,7 +1,7 @@
 import { handler, requireAdmin, readJson, HttpError } from '../_shared/utils.ts'
 
 const MAX_ROWS_PER_REQUEST = 25
-const ALLOWED_ROLES = ['alumno', 'profesor'] // nunca admin
+const ALLOWED_ROLES = ['alumno', 'profesor', 'supervisor'] // nunca admin
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^[+0-9 ()\-.]{6,20}$/
 const ID_RE = /^[A-Za-z0-9 .\-/]{3,30}$/
