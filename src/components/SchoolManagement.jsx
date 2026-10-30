@@ -158,7 +158,7 @@ export default function SchoolManagement({ user }) {
     loadAbortRef.current = new AbortController()
     setLoading(true)
     try {
-      const { data, error } = await supabase.rpc('admin_list_schools_with_stats')
+      const { data, error } = await supabase.rpc('admin_list_schools_with_stats_v2')
       if (loadAbortRef.current?.signal.aborted) return
       if (error) throw error
       setSchools(data || [])
@@ -434,29 +434,29 @@ export default function SchoolManagement({ user }) {
         </div>
       </div>
 
-      {/* Selector de Centro Activo (Simulación) */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          🎨 Simular vista de centro (el color del centro se aplica a la UI)
-        </label>
-        <select
-          value={activeSchoolId || ''}
-          onChange={(e) => handleSetActiveSchool(e.target.value || null)}
-          className={inputClass}
-        >
-          <option value="">— Sin centro (color por defecto) —</option>
-          {schools.map(s => (
-            <option key={s.school_id} value={s.school_id}>
-              {s.school_name} {s.brand_color ? `(${s.brand_color})` : '(sin color)'}
-            </option>
-          ))}
-        </select>
-        {activeSchoolId && (
-          <p className="mt-2 text-xs text-gray-500">
-            ✨ Los títulos y acentos de la aplicación ahora usan el color de este centro.
-          </p>
-        )}
-      </div>
+      {/* Selector de Escuela */}
+<div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+  <label className="block text-sm font-semibold text-gray-700 mb-2">
+    Escuela
+  </label>
+  <select
+    value={activeSchoolId || ''}
+    onChange={(e) => handleSetActiveSchool(e.target.value || null)}
+    className={inputClass}
+  >
+    <option value="">No hay escuela</option>
+    {schools.map(s => (
+      <option key={s.school_id} value={s.school_id}>
+        {s.school_name}
+      </option>
+    ))}
+  </select>
+  {activeSchoolId && (
+    <p className="mt-2 text-xs text-gray-500">
+      ✨ Los títulos y acentos de la aplicación usan el color de esta escuela.
+    </p>
+  )}
+</div>
 
       {/* Búsqueda y filtros */}
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
