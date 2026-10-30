@@ -1,69 +1,80 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
-const ThemeContext = createContext(undefined)
+const ThemeContext = createContext()
+export const DEFAULT_BRAND_COLOR = '#3B82F6' // Azul moderno por defecto
 
-const DEFAULT_COLOR = '#3B82F6'
+export const COLOR_PRESETS = [
+  { name: 'Azul', value: '#3B82F6' },
+  { name: 'Rojo', value: '#EF4444' },
+  { name: 'Verde', value: '#10B981' },
+  { name: 'Ámbar', value: '#F59E0B' },
+  { name: 'Púrpura', value: '#8B5CF6' },
+  { name: 'Rosa', value: '#EC4899' },
+  { name: 'Cian', value: '#06B6D4' },
+  { name: 'Gris', value: '#6B7280' },
+  { name: 'Oscuro', value: '#1F2937' },
+  { name: 'Indigo', value: '#6366F1' },
+]
 
-export function ThemeProvider({ children, initialColor }) {
-  const [primaryColor, setPrimaryColor] = useState(initialColor || DEFAULT_COLOR)
+export function ThemeProvider({ children, user }) {
+  const [brandColor, setBrandColor] = useState(DEFAULT_BRAND_COLOR)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!/^#[0-9A-Fa-f]{6}$/.test(primaryColor)) {
-      console.warn('Color inválido, usando default:', primaryColor)
-      document.documentElement.style.setProperty('--primary-color', DEFAULT_COLOR)
-      return
+    async function fetchSchoolTheme() {
+      if (!user) {
+        setBrandColor(DEFAULT_BRAND_COLOR)
+        setLoading(false)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('school_profiles')
+          .select('school_id, schools(brand_color)')
+          .eq('profile_id', user.id)
+          .maybeSingle()
+
+        if (error) throw error
+
+        if (data?.schools?.brand_color) {
+          setBrandColor(data.schools.brand_color)
+        } else {
+          const { data: defaultSchool } = await supabase
+            .from('schools')
+            .select('brand_color')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+          
+          setBrandColor(defaultSchool?.brand_color || DEFAULT_BRAND_COLOR)
+        }
+      } catch (err) {
+        console.error('Error al cargar el tema:', err)
+        setBrandColor(DEFAULT_BRAND_COLOR)
+      } finally {
+        setLoading(false)
+      }
     }
 
-    document.documentElement.style.setProperty('--primary-color', primaryColor)
+    fetchSchoolTheme()
+  }, [user])
 
-    const lighterColor = adjustColor(primaryColor, 40)
-    const veryLightColor = adjustColor(primaryColor, 85)
-    const darkerColor = adjustColor(primaryColor, -20)
-
-    document.documentElement.style.setProperty('--primary-color-light', lighterColor)
-    document.documentElement.style.setProperty('--primary-color-very-light', veryLightColor)
-    document.documentElement.style.setProperty('--primary-color-dark', darkerColor)
-  }, [primaryColor])
+  useEffect(() => {
+    document.documentElement.style.setProperty('--brand-primary', brandColor)
+    document.documentElement.style.setProperty('--brand-subtle', brandColor + '15')
+  }, [brandColor])
 
   return (
-    <ThemeContext.Provider value={{ primaryColor, setPrimaryColor }}>
+    <ThemeContext.Provider value={{ brandColor, setPrimaryColor: setBrandColor, loading }}>
       {children}
     </ThemeContext.Provider>
   )
 }
 
-export function useTheme() {
+export const useTheme = () => {
   const context = useContext(ThemeContext)
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider')
-  }
+  if (!context) throw new Error('useTheme debe usarse dentro de un ThemeProvider')
   return context
 }
-
-function adjustColor(color, amount) {
-  const hex = color.replace('#', '')
-
-  if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
-    console.warn('Color inválido en adjustColor:', color)
-    return DEFAULT_COLOR
-  }
-
-  const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount))
-  const g = Math.max(0, Math.min(255, parseInt(hex.substring(2, 4), 16) + amount))
-  const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount))
-
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-}
-
-export const COLOR_PRESETS = [
-  { name: 'Azul', value: '#3B82F6' },
-  { name: 'Verde', value: '#10B981' },
-  { name: 'Púrpura', value: '#8B5CF6' },
-  { name: 'Rosa', value: '#EC4899' },
-  { name: 'Naranja', value: '#F59E0B' },
-  { name: 'Rojo', value: '#EF4444' },
-  { name: 'Turquesa', value: '#14B8A6' },
-  { name: 'Índigo', value: '#6366F1' },
-  { name: 'Cyan', value: '#06B6D4' },
-  { name: 'Lima', value: '#84CC16' },
-]

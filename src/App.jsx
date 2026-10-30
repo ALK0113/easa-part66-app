@@ -5,6 +5,10 @@ import UpdatePassword from './components/UpdatePassword.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { subscribeToTables } from './lib/supabaseRealtime.js'
 
+// 1. IMPORTAR ThemeProvider
+import { ThemeProvider } from './contexts/ThemeContext.jsx'
+import SchoolManagement from './components/SchoolManagement.jsx'
+
 const StudentList = lazy(() => import('./components/StudentList.jsx'))
 const PracticeList = lazy(() => import('./components/PracticeList.jsx'))
 const TLBList = lazy(() => import('./components/TLBList.jsx'))
@@ -23,7 +27,6 @@ const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
 const ROLES = { ADMIN: 'admin', TEACHER: 'profesor', STUDENT: 'alumno' }
 const ALL_ROLES = Object.values(ROLES)
 
-// Qué roles pueden abrir cada página (la protección real sigue estando en RLS/RPC de Supabase).
 const PAGE_ACCESS = {
   dashboard: ALL_ROLES,
   modules: ALL_ROLES,
@@ -38,11 +41,11 @@ const PAGE_ACCESS = {
   reports: [ROLES.ADMIN, ROLES.TEACHER],
   settings: [ROLES.ADMIN],
   mydata: ALL_ROLES,
+  schools: [ROLES.ADMIN],
 }
 
 const isRecoveryUrl = () => typeof window !== 'undefined' && window.location.hash.includes('type=recovery')
 
-/* Captura errores de carga (por ejemplo, un archivo que no se descarga) para no dejar la pantalla en blanco. */
 class PageErrorBoundary extends Component {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
@@ -71,8 +74,8 @@ function App() {
   const [selectedModuleId, setSelectedModuleId] = useState(null)
   const [selectedTlbId, setSelectedTlbId] = useState(null)
 
-  const userIdRef = useRef(null)        // usuario ya cargado (evita recargar el perfil sin necesidad)
-  const inFlightRef = useRef(null)      // perfil que se está cargando ahora mismo
+  const userIdRef = useRef(null)
+  const inFlightRef = useRef(null)
   const recoveringRef = useRef(isRecoveryUrl())
 
   const loadUserProfile = useCallback(async (authUser) => {
@@ -85,7 +88,6 @@ function App() {
         .eq('id', authUser.id)
         .maybeSingle()
 
-      // Sin perfil válido no se entra: nunca se asume un rol por defecto.
       if (error || !profile?.role) {
         setProfileError(error
           ? 'No se pudo cargar tu perfil. Inténtalo de nuevo en unos minutos.'
@@ -132,11 +134,9 @@ function App() {
         return
       }
       if (userIdRef.current === session.user.id && event !== 'USER_UPDATED') return
-      // No se hacen llamadas a Supabase dentro del callback (puede bloquearse): se difiere.
       setTimeout(() => { if (active) loadUserProfile(session.user) }, 0)
     })
 
-    // Respaldo para versiones de supabase-js que no emiten INITIAL_SESSION.
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return
       if (session?.user) loadUserProfile(session.user)
@@ -195,7 +195,6 @@ function App() {
     return <Login onLoginSuccess={handleLoginSuccess} />
   }
 
-  // Si el rol no tiene acceso a la página activa, se vuelve al dashboard.
   const currentPage = PAGE_ACCESS[activePage]?.includes(user.role) ? activePage : 'dashboard'
 
   const renderPage = () => {
@@ -212,6 +211,7 @@ function App() {
       case 'reports': return <ReportsPage />
       case 'settings': return <SettingsPage user={user} />
       case 'mydata': return <ProfileSettings user={user} />
+      case 'schools': return <SchoolManagement user={user} />
       default: return <DashboardHome user={user} setActivePage={setActivePage} />
     }
   }
@@ -230,71 +230,71 @@ function App() {
     reports: 'Informes globales',
     settings: 'Configuración',
     mydata: 'Mis datos',
+    schools: 'Gestión de Escuelas',
   }
 
+  // 2. ENVOLVER TODO EL RETORNO CON ThemeProvider
   return (
-    <div className="min-h-screen bg-[#f4f6f9] text-[#1a1a1a]">
-      <Sidebar
-        activePage={currentPage}
-        setActivePage={(page) => {
-          setActivePage(page)
-          setSidebarOpen(false)
-        }}
-        user={user}
-        onLogout={handleLogout}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      {sidebarOpen && (
-        <button
-          type="button"
-          aria-label="Cerrar menú"
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+    <ThemeProvider user={user}>
+      <div className="min-h-screen bg-[#f4f6f9] text-[#1a1a1a]">
+        <Sidebar
+          activePage={currentPage}
+          setActivePage={(page) => {
+            setActivePage(page)
+            setSidebarOpen(false)
+          }}
+          user={user}
+          onLogout={handleLogout}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
-      )}
-      <main className="min-h-screen md:ml-[280px]">
-        <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-5 shadow-sm md:px-8">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              aria-label="Abrir menú"
-              onClick={() => setSidebarOpen(true)}
-              className="rounded-md border border-[#e5e7eb] px-3 py-2 text-lg text-[#0a2540] md:hidden"
-            >
-              ☰
-            </button>
-            <h1 className="text-lg font-bold text-[#0a2540] md:text-xl">{pageTitles[currentPage] || 'EASA Part 66'}</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1e88e5] font-semibold text-white">
-              {user.name?.[0]?.toUpperCase() || 'U'}
+        {sidebarOpen && (
+          <button
+            type="button"
+            aria-label="Cerrar menú"
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          />
+        )}
+        <main className="min-h-screen md:ml-[280px]">
+          <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-5 shadow-sm md:px-8">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="Abrir menú"
+                onClick={() => setSidebarOpen(true)}
+                className="rounded-md border border-[#e5e7eb] px-3 py-2 text-lg text-[#0a2540] md:hidden"
+              >
+                ☰
+              </button>
+              <h1 className="text-lg font-bold text-[#0a2540] md:text-xl">{pageTitles[currentPage] || 'EASA Part 66'}</h1>
             </div>
-            <div className="hidden sm:block">
-              <div className="max-w-[180px] truncate text-sm font-semibold text-[#0a2540]">{user.name}</div>
-              <div className="text-xs capitalize text-[#6b7280]">{user.role}</div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1e88e5] font-semibold text-white">
+                {user.name?.[0]?.toUpperCase() || 'U'}
+              </div>
+              <div className="hidden sm:block">
+                <div className="max-w-[180px] truncate text-sm font-semibold text-[#0a2540]">{user.name}</div>
+                <div className="text-xs capitalize text-[#6b7280]">{user.role}</div>
+              </div>
             </div>
+          </header>
+          <div className="p-4 md:p-7">
+            <PageErrorBoundary resetKey={currentPage}>
+              <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-[#6b7280]">Cargando sección…</div>}>
+                {renderPage()}
+              </Suspense>
+            </PageErrorBoundary>
           </div>
-        </header>
-        <div className="p-4 md:p-7">
-          <PageErrorBoundary resetKey={currentPage}>
-            <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-[#6b7280]">Cargando sección…</div>}>
-              {renderPage()}
-            </Suspense>
-          </PageErrorBoundary>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    </ThemeProvider>
   )
 }
 
-/* ------------------------------------------------------------------ */
-/* Dashboard                                                           */
-/* ------------------------------------------------------------------ */
-
+// ... (El resto del código de DashboardHome se mantiene igual que en tu archivo anterior) ...
 const PAGE_SIZE = 1000
 
-// IDs distintos de alumnos matriculados en unos módulos (paginado: Supabase limita a 1000 filas).
 async function fetchEnrolledStudentIds(moduleIds) {
   const ids = new Set()
   let from = 0
@@ -374,7 +374,6 @@ function DashboardHome({ user, setActivePage }) {
       }
     }
 
-    // Varios cambios seguidos en la base de datos provocan una sola recarga.
     const scheduleFetch = () => {
       clearTimeout(timer)
       timer = setTimeout(fetchStats, 400)
@@ -385,7 +384,6 @@ function DashboardHome({ user, setActivePage }) {
     return () => { cancelled = true; clearTimeout(timer); unsubscribe() }
   }, [user.id, user.role])
 
-  // 4 tarjetas: [clave de estadística, título, icono, página a la que lleva]
   const cards = user.role === ROLES.STUDENT
     ? [['modules', 'Mis módulos', '📚', 'modules'], ['tlbs', 'Mi Task Log Book', '📋', 'tlb'], ['videos', 'Vídeos', '🎬', 'videos'], ['practices', 'Prácticas', '🔧', 'practices']]
     : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', '👥', 'students'], ['modules', 'Módulos EASA', '📚', 'modules'], ['tlbs', 'Task Log Books', '📋', 'tlb'], ['videos', 'Vídeos formativos', '🎬', 'videos']]

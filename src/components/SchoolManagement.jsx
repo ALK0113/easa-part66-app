@@ -1,11 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { supabase } from '../lib/supabase'
-import { getSupabaseErrorMessage } from '../lib/supabaseErrors'
-import { useTheme, COLOR_PRESETS } from '../contexts/ThemeContext'
+import { supabase } from '../lib/supabase.js'
+import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
+import { useTheme, COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../contexts/ThemeContext.jsx'
 
 const ITEMS_PER_PAGE = 6
 const DEBOUNCE_DELAY = 300
-const DEFAULT_BRAND_COLOR = '#3B82F6'
 
 const inputClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all'
 const buttonPrimary = 'rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer'
@@ -15,11 +14,11 @@ function parseSupabaseError(err) {
   const code = err?.code
   const detail = err?.details
   switch (code) {
-    case 'P0001': return { message: 'No tienes permisos' }
+    case 'P0001': return { message: 'No tienes permisos para esta acción' }
     case 'P0002': return { message: detail === 'school_not_found' ? 'Escuela no encontrada' : 'Recurso no encontrado' }
-    case '22023': return { message: detail === 'name_required' ? 'Nombre obligatorio' : detail === 'color_must_be_hex' ? 'Color inválido (formato #RRGGBB)' : 'Datos inválidos', field: detail === 'name_required' ? 'name' : undefined }
-    case '23505': return { message: detail === 'name_already_exists' ? 'Nombre ya existe' : 'Conflicto', field: detail === 'name_already_exists' ? 'name' : undefined }
-    default: return { message: getSupabaseErrorMessage(err) }
+    case '22023': return { message: detail === 'name_required' ? 'El nombre es obligatorio' : detail === 'color_must_be_hex' ? 'Color inválido (formato #RRGGBB)' : 'Datos inválidos', field: detail === 'name_required' ? 'name' : undefined }
+    case '23505': return { message: detail === 'name_already_exists' ? 'Ya existe una escuela con este nombre' : 'Conflicto de datos', field: detail === 'name_already_exists' ? 'name' : undefined }
+    default: return { message: getSupabaseErrorMessage(err) || 'Error desconocido' }
   }
 }
 
@@ -66,10 +65,7 @@ export default function SchoolManagement({ user }) {
   const [loading, setLoading] = useState(true)
   const [toasts, setToasts] = useState([])
 
-  const [activeSchoolId, setActiveSchoolId] = useState(() => {
-    return localStorage.getItem('activeSchoolId')
-  })
-
+  const [activeSchoolId, setActiveSchoolId] = useState(() => localStorage.getItem('activeSchoolId'))
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -84,8 +80,10 @@ export default function SchoolManagement({ user }) {
 
   const emptyForm = { name: '', address: '', city: '', phone: '', email: '', brand_color: DEFAULT_BRAND_COLOR }
   const [createForm, setCreateForm] = useState(emptyForm)
-  const [editForm, setEditForm] = useState({ ...emptyForm, id: '' })
+  // Nota: brand_color se gestiona en su propio modal, no en el formulario de edición general
+  const [editForm, setEditForm] = useState({ id: '', name: '', address: '', city: '', phone: '', email: '' })
   const [assignForm, setAssignForm] = useState({ profileId: '' })
+  
   const [selectedColor, setSelectedColor] = useState(DEFAULT_BRAND_COLOR)
   const [customColor, setCustomColor] = useState('')
   const [colorError, setColorError] = useState('')
@@ -119,11 +117,8 @@ export default function SchoolManagement({ user }) {
 
   const handleSetActiveSchool = useCallback((id) => {
     setActiveSchoolId(id)
-    if (id) {
-      localStorage.setItem('activeSchoolId', id)
-    } else {
-      localStorage.removeItem('activeSchoolId')
-    }
+    if (id) localStorage.setItem('activeSchoolId', id)
+    else localStorage.removeItem('activeSchoolId')
   }, [])
 
   useEffect(() => {
@@ -182,7 +177,7 @@ export default function SchoolManagement({ user }) {
       if (error) throw error
       setUnassignedSupervisors(data || [])
     } catch (err) {
-      console.error('Error:', err)
+      console.error('Error cargando supervisores:', err)
     }
   }, [])
 
@@ -224,7 +219,6 @@ export default function SchoolManagement({ user }) {
       city: school.school_city || '',
       phone: school.school_phone || '',
       email: school.school_email || '',
-      brand_color: school.brand_color || DEFAULT_BRAND_COLOR,
     })
     setEditErrors({})
     setEditModalOpen(true)
@@ -272,8 +266,9 @@ export default function SchoolManagement({ user }) {
       })
       if (error) throw error
 
+      // Actualizar color si es diferente al por defecto
       if (createForm.brand_color && createForm.brand_color !== DEFAULT_BRAND_COLOR && data) {
-        await supabase.rpc('admin_update_school_brand_color', {
+        await supabase.rpc('admin_update_school_brand', {
           p_school_id: data.school_id,
           p_brand_color: createForm.brand_color,
         })
@@ -321,20 +316,20 @@ export default function SchoolManagement({ user }) {
 
   async function handleSaveColor() {
     if (!colorEditingSchool) return
-
     const color = customColor.trim() || selectedColor
+    
     if (!isValidHexColor(color)) {
       addToast('error', 'Color inválido. Usa formato #RRGGBB')
       return
     }
 
-    if (!window.confirm(`¿Cambiar el color de "${colorEditingSchool.school_name}"?\n\nEsto afectará a todos los usuarios del centro.`)) {
+    if (!window.confirm(`¿Cambiar el color de "${colorEditingSchool.school_name}"?\n\nEsto afectará a la interfaz de todos los usuarios de este centro.`)) {
       return
     }
 
     setSavingColor(true)
     try {
-      await supabase.rpc('admin_update_school_brand_color', {
+      await supabase.rpc('admin_update_school_brand', {
         p_school_id: colorEditingSchool.school_id,
         p_brand_color: color,
       })
@@ -357,7 +352,7 @@ export default function SchoolManagement({ user }) {
         p_school_id: selectedSchool.school_id,
         p_profile_id: assignForm.profileId,
       })
-      addToast('success', 'Supervisor asignado')
+      addToast('success', 'Supervisor asignado correctamente')
       setAssignForm({ profileId: '' })
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
@@ -373,14 +368,14 @@ export default function SchoolManagement({ user }) {
 
   async function handleRemoveSupervisor(supervisor) {
     if (!selectedSchool) return
-    if (!window.confirm(`¿Quitar a ${supervisor.full_name}?`)) return
+    if (!window.confirm(`¿Quitar a ${supervisor.full_name} como supervisor? Su rol cambiará a profesor.`)) return
     setRemoving(supervisor.profile_id)
     try {
       await supabase.rpc('admin_remove_supervisor', {
         p_school_id: selectedSchool.school_id,
         p_profile_id: supervisor.profile_id,
       })
-      addToast('success', 'Supervisor quitado')
+      addToast('success', 'Supervisor retirado correctamente')
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
         loadUnassignedSupervisors(),
@@ -397,7 +392,7 @@ export default function SchoolManagement({ user }) {
     return (
       <div className="p-8 text-center">
         <div className="text-5xl mb-4">🔒</div>
-        <p className="text-lg font-semibold text-red-500">Solo administradores pueden gestionar escuelas</p>
+        <p className="text-lg font-semibold text-red-500">Solo los administradores pueden gestionar escuelas</p>
       </div>
     )
   }
@@ -407,14 +402,11 @@ export default function SchoolManagement({ user }) {
       {/* Toasts */}
       <div className="fixed top-4 right-4 z-[100] space-y-2 max-w-sm">
         {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`rounded-lg p-4 shadow-lg border animate-[slideIn_0.3s_ease-out] ${
-              toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-              toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-              'bg-blue-50 border-blue-200 text-blue-800'
-            }`}
-          >
+          <div key={toast.id} className={`rounded-lg p-4 shadow-lg border animate-[slideIn_0.3s_ease-out] ${
+            toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+            toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+            'bg-blue-50 border-blue-200 text-blue-800'
+          }`}>
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-medium">{toast.message}</p>
               <button type="button" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} className="opacity-60 hover:opacity-100 cursor-pointer text-lg leading-none">×</button>
@@ -442,10 +434,10 @@ export default function SchoolManagement({ user }) {
         </div>
       </div>
 
-      {/* Selector de Centro Activo */}
+      {/* Selector de Centro Activo (Simulación) */}
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
         <label className="block text-sm font-semibold text-gray-700 mb-2">
-          🎨 Simular vista de centro (color del centro se aplica a la UI)
+          🎨 Simular vista de centro (el color del centro se aplica a la UI)
         </label>
         <select
           value={activeSchoolId || ''}
@@ -461,7 +453,7 @@ export default function SchoolManagement({ user }) {
         </select>
         {activeSchoolId && (
           <p className="mt-2 text-xs text-gray-500">
-            ✨ Los títulos y acentos ahora usan el color de este centro
+            ✨ Los títulos y acentos de la aplicación ahora usan el color de este centro.
           </p>
         )}
       </div>
@@ -506,20 +498,20 @@ export default function SchoolManagement({ user }) {
         )}
       </div>
 
-      {/* Contenido */}
+      {/* Contenido Principal */}
       {loading ? (
         <div className="py-16 text-center">
           <div className="inline-block h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"></div>
-          <p className="mt-4 text-gray-500">Cargando...</p>
+          <p className="mt-4 text-gray-500">Cargando escuelas...</p>
         </div>
       ) : filteredAndSortedSchools.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center">
           <div className="text-5xl mb-4">🏫</div>
           <p className="text-lg font-semibold text-gray-700">
-            {debouncedSearch ? 'Sin resultados' : 'No hay escuelas'}
+            {debouncedSearch ? 'Sin resultados' : 'No hay escuelas registradas'}
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            {debouncedSearch ? 'Prueba con otros términos' : 'Clic en "Nueva Escuela"'}
+            {debouncedSearch ? 'Prueba con otros términos de búsqueda' : 'Haz clic en "Nueva Escuela" para comenzar'}
           </p>
         </div>
       ) : (
@@ -546,43 +538,16 @@ export default function SchoolManagement({ user }) {
                       <h3 className="text-lg font-bold text-gray-800 truncate">{school.school_name}</h3>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => openColorModal(school)}
-                          className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer"
-                          title="Cambiar color"
-                        >
-                          🎨
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(school)}
-                        className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer"
-                        title="Editar"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openAssignModal(school)}
-                        className="rounded p-1.5 hover:bg-blue-50 transition-colors cursor-pointer"
-                        title="Supervisores"
-                      >
-                        👥
-                      </button>
+                      <button type="button" onClick={() => openColorModal(school)} className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer" title="Cambiar color">🎨</button>
+                      <button type="button" onClick={() => openEditModal(school)} className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer" title="Editar">✏️</button>
+                      <button type="button" onClick={() => openAssignModal(school)} className="rounded p-1.5 hover:bg-blue-50 transition-colors cursor-pointer" title="Supervisores">👥</button>
                     </div>
                   </div>
 
                   <div className="space-y-1 text-sm text-gray-500">
                     {school.school_city && <p>📍 {school.school_city}</p>}
-                    {school.school_email && (
-                      <p>📧 <a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>
-                    )}
-                    {school.school_phone && (
-                      <p>📞 <a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>
-                    )}
+                    {school.school_email && <p>📧 <a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>}
+                    {school.school_phone && <p>📞 <a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>}
                   </div>
 
                   <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
@@ -606,36 +571,18 @@ export default function SchoolManagement({ user }) {
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-4">
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className={buttonSecondary + ' disabled:opacity-50'}
-              >
-                ← Anterior
-              </button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={buttonSecondary + ' disabled:opacity-50'}>← Anterior</button>
               <div className="flex gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                   <button
-                    type="button"
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
+                    type="button" key={page} onClick={() => setCurrentPage(page)}
                     className={`h-9 w-9 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                       page === currentPage ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
                     }`}
-                  >
-                    {page}
-                  </button>
+                  >{page}</button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className={buttonSecondary + ' disabled:opacity-50'}
-              >
-                Siguiente →
-              </button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={buttonSecondary + ' disabled:opacity-50'}>Siguiente →</button>
             </div>
           )}
         </>
@@ -669,9 +616,7 @@ export default function SchoolManagement({ user }) {
             />
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setCreateModalOpen(false)} disabled={creating}>Cancelar</button>
-              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={creating}>
-                {creating ? 'Creando...' : 'Crear'}
-              </button>
+              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={creating}>{creating ? 'Creando...' : 'Crear'}</button>
             </div>
           </form>
         </Modal>
@@ -700,9 +645,7 @@ export default function SchoolManagement({ user }) {
             </FormField>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setEditModalOpen(false)} disabled={editing}>Cancelar</button>
-              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={editing}>
-                {editing ? 'Guardando...' : 'Guardar'}
-              </button>
+              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={editing}>{editing ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         </Modal>
@@ -712,37 +655,24 @@ export default function SchoolManagement({ user }) {
       {colorModalOpen && colorEditingSchool && (
         <Modal onClose={() => setColorModalOpen(false)} title={`Color de marca: ${colorEditingSchool.school_name}`}>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Este color se aplicará sutilmente en la interfaz para todos los usuarios de este centro.
-            </p>
-
+            <p className="text-sm text-gray-600">Este color se aplicará sutilmente en la interfaz para todos los usuarios de este centro.</p>
             <div className="rounded-lg border border-gray-200 p-4">
               <p className="text-xs text-gray-500 mb-2">Vista previa:</p>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold" style={{ color: customColor || selectedColor }}>
-                  Título del centro
-                </h3>
-                <p className="text-sm" style={{ color: customColor || selectedColor }}>
-                  Enlace de ejemplo →
-                </p>
+                <h3 className="text-xl font-bold" style={{ color: customColor || selectedColor }}>Título del centro</h3>
+                <p className="text-sm" style={{ color: customColor || selectedColor }}>Enlace de ejemplo →</p>
                 <div className="flex gap-2">
-                  <div className="rounded px-3 py-1 text-white text-sm" style={{ backgroundColor: customColor || selectedColor }}>
-                    Botón
-                  </div>
-                  <div className="rounded border px-3 py-1 text-sm" style={{ borderColor: customColor || selectedColor, color: customColor || selectedColor }}>
-                    Botón outline
-                  </div>
+                  <div className="rounded px-3 py-1 text-white text-sm" style={{ backgroundColor: customColor || selectedColor }}>Botón</div>
+                  <div className="rounded border px-3 py-1 text-sm" style={{ borderColor: customColor || selectedColor, color: customColor || selectedColor }}>Botón outline</div>
                 </div>
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Colores sugeridos</label>
               <div className="grid grid-cols-5 gap-2">
                 {COLOR_PRESETS.map(preset => (
                   <button
-                    type="button"
-                    key={preset.value}
+                    type="button" key={preset.value}
                     onClick={() => { setSelectedColor(preset.value); setCustomColor(''); setColorError('') }}
                     className={`h-10 rounded-lg border-2 transition-all cursor-pointer ${
                       selectedColor === preset.value && !customColor ? 'border-gray-800 scale-110' : 'border-gray-200 hover:border-gray-400'
@@ -753,40 +683,17 @@ export default function SchoolManagement({ user }) {
                 ))}
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Color personalizado</label>
               <div className="flex gap-2">
-                <input
-                  type="color"
-                  value={customColor || selectedColor}
-                  onChange={(e) => handleColorChange(e.target.value)}
-                  className="h-10 w-14 rounded border border-gray-300 cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={customColor || selectedColor}
-                  onChange={(e) => handleColorChange(e.target.value)}
-                  placeholder="#3B82F6"
-                  className={inputClass}
-                  maxLength={7}
-                />
+                <input type="color" value={customColor || selectedColor} onChange={(e) => handleColorChange(e.target.value)} className="h-10 w-14 rounded border border-gray-300 cursor-pointer" />
+                <input type="text" value={customColor || selectedColor} onChange={(e) => handleColorChange(e.target.value)} placeholder="#3B82F6" className={inputClass} maxLength={7} />
               </div>
-              {colorError && (
-                <p className="mt-1 text-xs text-red-600">{colorError}</p>
-              )}
+              {colorError && <p className="mt-1 text-xs text-red-600">{colorError}</p>}
             </div>
-
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setColorModalOpen(false)}>Cancelar</button>
-              <button
-                type="button"
-                className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`}
-                onClick={handleSaveColor}
-                disabled={savingColor || !!colorError}
-              >
-                {savingColor ? 'Guardando...' : 'Guardar color'}
-              </button>
+              <button type="button" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} onClick={handleSaveColor} disabled={savingColor || !!colorError}>{savingColor ? 'Guardando...' : 'Guardar color'}</button>
             </div>
           </div>
         </Modal>
@@ -799,7 +706,7 @@ export default function SchoolManagement({ user }) {
             <div>
               <h4 className="mb-2 text-sm font-semibold text-gray-700">Asignados ({schoolSupervisors.length})</h4>
               {schoolSupervisors.length === 0 ? (
-                <p className="text-sm text-gray-500 bg-gray-50 p-3 rounded">Sin supervisores</p>
+                <p className="text-sm text-gray-500 bg-gray-50 p-3 rounded">Sin supervisores asignados</p>
               ) : (
                 <div className="space-y-2">
                   {schoolSupervisors.map(sup => (
@@ -809,8 +716,7 @@ export default function SchoolManagement({ user }) {
                         <div className="text-xs text-gray-500 truncate">{sup.email}</div>
                       </div>
                       <button
-                        type="button"
-                        onClick={() => handleRemoveSupervisor(sup)}
+                        type="button" onClick={() => handleRemoveSupervisor(sup)}
                         disabled={removing !== null}
                         className="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 cursor-pointer disabled:opacity-50"
                       >
@@ -824,15 +730,10 @@ export default function SchoolManagement({ user }) {
             <div className="border-t border-gray-200 pt-4">
               <h4 className="mb-2 text-sm font-semibold text-gray-700">Asignar nuevo</h4>
               {unassignedSupervisors.length === 0 ? (
-                <p className="text-sm text-gray-500">No hay supervisores disponibles</p>
+                <p className="text-sm text-gray-500">No hay supervisores disponibles sin asignar</p>
               ) : (
                 <form className="flex gap-2" onSubmit={handleAssign}>
-                  <select
-                    className={inputClass}
-                    value={assignForm.profileId}
-                    onChange={e => setAssignForm({ profileId: e.target.value })}
-                    required
-                  >
+                  <select className={inputClass} value={assignForm.profileId} onChange={e => setAssignForm({ profileId: e.target.value })} required>
                     <option value="">Seleccionar...</option>
                     {unassignedSupervisors.map(s => (
                       <option key={s.profile_id} value={s.profile_id}>{s.full_name} ({s.email})</option>
@@ -851,7 +752,18 @@ export default function SchoolManagement({ user }) {
   )
 }
 
+// ------------------------------------------------------------------
+// Componentes Auxiliares
+// ------------------------------------------------------------------
+
 function Modal({ children, onClose, title, size = 'md' }) {
+  // Cerrar con tecla Escape
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className={`w-full ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto`}>
@@ -883,27 +795,13 @@ function ColorPickerField({ label, value, onChange }) {
       <label className="mb-2 block text-sm font-semibold text-gray-700">{label}</label>
       <div className="space-y-2">
         <div className="flex gap-2">
-          <input
-            type="color"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-10 w-14 rounded border border-gray-300 cursor-pointer"
-          />
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={inputClass}
-            maxLength={7}
-            placeholder="#3B82F6"
-          />
+          <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-14 rounded border border-gray-300 cursor-pointer" />
+          <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} maxLength={7} placeholder="#3B82F6" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {COLOR_PRESETS.map(preset => (
             <button
-              type="button"
-              key={preset.value}
-              onClick={() => onChange(preset.value)}
+              type="button" key={preset.value} onClick={() => onChange(preset.value)}
               className={`h-7 w-7 rounded-full border-2 transition-all cursor-pointer ${
                 value === preset.value ? 'border-gray-800 scale-110' : 'border-gray-200 hover:border-gray-400'
               }`}

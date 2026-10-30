@@ -1,16 +1,17 @@
 const navigation = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'profesor', 'alumno'] },
+  { id: 'schools', label: 'Escuelas', icon: '🏫', roles: ['admin'] }, 
   { id: 'modules', label: 'Módulos', icon: '📚', roles: ['admin', 'profesor', 'alumno'] },
   { id: 'students', label: 'Alumnos', icon: '👥', roles: ['admin', 'profesor'] },
   { id: 'practices', label: 'Prácticas', icon: '🔧', roles: ['admin', 'profesor'] },
   { id: 'tlb', label: 'Task Log Book', icon: '📋', roles: ['admin', 'profesor', 'alumno'] },
   { id: 'videos', label: 'Vídeos', icon: '🎬', roles: ['admin', 'profesor', 'alumno'] },
   { id: 'assignments', label: 'Asignaciones', icon: '🔗', roles: ['admin'] },
-  { id: 'teachers', label: 'Gestión de perfiles', icon: '👥', roles: ['admin'] }, // 🆕 Renombrado
+  { id: 'teachers', label: 'Gestión de perfiles', icon: '👥', roles: ['admin'] },  
   { id: 'aircraft', label: 'Aviones', icon: '✈️', roles: ['admin'] },
   { id: 'reports', label: 'Informes', icon: '📈', roles: ['admin'] },
   { id: 'settings', label: 'Configuración', icon: '⚙️', roles: ['admin'] },
-  { id: 'mydata', label: 'Mis datos', icon: '👤', roles: ['admin', 'profesor', 'alumno'] }, // 🆕 Todos los roles
+  { id: 'mydata', label: 'Mis datos', icon: '👤', roles: ['admin', 'profesor', 'alumno'] },
 ]
 
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
@@ -71,7 +72,7 @@ export default function Sidebar({ activePage, setActivePage, user, onLogout, isO
           onClick={onLogout}
           className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-blue-100/85 transition-colors hover:bg-[#c62828] hover:text-white"
         >
-          <span aria-hidden="true" className="w-5 text-center"></span>
+          <span aria-hidden="true" className="w-5 text-center">🚪</span>
           Cerrar sesión
         </button>
       </div>
