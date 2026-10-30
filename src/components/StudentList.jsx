@@ -7,7 +7,6 @@ export default function StudentList({ user, schoolId }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // 1. PREVENCIÓN DE RACE CONDITIONS: Flag para saber si el componente sigue montado
     let isMounted = true
 
     async function loadStudents() {
@@ -15,20 +14,18 @@ export default function StudentList({ user, schoolId }) {
         setLoading(true)
         setError('')
         
-        // 2. RENDIMIENTO: Seleccionar solo las columnas necesarias (evita over-fetching)
+        // CORREGIDO: Eliminada la columna 'email' que no existe en la tabla students
         let query = supabase
           .from('students')
-          .select('id, name, student_number, class_name, group_name, email, school_id')
+          .select('id, name, student_number, class_name, group_name, promo, school_id')
           .order('name', { ascending: true })
         
-        // Filtrar por escuela si se proporciona el ID
         if (schoolId) {
           query = query.eq('school_id', schoolId)
         }
         
         const { data, error: supabaseError } = await query
         
-        // 3. SEGURIDAD: Verificar isMounted antes de actualizar el estado
         if (!isMounted) return
 
         if (supabaseError) throw supabaseError
@@ -46,13 +43,11 @@ export default function StudentList({ user, schoolId }) {
 
     loadStudents()
 
-    // Función de limpieza (Cleanup) al desmontar el componente o cambiar schoolId
     return () => {
       isMounted = false
     }
-  }, [schoolId]) // Dependencia correcta
+  }, [schoolId])
 
-  // 4. UI/UX: Estados de carga y error claros
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-gray-500">
@@ -87,7 +82,6 @@ export default function StudentList({ user, schoolId }) {
 
       {students.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center">
-          {/* 5. CORRECCIÓN UI: Añadido el emoji que faltaba */}
           <div className="text-5xl mb-4">👥</div>
           <p className="text-lg font-semibold text-gray-700">No hay alumnos registrados</p>
           <p className="text-sm text-gray-500 mt-2">
@@ -97,7 +91,6 @@ export default function StudentList({ user, schoolId }) {
           </p>
         </div>
       ) : (
-        // 6. ACCESIBILIDAD: Añadido aria-label para lectores de pantalla
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
           <table className="w-full text-left text-sm" aria-label="Tabla de alumnos">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -106,6 +99,7 @@ export default function StudentList({ user, schoolId }) {
                 <th className="p-4 font-semibold text-gray-700">Nº Alumno</th>
                 <th className="p-4 font-semibold text-gray-700">Clase</th>
                 <th className="p-4 font-semibold text-gray-700">Grupo</th>
+                <th className="p-4 font-semibold text-gray-700">Promo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -117,6 +111,7 @@ export default function StudentList({ user, schoolId }) {
                   </td>
                   <td className="p-4 text-gray-600">{student.class_name || '—'}</td>
                   <td className="p-4 text-gray-600">{student.group_name || '—'}</td>
+                  <td className="p-4 text-gray-600">{student.promo || '—'}</td>
                 </tr>
               ))}
             </tbody>
