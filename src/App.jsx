@@ -178,7 +178,7 @@ function App() {
 
   const pageTitles = {
     dashboard: 'Dashboard',
-    modules: user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos EASA Part 147',
+    modules: user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66',
     'module-detail': selectedModuleId ? `Detalle ${selectedModuleId}` : 'Detalle del módulo',
     students: user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Gestión de alumnos',
     practices: 'Prácticas',
@@ -226,7 +226,7 @@ function App() {
               >
                 ☰
               </button>
-              <h1 className="text-lg font-bold text-[#0a2540] md:text-xl">{pageTitles[currentPage] || 'EASA Part 147'}</h1>
+              <h1 className="text-lg font-bold text-[#0a2540] md:text-xl">{pageTitles[currentPage] || 'EASA Part-147'}</h1>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1e88e5] font-semibold text-white">
@@ -349,7 +349,7 @@ function DashboardHome({ user, setActivePage }) {
   return (
     <div className="space-y-6">
       <section className="rounded-lg bg-[#0a2540] p-6 text-white md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">EASA Part 147 · Gestión académica</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">EASA Part-147 · Gestión académica</p>
         <h2 className="mt-3 text-2xl font-bold md:text-3xl">Bienvenido, {user.name}</h2>
         <p className="mt-2 text-sm text-blue-100">Resumen de actividad para tu perfil de {user.role}.</p>
       </section>

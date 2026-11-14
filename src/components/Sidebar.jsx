@@ -28,7 +28,7 @@ export default function Sidebar({ activePage, setActivePage, user, onLogout, isO
           <span aria-hidden="true" className="text-2xl">✈️</span>
           <div>
             <h2 className="text-base font-bold">AviaTrack</h2>
-            <p className="mt-1 text-[11px] text-blue-100/70">EASA Part 147 · Gestión 26-27</p>
+            <p className="mt-1 text-[11px] text-blue-100/70">EASA Part-147 · Gestión 26-27</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar menú" className="ml-auto rounded p-2 text-white/70 hover:bg-white/10 md:hidden">×</button>
         </div>

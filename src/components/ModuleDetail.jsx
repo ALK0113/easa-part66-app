@@ -154,7 +154,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   return <div className="space-y-5">
     <button className="text-sm font-semibold text-[#1565c0]" onClick={onBack}>← Volver a módulos</button>
     <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white">
-      <p className="text-xs font-semibold uppercase text-blue-100">Módulo EASA Part 147</p><h2 className="mt-2 text-2xl font-bold">{module.id} · {module.name}</h2><p className="mt-1 text-sm text-blue-100">{module.description || 'Sin descripción'}</p>
+      <p className="text-xs font-semibold uppercase text-blue-100">Módulo Part-66</p><h2 className="mt-2 text-2xl font-bold">{module.id} · {module.name}</h2><p className="mt-1 text-sm text-blue-100">{module.description || 'Sin descripción'}</p>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="rounded bg-white/15 p-3"><p className="text-[10px] uppercase text-blue-100">{label}</p><p className="mt-1 text-lg font-bold">{value}</p></div>)}</div>
     </section>
     <nav aria-label="Contenido del módulo" className="flex flex-wrap gap-2 border-b border-[#d1d5db]">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className={`border-b-2 px-3 py-2 text-sm font-semibold ${section === id ? 'border-[#1e88e5] text-[#0a2540]' : 'border-transparent text-[#6b7280]'}`} onClick={() => { setSection(id); setSelectedPractice(null) }}>{label}</button>)}</nav>

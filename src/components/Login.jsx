@@ -129,7 +129,7 @@ export default function Login({ onLoginSuccess }) {
         <div className="login-brand">
           <span aria-hidden="true" className="login-mark">✈</span>
           <p className="login-kicker">Formación y mantenimiento aeronáutico</p>
-          <h1>EASA Part 147</h1>
+          <h1>EASA Part-147</h1>
           <p className="login-subtitle">Gestión académica por módulos</p>
         </div>
 

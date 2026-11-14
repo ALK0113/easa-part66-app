@@ -217,7 +217,7 @@ export function ModulesPage({ user, onOpenModule }) {
     <div className="space-y-5">
       <section className={cardClass}>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-bold text-[#0a2540]">{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos EASA Part 147'}</h2><p className="mt-1 text-sm text-[#6b7280]">{visibleModules.length} módulos · datos de Supabase</p></div>
+          <div><h2 className="text-lg font-bold text-[#0a2540]">{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66'}</h2><p className="mt-1 text-sm text-[#6b7280]">{visibleModules.length} módulos · datos de Supabase</p></div>
           {canEdit && <button className={primaryButton} onClick={() => openForm()}>+ Nuevo módulo</button>}
         </div>
         <ErrorOrLoading loading={loading} error={error} />
@@ -882,6 +882,6 @@ export function SettingsPage({ user }) {
       <div className="mt-5 flex flex-wrap gap-3"><button className={primaryButton} disabled={busy} onClick={exportBackup}>{busy ? 'Procesando…' : 'Exportar backup'}</button><label className={`${secondaryButton} cursor-pointer`}>Importar backup<input className="sr-only" type="file" accept="application/json,.json" disabled={busy} onChange={importBackup} /></label><button className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50" disabled={busy} onClick={resetData}>Resetear datos académicos</button></div>
       {notice && <div className="mt-4"><NoticeBar notice={notice} /></div>}
     </section>
-    <section className={cardClass}><h2 className="text-lg font-bold text-[#0a2540]">Datos y acceso</h2><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#6b7280]">Estándar</dt><dd className="font-semibold">EASA Part 147</dd></div><div><dt className="text-[#6b7280]">Persistencia</dt><dd className="font-semibold">Supabase</dd></div><div><dt className="text-[#6b7280]">Cuenta</dt><dd className="font-semibold">{user.email}</dd></div><div><dt className="text-[#6b7280]">Rol</dt><dd className="font-semibold capitalize">{user.role}</dd></div></dl></section>
+    <section className={cardClass}><h2 className="text-lg font-bold text-[#0a2540]">Datos y acceso</h2><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#6b7280]">Estándar</dt><dd className="font-semibold">EASA Part-147 · Módulos Part-66</dd></div><div><dt className="text-[#6b7280]">Persistencia</dt><dd className="font-semibold">Supabase</dd></div><div><dt className="text-[#6b7280]">Cuenta</dt><dd className="font-semibold">{user.email}</dd></div><div><dt className="text-[#6b7280]">Rol</dt><dd className="font-semibold capitalize">{user.role}</dd></div></dl></section>
   </div>
 }
