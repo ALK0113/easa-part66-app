@@ -241,8 +241,8 @@ export function ModulesPage({ user, onOpenModule }) {
                   <p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p>
                 </button>
                 <div className="flex items-center gap-4 border-t border-line px-5 py-3 text-xs text-muted">
-                  <span><strong className="font-semibold text-ink-soft">{count}</strong> prácticas</span>
-                  {user.role !== ROLES.STUDENT && <span><strong className="font-semibold text-ink-soft">{studentCount}</strong> alumnos</span>}
+                  <span><strong className="font-semibold text-ink-soft">{count}</strong> {count === 1 ? 'práctica' : 'prácticas'}</span>
+                  {user.role !== ROLES.STUDENT && <span><strong className="font-semibold text-ink-soft">{studentCount}</strong> {studentCount === 1 ? 'alumno' : 'alumnos'}</span>}
                   {canEdit ? (
                     <span className="ml-auto flex gap-1">
                       <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${mod.id}`} onClick={() => openForm(mod)}><Icon name="edit" size={16} /></button>
@@ -367,6 +367,7 @@ export function AssignmentsPage({ user }) {
 
   return (
     <div className="space-y-5">
+      <div className="page-intro"><div><h2>Asignaciones</h2><p>Qué módulos cursa cada alumno y cuáles imparte cada profesor.</p></div></div>
       {(studentsLoading || modulesLoading || profilesLoading) && <Notice>Cargando asignaciones…</Notice>}
       {studentsError && <Notice error>{studentsError}</Notice>}
       <NoticeBar notice={notice} />
@@ -589,9 +590,8 @@ export function ReportsPage() {
   const classHeaders = ['Clase', 'Promoción', 'Alumnos', 'P', 'T', 'F', 'Aptos', '% Asistencia', '% Aptos']
   const studentHeaders = ['Alumno', 'Grupo', 'Promoción', 'Prácticas', 'P', 'T', 'F', 'Aptos', '% Asistencia', '% Aptos']
 
-  return <section className={cardClass}>
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div><h2 className="text-lg font-semibold text-ink">Asistencia y evaluación</h2><p className="mt-1 text-sm text-muted">Por clase y por alumno</p></div>
+  return <div className="space-y-5"><div className="page-intro"><div><h2>Informes</h2><p>Asistencia y evaluación por clase y por alumno.</p></div></div><section className={cardClass}>
+    <div className="mb-6 flex flex-wrap items-end justify-end gap-3">
       <div className="flex flex-wrap gap-2">
         <select className={`${inputClass} min-w-36`} value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todas las clases</option>{groups.map((item) => <option key={item}>{item}</option>)}</select>
         <select className={`${inputClass} min-w-40`} value={promo} onChange={(event) => setPromo(event.target.value)}><option value="">Todas las promociones</option>{promos.map((item) => <option key={item}>{item}</option>)}</select>
@@ -623,7 +623,7 @@ export function ReportsPage() {
         </tr>)}</tbody>
       </table>
     </div>
-  </section>
+  </section></div>
 }
 
 /* ------------------------------------------------------------------ */
@@ -888,6 +888,7 @@ export function SettingsPage({ user }) {
 
   if (user.role !== ROLES.ADMIN) return <Notice error>Solo administración puede acceder a configuración.</Notice>
   return <div className="space-y-5">
+    <div className="page-intro"><div><h2>Configuración</h2><p>Datos iniciales, copias de seguridad y acceso.</p></div></div>
     <section className={cardClass}><h2 className="text-lg font-semibold text-ink">Datos iniciales</h2><p className="mt-2 text-sm text-muted">Carga los módulos, alumnos, prácticas, vídeos y aeronaves de ejemplo que ya están en el proyecto. Solo añade registros que falten; no modifica ni elimina datos existentes.</p><button className={`${primaryButton} mt-4`} disabled={busy} onClick={loadStarterData}>{busy ? 'Procesando…' : 'Cargar datos iniciales en Supabase'}</button></section>
     <section className={cardClass}><h2 className="text-lg font-semibold text-ink">Configuración y copias de seguridad</h2><p className="mt-2 text-sm text-muted">Las copias excluyen credenciales. La importación solo añade las filas que faltan: no elimina ni sobrescribe las existentes. El archivo contiene datos personales (RGPD): guárdalo cifrado o en un sitio de acceso restringido.</p>
       <div className="mt-5 flex flex-wrap gap-3"><button className={primaryButton} disabled={busy} onClick={exportBackup}>{busy ? 'Procesando…' : 'Exportar backup'}</button><label className={`${secondaryButton} cursor-pointer`}>Importar backup<input className="sr-only" type="file" accept="application/json,.json" disabled={busy} onChange={importBackup} /></label><button className="btn-danger sm:ml-auto" disabled={busy} onClick={resetData}>Resetear datos académicos</button></div>

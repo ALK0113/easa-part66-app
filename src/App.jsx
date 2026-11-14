@@ -216,18 +216,18 @@ function App() {
           />
         )}
         <main className="min-h-screen md:ml-[264px]">
-          <header className="sticky top-0 z-20 flex h-16 items-center gap-3 app-header border-b border-line px-4 backdrop-blur md:px-10">
+          <header className="app-header sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-line px-3 backdrop-blur md:hidden">
             <button
               type="button"
               aria-label="Abrir menú"
               onClick={() => setSidebarOpen(true)}
-              className="-ml-1 rounded-lg p-2 text-ink-soft hover:bg-surface md:hidden"
+              className="rounded-lg p-2 text-ink-soft hover:bg-surface"
             >
               <Icon name="menu" size={20} />
             </button>
-            <h1 className="truncate text-base font-semibold text-ink md:text-lg">{pageTitles[currentPage] || 'AviaTrack'}</h1>
+            <h1 className="truncate text-base font-semibold text-ink">{pageTitles[currentPage] || 'AviaTrack'}</h1>
           </header>
-          <div key={currentPage} className="fade-in mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-8">
+          <div key={currentPage} className="fade-in mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-10">
             <PageErrorBoundary resetKey={currentPage}>
               <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando…</div>}>
                 {renderPage()}
@@ -378,13 +378,14 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
     : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Task Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
 
   const firstName = (user.name || '').split(' ')[0]
-  const today = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+  const todayText = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+  const today = todayText.charAt(0).toUpperCase() + todayText.slice(1)
   const openPractice = (practice) => (isStudent ? onOpenModule(practice.module_id) : setActivePage('practices'))
 
   return (
     <div className="space-y-8">
       <section>
-        <p className="text-sm capitalize text-muted">{today}</p>
+        <p className="text-sm text-muted">{today}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink md:text-[28px]">{greeting()}, {firstName}</h2>
       </section>
 

@@ -187,6 +187,8 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   }
 
   const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
+  const todayKey = new Date().toLocaleDateString('sv-SE')
+  const upcomingPractices = practices.filter((practice) => String(practice.date || '') >= todayKey)
   const tabs = [['resumen', 'Resumen'], ['practicas', `Prácticas · ${practices.length}`], ['tlb', `TLB · ${tlbs.length}`], ['videos', `Vídeos · ${videos.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
@@ -213,8 +215,8 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
 
     {section === 'resumen' && <div className="grid gap-5 lg:grid-cols-2">
       <section className="card p-3 lg:col-span-2">
-        <div className="flex items-center justify-between px-3 pb-1 pt-2"><h3 className="font-semibold text-ink">Próximas prácticas</h3>{practices.length > 5 && <button className="link" onClick={() => setSection('practicas')}>Ver todas</button>}</div>
-        {practices.length ? <ul>{practices.slice(0, 5).map(practiceRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay prácticas asociadas.</p>}
+        <div className="flex items-center justify-between px-3 pb-1 pt-2"><h3 className="font-semibold text-ink">Próximas prácticas</h3>{practices.length > 0 && <button className="link" onClick={() => setSection('practicas')}>Ver todas</button>}</div>
+        {upcomingPractices.length ? <ul>{upcomingPractices.slice(0, 5).map(practiceRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">{practices.length ? 'No hay prácticas próximas.' : 'No hay prácticas asociadas.'}</p>}
       </section>
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Profesores</h3>{teachers.length ? <ul className="space-y-3">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">{(teacher.full_name || 'P')[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-ink">{teacher.full_name || 'Profesor'}</span><span className="block truncate text-xs text-muted">{teacher.email || ''}</span></span></li>)}</ul> : <p className="text-sm text-muted">No hay profesores asociados.</p>}</section>
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>

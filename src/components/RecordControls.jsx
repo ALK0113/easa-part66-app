@@ -62,14 +62,14 @@ export function StudentRecordRow({ student, record, canEdit = true, busy, onAtte
 
 export function RecordSummary({ items }) {
   return (
-    <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <dl className="grid grid-cols-4 gap-2 sm:gap-3">
       {items.map(([label, value, tone]) => (
-        <div key={label} className="card px-5 py-4">
-          <dt className="flex items-center gap-2 text-sm text-muted">
-            <span className={`h-2 w-2 rounded-full ${tone}`} />
+        <div key={label} className="card px-2.5 py-3 sm:px-5 sm:py-4">
+          <dt className="flex items-center gap-1.5 truncate text-xs text-muted sm:gap-2 sm:text-sm">
+            <span className={`hidden h-2 w-2 shrink-0 rounded-full sm:block ${tone}`} />
             {label}
           </dt>
-          <dd className="mt-1 text-2xl font-semibold text-ink">{value}</dd>
+          <dd className="mt-1 text-lg font-semibold text-ink sm:text-2xl">{value}</dd>
         </div>
       ))}
     </dl>
