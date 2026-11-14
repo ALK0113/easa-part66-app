@@ -9,3 +9,6 @@ dist
 # Editor
 *.code-workspace
 .env.*.local
+
+# Configuración local de MCP
+.mcp.json
