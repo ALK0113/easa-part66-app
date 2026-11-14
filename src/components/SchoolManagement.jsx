@@ -160,7 +160,7 @@ export default function SchoolManagement({ user }) {
   const loadSchools = useCallback(async () => {
     const requestId = ++loadRequestRef.current
     try {
-      const { data, error } = await supabase.rpc('admin_list_schools_with_stats_v2')
+      const { data, error } = await supabase.rpc('admin_list_schools_with_stats')
       if (requestId !== loadRequestRef.current) return
       if (error) throw error
       setSchools(data || [])
