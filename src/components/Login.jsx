@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
 
 const MIN_PASSWORD_LENGTH = 8 // Configura el mismo mínimo en Supabase: Authentication > Providers > Email
 
@@ -123,72 +124,89 @@ export default function Login({ onLoginSuccess }) {
     ? (isReset ? 'Enviando…' : 'Procesando…')
     : isReset ? 'Enviar enlace de recuperación' : isRegister ? 'Crear cuenta' : 'Iniciar sesión'
 
+  const titles = {
+    login: ['Bienvenido', 'Accede con tu cuenta de la escuela.'],
+    register: ['Crear cuenta', 'Solo te llevará un momento.'],
+    reset: ['Recuperar contraseña', 'Te enviaremos un enlace a tu correo.'],
+  }
+
   return (
-    <main className="login-screen">
-      <section className="login-panel">
-        <div className="login-brand">
-          <span aria-hidden="true" className="login-mark">✈</span>
-          <p className="login-kicker">Formación y mantenimiento aeronáutico</p>
-          <h1>EASA Part 66</h1>
-          <p className="login-subtitle">Gestión académica por módulos</p>
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
+      <div className="fade-in w-full max-w-[400px]">
+        <div className="mb-8 flex items-center justify-center gap-2.5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent">
+            <Icon name="plane" size={20} />
+          </span>
+          <span className="text-left">
+            <span className="block text-base font-semibold leading-tight text-ink">AviaTrack</span>
+            <span className="block text-xs text-muted">EASA Part-147</span>
+          </span>
         </div>
 
-        <form onSubmit={handleSubmit} className="login-form">
-          {isRegister && (
-            <label className="login-field">
-              <span>Nombre completo</span>
-              <input type="text" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required />
-            </label>
-          )}
-          <label className="login-field">
-            <span>Correo electrónico</span>
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-          </label>
-          {!isReset && (
-            <label className="login-field">
-              <span>Contraseña</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete={isRegister ? 'new-password' : 'current-password'}
-                minLength={isRegister ? MIN_PASSWORD_LENGTH : undefined}
-                required
-              />
-            </label>
-          )}
-          {isRegister && (
-            <label className="login-field">
-              <span>Repetir contraseña</span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                autoComplete="new-password"
-                minLength={MIN_PASSWORD_LENGTH}
-                required
-              />
-            </label>
-          )}
+        <section className="card p-7 sm:p-8">
+          <h1 className="text-xl font-semibold text-ink">{titles[mode][0]}</h1>
+          <p className="mt-1 text-sm text-muted">{titles[mode][1]}</p>
 
-          {error && <p role="alert" className="login-message login-error">{error}</p>}
-          {notice && <p role="status" className="login-message login-notice">{notice}</p>}
+          <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
+            {isRegister && (
+              <label className="field">
+                <span>Nombre completo</span>
+                <input className="input" type="text" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required />
+              </label>
+            )}
+            <label className="field">
+              <span>Correo electrónico</span>
+              <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+            </label>
+            {!isReset && (
+              <label className="field">
+                <span className="flex items-center justify-between">
+                  Contraseña
+                  {mode === 'login' && (
+                    <button type="button" className="text-xs font-medium text-accent hover:text-accent-strong" onClick={() => changeMode('reset')}>¿La has olvidado?</button>
+                  )}
+                </span>
+                <input
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
+                  minLength={isRegister ? MIN_PASSWORD_LENGTH : undefined}
+                  required
+                />
+              </label>
+            )}
+            {isRegister && (
+              <label className="field">
+                <span>Repetir contraseña</span>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={MIN_PASSWORD_LENGTH}
+                  required
+                />
+              </label>
+            )}
 
-          <button type="submit" disabled={loading} className="login-submit">{submitLabel}</button>
-        </form>
+            {error && <p role="alert" className="notice-error">{error}</p>}
+            {notice && <p role="status" className="notice-success">{notice}</p>}
 
-        <div className="login-links">
-          {mode === 'login' && (
-            <button type="button" onClick={() => changeMode('reset')}>¿Olvidaste tu contraseña?</button>
+            <button type="submit" disabled={loading} className="btn-primary mt-1 h-11 w-full">{submitLabel}</button>
+          </form>
+        </section>
+
+        <p className="mt-6 text-center text-sm text-muted">
+          {mode === 'login' ? (
+            <>¿Aún no tienes cuenta? <button type="button" className="link" onClick={() => changeMode('register')}>Crear cuenta</button></>
+          ) : (
+            <button type="button" className="link" onClick={() => changeMode('login')}>Volver a iniciar sesión</button>
           )}
-          {mode === 'login' && (
-            <button type="button" onClick={() => changeMode('register')}>Crear cuenta nueva</button>
-          )}
-          {mode !== 'login' && (
-            <button type="button" onClick={() => changeMode('login')}>Volver al inicio de sesión</button>
-          )}
-        </div>
-      </section>
+        </p>
+      </div>
     </main>
   )
 }

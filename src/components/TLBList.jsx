@@ -1,27 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import emailjs from '@emailjs/browser'
+import { formatDate } from '../lib/format.js'
+import Icon from './Icon.jsx'
+import Modal from './Modal.jsx'
 
-// ⚙️ CONFIGURACIÓN DE EMAILJS CON TUS CLAVES REALES
+// Configuración de EmailJS desde variables de entorno (ver README)
 const EMAILJS_CONFIG = {
-  serviceId: 'service_x223chc',
-  templateId: 'template_bsfqabf',
-  publicKey: 'L1mQ2kzKhmBsUZ5bq',
-  teacherEmail: 'arafatlaarajb1@gmail.com' // Correo de respaldo por si no encuentra el del profesor
-};
-
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
-
-function formatDate(value) {
-  if (!value) return '—'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
+  serviceId: import.meta.env.VITE_EMAILJS_SERVICE_ID,
+  templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+  publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
+  teacherEmail: import.meta.env.VITE_EMAILJS_FALLBACK_EMAIL || '', // respaldo si no se encuentra el del profesor
 }
+const EMAILJS_READY = Boolean(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templateId && EMAILJS_CONFIG.publicKey)
+
+const inputClass = 'input'
+const buttonClass = 'btn-primary'
 
 export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }) {
   const [tlbs, setTlbs] = useState([])
@@ -52,6 +50,9 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   const [newTLB, setNewTLB] = useState({ module_id: '', practice_id: '', aircraft_id: '', date: new Date().toISOString().slice(0, 10), defect_description: '', correct_action: '' })
 
   const [studentResponses, setStudentResponses] = useState({})
+  const [ownSubmission, setOwnSubmission] = useState(null)
+  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const responsesDirty = useRef(false)
   const [submissions, setSubmissions] = useState([])
   const [hiddenActions, setHiddenActions] = useState({})
 
@@ -95,34 +96,80 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     return () => { cancelled = true; unsubscribe() }
   }, [user.id, userRole])
 
+  const activeTLBId = selectedTLBId || initialTlbId
+
   useEffect(() => {
+    let cancelled = false
     async function loadStudentData() {
-      if (userRole !== 'alumno' || !selectedTLBId) return
-      const { data: submission, error } = await supabase
+      if (userRole !== 'alumno' || !activeTLBId) return
+      responsesDirty.current = false
+      const { data: submission } = await supabase
         .from('tlb_submissions')
         .select('*')
         .eq('student_id', user.id)
-        .eq('tlb_id', selectedTLBId)
+        .eq('tlb_id', activeTLBId)
         .maybeSingle()
-      if (submission) {
-        setStudentResponses(submission.defect_responses || {})
-      } else {
-        setStudentResponses({})
-      }
+      if (cancelled) return
+      setOwnSubmission(submission || null)
+      setStudentResponses(submission?.defect_responses || {})
+      setSaveState(submission ? 'saved' : 'idle')
     }
     loadStudentData()
-  }, [selectedTLBId, userRole, user.id])
+    return () => { cancelled = true }
+  }, [activeTLBId, userRole, user.id])
+
+  // Guarda las respuestas como borrador mientras el alumno escribe.
+  async function saveSubmission(responses, completed) {
+    const { data, error: saveError } = await supabase
+      .from('tlb_submissions')
+      .upsert({
+        student_id: user.id,
+        tlb_id: activeTLBId,
+        defect_responses: responses,
+        completed_at: completed ? new Date().toISOString() : null,
+      }, { onConflict: 'student_id,tlb_id' })
+      .select()
+      .single()
+    if (saveError) throw saveError
+    setOwnSubmission(data)
+    return data
+  }
+
+  useEffect(() => {
+    if (userRole !== 'alumno' || !activeTLBId || !responsesDirty.current || ownSubmission?.completed_at) return undefined
+    const timer = setTimeout(async () => {
+      setSaveState('saving')
+      try {
+        await saveSubmission(studentResponses, false)
+        responsesDirty.current = false
+        setSaveState('saved')
+      } catch {
+        setSaveState('error')
+      }
+    }, 900)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe reaccionar a lo que escribe el alumno
+  }, [studentResponses])
 
   useEffect(() => {
     async function loadSubmissions() {
       if (userRole !== 'profesor' && userRole !== 'admin') return
+      // tlb_submissions.student_id es el id de usuario (profiles.id), no el de la
+      // ficha del alumno: se resuelve con student_profiles → students.
       const { data, error } = await supabase
         .from('tlb_submissions')
-        .select('*, students!inner(name, student_number, group_name)')
+        .select('*')
         .order('completed_at', { ascending: false })
-      if (!error && data) {
-        setSubmissions(data)
-      }
+      if (error || !data) return
+      const profileIds = [...new Set(data.map((s) => s.student_id))]
+      const { data: links } = profileIds.length
+        ? await supabase
+          .from('student_profiles')
+          .select('profile_id, students(name, student_number, group_name)')
+          .in('profile_id', profileIds)
+        : { data: [] }
+      const studentByProfile = new Map((links || []).map((link) => [link.profile_id, link.students]))
+      setSubmissions(data.map((s) => ({ ...s, students: studentByProfile.get(s.student_id) || null })))
     }
     loadSubmissions()
   }, [userRole, selectedTLBId])
@@ -157,6 +204,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   }
 
   const updateStudentResponse = (defectId, value) => {
+    responsesDirty.current = true
     setStudentResponses(prev => ({ ...prev, [defectId]: value }))
   }
 
@@ -257,7 +305,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
     doc.setTextColor(10, 37, 64)
-    doc.text('EASA PART 66 · TASK LOG BOOK', margin, 17)
+    doc.text('EASA PART-147 · TASK LOG BOOK', margin, 17)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(100, 110, 120)
@@ -331,7 +379,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(120, 120, 120)
-      doc.text(`EASA Part 66 · TLB ${selectedTLB.id} · ${page}/${pageCount}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
+      doc.text(`EASA Part-147 · TLB ${selectedTLB.id} · ${page}/${pageCount}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
     }
 
     return doc
@@ -343,7 +391,16 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     const allAnswered = tlbDefects.every(defect => studentResponses[defect.id]?.trim())
 
     if (!allAnswered) {
-      setMessage('⚠️ Debes completar todas las acciones antes de generar el PDF.')
+      setMessage('⚠️ Completa todas las acciones antes de entregar.')
+      return
+    }
+
+    try {
+      await saveSubmission(studentResponses, true)
+      responsesDirty.current = false
+      setSaveState('saved')
+    } catch (saveError) {
+      setMessage(`❌ No se pudo registrar la entrega: ${getSupabaseErrorMessage(saveError)}`)
       return
     }
 
@@ -357,10 +414,10 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     }
 
     setPdfBusy(true)
-    setMessage('📧 Buscando correo del profesor y generando PDF...')
+    setMessage('Generando el PDF y enviándolo a tu profesor…')
 
     try {
-      // 🆕 LÓGICA PARA ENCONTRAR EL CORREO DEL PROFESOR ASIGNADO
+      // Correo del profesor asignado al TLB
       const assignedTeacherNames = selectedTLB.teacher_name 
         ? selectedTLB.teacher_name.split(',').map(n => n.trim()) 
         : []
@@ -373,7 +430,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       // Usamos el correo encontrado, o el de respaldo si no se encontró ninguno
       const targetEmail = assignedTeacherEmails || EMAILJS_CONFIG.teacherEmail
 
-      if (!targetEmail || targetEmail === 'respaldo@escuela.com') {
+      if (!targetEmail || !EMAILJS_READY) {
         setMessage('⚠️ No se encontró el correo del profesor en el sistema. El PDF se descargará para que lo envíes manualmente.')
         const doc = buildTlbPdf(tlbDefects, studentResponses, true)
         doc.save(`TLB_${selectedTLB.id}_${user.name.replace(/\s+/g, '_')}.pdf`)
@@ -390,7 +447,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       )
 
       const templateParams = {
-        to_email: targetEmail, // 📧 Se envía dinámicamente al profesor asignado
+        to_email: targetEmail, // se envía al profesor asignado
         from_name: user.name,
         student_email: studentEmail,
         tlb_id: selectedTLB.id,
@@ -526,288 +583,245 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     setMessage('TLB creado y pendiente de publicación.')
   }
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-[#0a2540]">Cargando Task Log Book…</div>
-  if (error) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">Error al cargar TLB: {error}</div>
+  function downloadOfficialPdf() {
+    if (!selectedTLB) return
+    const doc = buildTlbPdf(getDefects(selectedTLB.id), {}, false)
+    doc.save(`TLB_${selectedTLB.id}_informe.pdf`)
+  }
+
+  const isErrorMessage = /^(❌|⚠️)/.test(message)
+  const messageText = message.replace(/^(❌|⚠️|✅|ℹ️)\s*/, '')
+  const pageNotice = message && <p role={isErrorMessage ? 'alert' : 'status'} className={isErrorMessage ? 'notice-error' : 'notice'}>{messageText}</p>
+  const formError = message && <p role="alert" className="notice-error">{messageText}</p>
+  const tlbFormFields = (form, setForm) => <>
+    <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value, practice_id: '' })} required><option value="">Selecciona módulo</option>{modules.filter((module) => editableModules.includes(module.id)).map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
+    <label className="field">Práctica<select className={inputClass} value={form.practice_id} onChange={(event) => setForm({ ...form, practice_id: event.target.value })} required><option value="">Selecciona práctica</option>{availablePractices.map((practice) => <option key={practice.id} value={practice.id}>{practice.id} · {practice.title}</option>)}</select></label>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <label className="field">Avión<select className={inputClass} value={form.aircraft_id} onChange={(event) => setForm({ ...form, aircraft_id: event.target.value })} required><option value="">Selecciona avión</option>{aircraft.map((plane) => <option key={plane.id} value={plane.id}>{plane.type} · {plane.registration}</option>)}</select></label>
+      <label className="field">Fecha<input className={inputClass} type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label>
+    </div>
+  </>
+
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando Task Log Book…</div>
+  if (error) return <div role="alert" className="notice-error">No se pudo cargar el TLB: {error}</div>
 
   if (selectedTLB) {
     const practice = getPractice(selectedTLB.practice_id)
     const module = getModule(selectedTLB.module_id)
     const tlbDefects = getDefects(selectedTLB.id)
     const editable = editableTLB(selectedTLB)
+    const completedSubmissions = submissions.filter((s) => s.tlb_id === selectedTLB.id && s.completed_at)
+    const delivered = Boolean(ownSubmission?.completed_at)
+    const answeredCount = tlbDefects.filter((defect) => studentResponses[defect.id]?.trim()).length
+    const saveLabel = { saving: 'Guardando…', saved: 'Borrador guardado', error: 'No se pudo guardar el borrador' }[saveState]
 
-    const studentSubmission = submissions.find(s =>
-      s.student_id === user.id && s.tlb_id === selectedTLB.id
-    )
+    return <div className="space-y-6">
+      <button type="button" className="back-link" onClick={() => { setSelectedTLBId(null); onClearInitialTlb?.(); setMessage('') }}>← Task Log Book</button>
 
-    return <div className="space-y-5">
-      <button className="text-sm font-semibold text-[#1565c0]" onClick={() => { setSelectedTLBId(null); onClearInitialTlb?.(); setMessage('') }}>← Volver al TLB</button>
-      <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white shadow-sm">
-        <h2 className="text-2xl font-bold">✈️ {selectedTLB.aircraft}</h2>
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Matrícula', selectedTLB.registration], ['MSN', selectedTLB.msn], ['Módulo', module?.id], ['Práctica', practice?.id], ['Fecha', formatDate(selectedTLB.date)], ['Profesor(es)', selectedTLB.teacher_name], ['Estado', selectedTLB.published ? 'Publicado' : 'Pendiente']].map(([label, value]) => <div key={label} className="rounded bg-white/15 p-3"><p className="text-[10px] uppercase text-blue-100">{label}</p><p className="mt-1 text-sm font-semibold">{value || '—'}</p></div>)}</div>
+      <section className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm text-muted">{module?.id || selectedTLB.module_id}{practice ? ` · ${practice.title}` : ''}</p>
+          <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedTLB.aircraft}</h2>
+          <div className="mt-3 flex flex-wrap gap-2 text-sm">
+            <span className="badge bg-surface py-1">{selectedTLB.registration}{selectedTLB.msn ? ` · MSN ${selectedTLB.msn}` : ''}</span>
+            <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedTLB.date)}</span>
+            {selectedTLB.teacher_name && <span className="badge gap-1.5 bg-surface py-1"><Icon name="user" size={14} className="text-faint" />{selectedTLB.teacher_name}</span>}
+            {!isStudent && <span className={`badge py-1 ${selectedTLB.published ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'}`}>{selectedTLB.published ? 'Publicado' : 'Borrador'}</span>}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!isStudent && <button className="btn-secondary" onClick={downloadOfficialPdf}><Icon name="download" size={16} />Informe PDF</button>}
+          {editable && <button className="btn-secondary" onClick={() => openEditForm(selectedTLB)}><Icon name="edit" size={16} />Editar</button>}
+          {editable && <button className={selectedTLB.published ? 'btn-secondary' : 'btn-primary'} disabled={busy} onClick={() => togglePublish(selectedTLB)}>{selectedTLB.published ? 'Despublicar' : 'Publicar para alumnos'}</button>}
+        </div>
       </section>
 
-      {!isStudent && submissions.length > 0 && (
-        <section className="rounded-lg border border-[#e5e7eb] bg-white p-5">
-          <h3 className="mb-3 text-sm font-bold text-[#0a2540]">Alumnos que han completado este TLB</h3>
-          <div className="space-y-2">
-            {submissions
-              .filter(s => s.tlb_id === selectedTLB.id)
-              .map(submission => (
-                <div key={submission.id} className="flex items-center justify-between rounded border border-[#e5e7eb] p-3">
-                  <div>
-                    <p className="font-semibold text-sm">{submission.students?.name || 'Alumno'}</p>
-                    <p className="text-xs text-[#6b7280]">Nº: {submission.students?.student_number} · Grupo: {submission.students?.group_name}</p>
-                    <p className="text-xs text-[#6b7280]">Completado: {new Date(submission.completed_at).toLocaleString('es-ES')}</p>
-                  </div>
-                  {submission.pdf_url && (
-                    <a
-                      href={submission.pdf_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded bg-[#1e88e5] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1565c0]"
-                    >
-                      Ver PDF
-                    </a>
-                  )}
-                </div>
-              ))}
+      {pageNotice}
+
+      {isStudent && (
+        <section className={`card flex flex-wrap items-center justify-between gap-3 px-5 py-4 ${delivered ? 'bg-success-soft' : ''}`}>
+          <div>
+            <p className={`text-sm font-medium ${delivered ? 'text-success' : 'text-ink'}`}>{delivered ? `Entregado el ${new Date(ownSubmission.completed_at).toLocaleString('es-ES')}` : `${answeredCount} de ${tlbDefects.length} acciones completadas`}</p>
+            {!delivered && <p className="mt-0.5 text-xs text-muted">{saveLabel || 'Tus respuestas se guardan solas mientras escribes.'}</p>}
           </div>
+          {!delivered && <button className="btn-primary" disabled={pdfBusy || tlbDefects.length === 0} onClick={generateStudentPdf}><Icon name="check" size={16} />{pdfBusy ? 'Enviando…' : 'Entregar y enviar PDF'}</button>}
         </section>
       )}
 
-      <section className="rounded-lg border border-[#e5e7eb] bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5e7eb] p-4">
-          <h3 className="font-bold text-[#0a2540]">Defectos ({tlbDefects.length})</h3>
-          <div className="flex flex-wrap gap-2">
-            {isStudent && (
-              <button
-                className="rounded bg-[#2e7d32] px-3 py-2 text-xs font-bold text-white hover:bg-[#1b5e20] disabled:opacity-50"
-                disabled={pdfBusy}
-                onClick={generateStudentPdf}
-              >
-                {pdfBusy ? 'Generando…' : '✓ Generar PDF y enviar'}
-              </button>
-            )}
-            <button className="rounded border border-[#d1d5db] bg-white px-3 py-2 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9] disabled:opacity-50" disabled={pdfBusy} onClick={() => {
-              setMessage('Función de descarga de PDF para profesor en desarrollo')
-            }}>
-              ↓ Descargar informe PDF
-            </button>
-            {editable && (
-              <>
-                <button className="rounded bg-[#1e88e5] px-3 py-2 text-xs font-bold text-white hover:bg-[#1565c0]" onClick={() => openEditForm(selectedTLB)}>
-                  ✏️ Editar TLB
-                </button>
-                <button className={`rounded border px-3 py-2 text-xs font-bold ${selectedTLB.published ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`} disabled={busy} onClick={() => togglePublish(selectedTLB)}>
-                  {selectedTLB.published ? 'Publicado · Despublicar' : 'Pendiente · Publicar'}
-                </button>
-                <button className={buttonClass} onClick={() => openDefectForm()}>+ Añadir defecto</button>
-              </>
-            )}
-          </div>
-        </div>
-        {message && <p role="status" className="m-4 rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
-        <div className="space-y-3 p-4">
-          {tlbDefects.map((defect) => {
-            const isActionHidden = hiddenActions[defect.id] || false
-
-            return (
-              <article key={defect.id} className="rounded-md border border-[#e5e7eb] border-l-4 border-l-[#ef6c00] p-4">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <strong className="text-sm text-[#0a2540]">DEFECT #{defect.defect_number}</strong>
-                    <span className="rounded bg-[#d1ecf1] px-2 py-1 text-xs text-[#0c5460]">{defect.ata}</span>
-                    {defect.pirep && <span className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-900">PIREP: {defect.pirep}</span>}
-                  </div>
-                  {editable && <div className="flex gap-3 text-xs font-semibold">
-                    <button className="text-[#1565c0]" onClick={() => openDefectForm(defect)}>Editar</button>
-                    <button className="text-red-700" onClick={() => deleteDefect(defect)}>Eliminar</button>
-                  </div>}
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-[10px] font-bold uppercase text-[#6b7280]">Descripción del defecto</p>
-                    <p className="rounded border-l-4 border-[#ef6c00] bg-[#fff8e1] p-3 text-sm leading-relaxed">{defect.defect_description}</p>
-                  </div>
-
-                  <div>
-                    {isStudent ? (
-                      <>
-                        <p className="mb-1 text-[10px] font-bold uppercase text-[#6b7280]">Tu acción correctiva</p>
-                        <textarea
-                          className={`${inputClass} min-h-[80px]`}
-                          placeholder="Describe la acción correctiva que realizarías..."
-                          value={studentResponses[defect.id] || ''}
-                          onChange={(e) => updateStudentResponse(defect.id, e.target.value)}
-                          disabled={!!studentSubmission}
-                        />
-                        {studentSubmission && (
-                          <p className="mt-1 text-xs text-[#2e7d32]">✓ Ya completado</p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div className="mb-1 flex items-center justify-between">
-                          <p className="text-[10px] font-bold uppercase text-[#6b7280]">Acción correctiva</p>
-                          <button
-                            className="text-xs text-[#1e88e5] hover:underline"
-                            onClick={() => toggleActionVisibility(defect.id)}
-                          >
-                            {isActionHidden ? '👁️ Mostrar' : '🙈 Ocultar'}
-                          </button>
-                        </div>
-                        {!isActionHidden ? (
-                          <p className="rounded border-l-4 border-[#2e7d32] bg-[#e8f5e9] p-3 text-sm leading-relaxed">{defect.correct_action}</p>
-                        ) : (
-                          <p className="rounded border border-dashed border-[#d1d5db] bg-[#f9fafb] p-3 text-sm text-[#6b7280] italic">
-                            Acción oculta - Haz clic en "Mostrar" para verla
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </article>
-            )
-          })}
-          {tlbDefects.length === 0 && <p className="p-8 text-center text-sm text-[#6b7280]">No hay defectos registrados.</p>}
-        </div>
-      </section>
-      {selectedTLB.crs && <section className="rounded-lg border-l-4 border-[#2e7d32] bg-[#e8f5e9] p-5"><h3 className="text-sm font-bold text-[#2e7d32]">CRS · Certificate of Release to Service</h3><p className="mt-2 text-sm leading-relaxed">{selectedTLB.crs}</p></section>}
-
-      {editOpen && editingTLB && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditOpen(false) }}>
-          <section role="dialog" aria-modal="true" aria-label="Editar TLB" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
-            <h2 className="mb-4 text-lg font-bold text-[#0a2540]">Editar TLB {editingTLB.id}</h2>
-            <form className="space-y-4" onSubmit={saveEditTLB}>
-              <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">
-                Módulo
-                <select className={inputClass} value={editForm.module_id} onChange={(event) => setEditForm({ ...editForm, module_id: event.target.value, practice_id: '' })} required>
-                  <option value="">Selecciona módulo</option>
-                  {modules.filter((module) => editableModules.includes(module.id)).map((module) => (
-                    <option key={module.id} value={module.id}>{module.id} · {module.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">
-                Práctica
-                <select className={inputClass} value={editForm.practice_id} onChange={(event) => setEditForm({ ...editForm, practice_id: event.target.value })} required>
-                  <option value="">Selecciona práctica</option>
-                  {availablePractices.map((practice) => (
-                    <option key={practice.id} value={practice.id}>{practice.id} · {practice.title}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">
-                Avión
-                <select className={inputClass} value={editForm.aircraft_id} onChange={(event) => setEditForm({ ...editForm, aircraft_id: event.target.value })} required>
-                  <option value="">Selecciona avión</option>
-                  {aircraft.map((plane) => (
-                    <option key={plane.id} value={plane.id}>{plane.type} · {plane.registration} · MSN {plane.msn}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">
-                Fecha
-                <input className={inputClass} type="date" value={editForm.date} onChange={(event) => setEditForm({ ...editForm, date: event.target.value })} required />
-              </label>
-
-              <div className="grid gap-1">
-                <p className="text-sm font-semibold text-[#0a2540]">Profesores asignados ({editForm.teacher_ids.length} seleccionados)</p>
-                <div className="max-h-48 overflow-y-auto rounded border border-[#d1d5db] p-3 space-y-2">
-                  {teachers.length === 0 ? (
-                    <p className="text-sm text-[#6b7280]">No hay profesores registrados.</p>
-                  ) : (
-                    teachers.map((teacher) => (
-                      <label key={teacher.id} className="flex items-center gap-2 cursor-pointer hover:bg-[#f9fafb] p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={editForm.teacher_ids.includes(teacher.id)}
-                          onChange={() => toggleTeacher(teacher.id)}
-                          className="h-4 w-4 rounded border-[#d1d5db] text-[#1e88e5] focus:ring-[#1e88e5]"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-[#0a2540]">{teacher.name}</p>
-                          {teacher.email && <p className="text-xs text-[#6b7280]">{teacher.email}</p>}
-                        </div>
-                      </label>
-                    ))
-                  )}
-                </div>
-                {editForm.teacher_ids.length === 0 && (
-                  <p className="text-xs text-red-600">⚠️ Selecciona al menos un profesor</p>
-                )}
-              </div>
-
-              <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">
-                CRS (Certificate of Release to Service)
-                <textarea className={inputClass} rows="3" value={editForm.crs} onChange={(event) => setEditForm({ ...editForm, crs: event.target.value })} placeholder="Texto del certificado..." />
-              </label>
-
-              {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
-
-              <div className="flex justify-end gap-2">
-                <button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => { setEditOpen(false); setEditingTLB(null) }}>
-                  Cancelar
-                </button>
-                <button className={buttonClass} disabled={busy || editForm.teacher_ids.length === 0}>
-                  {busy ? 'Guardando…' : 'Guardar cambios'}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
+      {!isStudent && completedSubmissions.length > 0 && (
+        <section className="card p-3">
+          <h3 className="px-3 pb-1 pt-2 font-semibold text-ink">Entregas · {completedSubmissions.length}</h3>
+          <ul>
+            {completedSubmissions.map((submission) => (
+              <li key={submission.id} className="flex items-center gap-3 rounded-xl px-3 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"><Icon name="check" size={16} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">{submission.students?.name || 'Alumno'}</span>
+                  <span className="block text-xs text-muted">{[submission.students?.student_number && `Nº ${submission.students.student_number}`, submission.students?.group_name].filter(Boolean).join(' · ')}{submission.students ? ' · ' : ''}{new Date(submission.completed_at).toLocaleString('es-ES')}</span>
+                </span>
+                {submission.pdf_url && <a href={submission.pdf_url} target="_blank" rel="noopener noreferrer" className="link">Ver PDF</a>}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
-      {defectFormOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDefectFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editingDefect ? 'Editar defecto' : 'Añadir defecto'} className="w-full max-w-xl rounded-lg bg-white p-5 shadow-2xl"><h3 className="mb-4 text-lg font-bold text-[#0a2540]">{editingDefect ? 'Editar defecto' : 'Añadir defecto'}</h3><form className="space-y-4" onSubmit={saveDefect}>
-        <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-semibold text-[#0a2540]">ATA<input className={inputClass} value={defectForm.ata} onChange={(event) => setDefectForm({ ...defectForm, ata: event.target.value })} required /></label><label className="grid gap-1 text-sm font-semibold text-[#0a2540]">PIREP<input className={inputClass} value={defectForm.pirep} onChange={(event) => setDefectForm({ ...defectForm, pirep: event.target.value })} /></label></div>
-        <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Descripción<textarea className={inputClass} rows="3" value={defectForm.defect_description} onChange={(event) => setDefectForm({ ...defectForm, defect_description: event.target.value })} required /></label>
-        <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Acción correctiva<textarea className={inputClass} rows="3" value={defectForm.correct_action} onChange={(event) => setDefectForm({ ...defectForm, correct_action: event.target.value })} required /></label>
-        {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
-        <div className="flex justify-end gap-2"><button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setDefectFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
-      </form></section></div>}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-ink">Defectos · {tlbDefects.length}</h3>
+          {editable && <button className="btn-ghost min-h-[36px] text-accent" onClick={() => openDefectForm()}><Icon name="plus" size={16} />Añadir defecto</button>}
+        </div>
+        {tlbDefects.map((defect) => {
+          const isActionHidden = hiddenActions[defect.id] || false
+          return (
+            <article key={defect.id} className="card p-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-ink">Defecto {defect.defect_number}</span>
+                  {defect.ata && <span className="badge">{defect.ata}</span>}
+                  {defect.pirep && <span className="badge">PIREP {defect.pirep}</span>}
+                </div>
+                {editable && <div className="-mr-1.5 flex text-muted">
+                  <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar defecto ${defect.defect_number}`} onClick={() => openDefectForm(defect)}><Icon name="edit" size={16} /></button>
+                  <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar defecto ${defect.defect_number}`} onClick={() => deleteDefect(defect)}><Icon name="trash" size={16} /></button>
+                </div>}
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted">Descripción del defecto</p>
+                  <p className="rounded-xl bg-warn-soft p-3.5 text-sm leading-relaxed text-ink-soft">{defect.defect_description}</p>
+                </div>
+                <div>
+                  {isStudent ? (
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-muted">Tu acción correctiva</span>
+                      <textarea
+                        className={`${inputClass} min-h-[96px] leading-relaxed`}
+                        placeholder="Describe la acción que realizarías…"
+                        value={studentResponses[defect.id] || ''}
+                        onChange={(e) => updateStudentResponse(defect.id, e.target.value)}
+                        disabled={delivered}
+                      />
+                    </label>
+                  ) : (
+                    <>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted">Acción correctiva</p>
+                        <button className="text-xs font-medium text-accent hover:text-accent-strong" onClick={() => toggleActionVisibility(defect.id)}>
+                          {isActionHidden ? 'Mostrar' : 'Ocultar'}
+                        </button>
+                      </div>
+                      {!isActionHidden
+                        ? <p className="rounded-xl bg-success-soft p-3.5 text-sm leading-relaxed text-ink-soft">{defect.correct_action}</p>
+                        : <p className="rounded-xl border border-dashed border-line-strong p-3.5 text-sm text-faint">Oculta para proyectar en clase</p>}
+                    </>
+                  )}
+                </div>
+              </div>
+            </article>
+          )
+        })}
+        {tlbDefects.length === 0 && <p className="card empty">No hay defectos registrados.</p>}
+      </section>
+
+      {selectedTLB.crs && <section className="card p-5"><h3 className="text-sm font-semibold text-ink">CRS · Certificate of Release to Service</h3><p className="mt-2 text-sm leading-relaxed text-ink-soft">{selectedTLB.crs}</p></section>}
+
+      {editOpen && editingTLB && (
+        <Modal title="Editar TLB" onClose={() => { setEditOpen(false); setEditingTLB(null) }}>
+          <form className="space-y-4" onSubmit={saveEditTLB}>
+            {tlbFormFields(editForm, setEditForm)}
+            <fieldset>
+              <legend className="mb-1.5 text-sm font-medium text-ink-soft">Profesores asignados</legend>
+              <div className="max-h-52 space-y-1.5 overflow-y-auto">
+                {teachers.length === 0 ? <p className="text-sm text-muted">No hay profesores registrados.</p> : teachers.map((teacher) => (
+                  <label key={teacher.id} className="choice">
+                    <input type="checkbox" checked={editForm.teacher_ids.includes(teacher.id)} onChange={() => toggleTeacher(teacher.id)} />
+                    <span className="min-w-0"><span className="block text-sm font-medium text-ink">{teacher.name}</span>{teacher.email && <span className="block truncate text-xs text-muted">{teacher.email}</span>}</span>
+                  </label>
+                ))}
+              </div>
+              {editForm.teacher_ids.length === 0 && <p className="mt-1.5 text-xs text-danger">Selecciona al menos un profesor.</p>}
+            </fieldset>
+            <label className="field">CRS (Certificate of Release to Service)<textarea className={inputClass} rows="3" value={editForm.crs} onChange={(event) => setEditForm({ ...editForm, crs: event.target.value })} placeholder="Texto del certificado…" /></label>
+            {formError}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" className="btn-secondary" onClick={() => { setEditOpen(false); setEditingTLB(null) }}>Cancelar</button>
+              <button className={buttonClass} disabled={busy || editForm.teacher_ids.length === 0}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {defectFormOpen && (
+        <Modal title={editingDefect ? `Editar defecto ${editingDefect.defect_number}` : 'Añadir defecto'} onClose={() => setDefectFormOpen(false)}>
+          <form className="space-y-4" onSubmit={saveDefect}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="field">ATA<input className={inputClass} value={defectForm.ata} onChange={(event) => setDefectForm({ ...defectForm, ata: event.target.value })} required /></label>
+              <label className="field">PIREP<input className={inputClass} value={defectForm.pirep} onChange={(event) => setDefectForm({ ...defectForm, pirep: event.target.value })} /></label>
+            </div>
+            <label className="field">Descripción<textarea className={inputClass} rows="3" value={defectForm.defect_description} onChange={(event) => setDefectForm({ ...defectForm, defect_description: event.target.value })} required /></label>
+            <label className="field">Acción correctiva<textarea className={inputClass} rows="3" value={defectForm.correct_action} onChange={(event) => setDefectForm({ ...defectForm, correct_action: event.target.value })} required /></label>
+            {formError}
+            <div className="flex justify-end gap-2 pt-1"><button type="button" className="btn-secondary" onClick={() => setDefectFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
+          </form>
+        </Modal>
+      )}
     </div>
   }
 
-  return <div className="space-y-4">
-    <section className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-[#0a2540]">Task Log Book ({filteredTLBs.length})</h2><p className="mt-1 text-sm text-[#6b7280]">{isStudent ? 'Solo se muestran TLB publicados y autorizados.' : 'Publica un TLB para habilitar su consulta a los alumnos.'}</p></div>{!isStudent && <button className={buttonClass} onClick={() => { setNewTLB({ module_id: editableModules[0] || '', practice_id: '', aircraft_id: '', date: new Date().toISOString().slice(0, 10), defect_description: '', correct_action: '' }); setCreateOpen(true) }}>+ Nuevo TLB</button>}</div>
-      <div className="mt-4 grid gap-3 md:grid-cols-4"><select className={inputClass} value={filters.module} onChange={(event) => setFilters({ ...filters, module: event.target.value })}><option value="">Todos los módulos</option>{availableModules.map((id) => <option key={id} value={id}>{id} · {getModule(id)?.name || ''}</option>)}</select><select className={inputClass} value={filters.practice} onChange={(event) => setFilters({ ...filters, practice: event.target.value })}><option value="">Todas las prácticas</option>{availablePracticesFilter.map((id) => <option key={id} value={id}>{id} · {getPractice(id)?.title || ''}</option>)}</select><select className={inputClass} value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })}><option value="">Todas las fechas</option>{availableDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select><input className={inputClass} placeholder="Buscar matrícula, práctica o profesor…" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} /></div>
-      {message && <p role="status" className="mt-3 rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
-    </section>
+  const hasFilters = Boolean(filters.module || filters.practice || filters.date || filters.search)
 
-    <div className="space-y-3">{filteredTLBs.map((tlb) => {
+  return <div className="space-y-5">
+    <div className="page-intro">
+      <div><h2>{isStudent ? 'Mi Task Log Book' : 'Task Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
+      {!isStudent && <button className={buttonClass} onClick={() => { setMessage(''); setNewTLB({ module_id: editableModules[0] || '', practice_id: '', aircraft_id: '', date: new Date().toISOString().slice(0, 10), defect_description: '', correct_action: '' }); setCreateOpen(true) }}><Icon name="plus" size={16} />Nuevo TLB</button>}
+    </div>
+    <section className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr]">
+      <div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar matrícula, práctica o profesor…" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} /></div>
+      <select className={inputClass} value={filters.module} onChange={(event) => setFilters({ ...filters, module: event.target.value })}><option value="">Todos los módulos</option>{availableModules.map((id) => <option key={id} value={id}>{id} · {getModule(id)?.name || ''}</option>)}</select>
+      <select className={inputClass} value={filters.practice} onChange={(event) => setFilters({ ...filters, practice: event.target.value })}><option value="">Todas las prácticas</option>{availablePracticesFilter.map((id) => <option key={id} value={id}>{id} · {getPractice(id)?.title || ''}</option>)}</select>
+      <select className={inputClass} value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })}><option value="">Todas las fechas</option>{availableDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select>
+    </section>
+    {!createOpen && pageNotice}
+
+    <div className="space-y-2">{filteredTLBs.map((tlb) => {
       const practice = getPractice(tlb.practice_id)
       const editable = editableTLB(tlb)
       const tlbDefects = getDefects(tlb.id)
-      const completedCount = submissions.filter(s => s.tlb_id === tlb.id).length
+      const completedCount = submissions.filter((s) => s.tlb_id === tlb.id && s.completed_at).length
 
-      return <article key={tlb.id} className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[#e5e7eb] border-l-4 border-l-[#1e88e5] bg-white p-4 shadow-sm transition hover:border-l-[#ffb300] hover:shadow-md">
-        <button className="min-w-0 flex-1 text-left" onClick={() => { setSelectedTLBId(tlb.id); setMessage('') }}><h3 className="font-bold text-[#0a2540]">{practice ? `${practice.id} · ${practice.title}` : `Práctica ${tlb.practice_id}`}</h3><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6b7280]"><span>✈️ {tlb.aircraft} ({tlb.registration})</span><span> {tlb.module_id}</span><span>📅 {formatDate(tlb.date)}</span><span>📝 {tlbDefects.length} defectos</span>{tlb.teacher_name && <span>👨‍🏫 {tlb.teacher_name}</span>}
-          {!isStudent && completedCount > 0 && (
-            <span className="rounded-full bg-[#2e7d32] px-2 py-1 text-xs font-bold text-white">
-              ✓ {completedCount} alumno{completedCount !== 1 ? 's' : ''}
+      return <article key={tlb.id} className="card group flex items-center gap-3 p-2 pr-3 transition-shadow hover:shadow-lift">
+        <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => { setSelectedTLBId(tlb.id); setMessage('') }}>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-subtle text-muted"><Icon name="clipboard" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span className="badge py-0">{tlb.module_id}</span>
+              <span>{tlb.aircraft} · {tlb.registration}</span>
+              <span>· {formatDate(tlb.date)}</span>
+              <span>· {tlbDefects.length} {tlbDefects.length === 1 ? 'defecto' : 'defectos'}</span>
+              {!isStudent && completedCount > 0 && <span className="text-success">· {completedCount} {completedCount === 1 ? 'entrega' : 'entregas'}</span>}
             </span>
-          )}
-        </div></button>
-        <div className="flex items-center gap-2">{tlb.published ? <span className="rounded bg-[#d4edda] px-3 py-1 text-xs font-semibold text-[#155724]">Publicado</span> : <span className="rounded bg-[#fff3cd] px-3 py-1 text-xs font-semibold text-[#856404]">Pendiente</span>}{editable && <button className="rounded border border-[#d1d5db] px-3 py-2 text-xs font-semibold" disabled={busy} onClick={() => togglePublish(tlb)}>{tlb.published ? 'Despublicar' : 'Publicar'}</button>}<button className="px-2 text-xl text-[#6b7280]" aria-label="Abrir TLB" onClick={() => setSelectedTLBId(tlb.id)}>→</button></div>
+          </span>
+        </button>
+        {!isStudent && (editable
+          ? <button className={`badge shrink-0 py-1 ${tlb.published ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'} hover:opacity-80`} title={tlb.published ? 'Pulsa para despublicar' : 'Pulsa para publicar'} disabled={busy} onClick={() => togglePublish(tlb)}>{tlb.published ? 'Publicado' : 'Borrador'}</button>
+          : <span className={`badge shrink-0 py-1 ${tlb.published ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>)}
+        <Icon name="next" size={16} className="hidden text-faint group-hover:text-accent sm:block" />
       </article>
     })}</div>
-    {filteredTLBs.length === 0 && <div className="rounded-lg border border-dashed border-[#d1d5db] p-10 text-center text-sm text-[#6b7280]">No hay TLB que coincidan con los filtros.</div>}
+    {filteredTLBs.length === 0 && <div className="card empty">{hasFilters ? 'No hay TLB que coincidan con los filtros.' : isStudent ? 'Todavía no hay TLB publicados para ti.' : 'Aún no hay TLB. Crea el primero.'}</div>}
 
-    {createOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false) }}><section role="dialog" aria-modal="true" aria-label="Crear TLB" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><h2 className="mb-4 text-lg font-bold text-[#0a2540]">Crear nuevo TLB</h2><form className="space-y-4" onSubmit={createTLB}>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Módulo<select className={inputClass} value={newTLB.module_id} onChange={(event) => setNewTLB({ ...newTLB, module_id: event.target.value, practice_id: '' })} required><option value="">Selecciona módulo</option>{modules.filter((module) => editableModules.includes(module.id)).map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Práctica<select className={inputClass} value={newTLB.practice_id} onChange={(event) => setNewTLB({ ...newTLB, practice_id: event.target.value })} required><option value="">Selecciona práctica</option>{availablePractices.map((practice) => <option key={practice.id} value={practice.id}>{practice.id} · {practice.title}</option>)}</select></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Avión<select className={inputClass} value={newTLB.aircraft_id} onChange={(event) => setNewTLB({ ...newTLB, aircraft_id: event.target.value })} required><option value="">Selecciona avión</option>{aircraft.map((plane) => <option key={plane.id} value={plane.id}>{plane.type} · {plane.registration} · MSN {plane.msn}</option>)}</select></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Fecha<input className={inputClass} type="date" value={newTLB.date} onChange={(event) => setNewTLB({ ...newTLB, date: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Defecto inicial<textarea className={inputClass} rows="3" value={newTLB.defect_description} onChange={(event) => setNewTLB({ ...newTLB, defect_description: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Acción correctiva inicial<textarea className={inputClass} rows="3" value={newTLB.correct_action} onChange={(event) => setNewTLB({ ...newTLB, correct_action: event.target.value })} required /></label>
-      {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
-      <div className="flex justify-end gap-2"><button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setCreateOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Crear TLB'}</button></div>
-    </form></section></div>}
+    {createOpen && (
+      <Modal title="Nuevo TLB" onClose={() => setCreateOpen(false)}>
+        <form className="space-y-4" onSubmit={createTLB}>
+          {tlbFormFields(newTLB, setNewTLB)}
+          <label className="field">Defecto inicial<textarea className={inputClass} rows="3" value={newTLB.defect_description} onChange={(event) => setNewTLB({ ...newTLB, defect_description: event.target.value })} required /></label>
+          <label className="field">Acción correctiva inicial<textarea className={inputClass} rows="3" value={newTLB.correct_action} onChange={(event) => setNewTLB({ ...newTLB, correct_action: event.target.value })} required /></label>
+          {formError}
+          <div className="flex justify-end gap-2 pt-1"><button type="button" className="btn-secondary" onClick={() => setCreateOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Creando…' : 'Crear TLB'}</button></div>
+        </form>
+      </Modal>
+    )}
   </div>
 }

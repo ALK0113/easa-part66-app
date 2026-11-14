@@ -3,7 +3,7 @@ import { handler, requireAdmin, readJson, HttpError } from '../_shared/utils.ts'
 const ALLOWED_ROLES = ['alumno', 'profesor']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-handler(async (req) => {
+Deno.serve(handler(async (req) => {
   const { adminClient } = await requireAdmin(req)
 
   const body = await readJson(req)
@@ -34,12 +34,13 @@ handler(async (req) => {
     userId = inviteData.user.id
   } else {
     // Modo directo: crea el usuario sin enviar correo (contraseña temporal)
-    const tempPass = 'Temp' + Math.random().toString(36).slice(-8) + '!'
+    // Contraseña temporal aleatoria criptográficamente segura (el usuario la cambiará)
+    const tempPass = 'Tmp-' + crypto.randomUUID() + '!'
     const { data: userData, error: userError } = await adminClient.auth.admin.createUser({
       email,
       password: tempPass,
       email_confirm: true,
-      user_metadata: { full_name },
+      user_metadata: { full_name: fullName },
     })
     if (userError || !userData.user) {
       console.error(userError)
@@ -63,6 +64,6 @@ handler(async (req) => {
     success: true, 
     user_id: userId, 
     email, 
-    send_invite: sendInvite 
+    send_invite: sendInvite,
   }
-})
+}))

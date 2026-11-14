@@ -1,6 +1,6 @@
-# AviaTrack · EASA Part 66
+# AviaTrack · EASA Part-147
 
-Aplicación React/Vite para la gestión académica EASA Part 66. Supabase proporciona autenticación y persistencia; los roles se leen de `profiles` (`admin`, `profesor`, `alumno`).
+Aplicación React/Vite para la gestión académica de organizaciones de formación de mantenimiento EASA Part-147 (módulos de conocimientos básicos Part-66). Supabase proporciona autenticación y persistencia; los roles se leen de `profiles` (`admin`, `profesor`, `alumno`).
 
 ## Desarrollo
 
@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en `.env`. Nunca incluyas la clave `service_role` en variables `VITE_*` ni en el cliente.
+Copia `.env.example` a `.env` y configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (y, opcionalmente, las variables `VITE_EMAILJS_*` para enviar el PDF del TLB por correo; también deben definirse en el hosting de producción). Nunca incluyas la clave `service_role` en variables `VITE_*` ni en el cliente.
 
 ## Activar gestión completa
 

@@ -1,78 +1,106 @@
-const navigation = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'schools', label: 'Escuelas', icon: '🏫', roles: ['admin'] }, 
-  { id: 'modules', label: 'Módulos', icon: '📚', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'students', label: 'Alumnos', icon: '👥', roles: ['admin', 'profesor'] },
-  { id: 'practices', label: 'Prácticas', icon: '🔧', roles: ['admin', 'profesor'] },
-  { id: 'tlb', label: 'Task Log Book', icon: '📋', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'videos', label: 'Vídeos', icon: '🎬', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'assignments', label: 'Asignaciones', icon: '🔗', roles: ['admin'] },
-  { id: 'teachers', label: 'Gestión de perfiles', icon: '👥', roles: ['admin'] },  
-  { id: 'aircraft', label: 'Aviones', icon: '✈️', roles: ['admin'] },
-  { id: 'reports', label: 'Informes', icon: '📈', roles: ['admin'] },
-  { id: 'settings', label: 'Configuración', icon: '⚙️', roles: ['admin'] },
-  { id: 'mydata', label: 'Mis datos', icon: '👤', roles: ['admin', 'profesor', 'alumno'] },
+import { ROLES, canAccessPage } from '../lib/roles.js'
+import Icon from './Icon.jsx'
+
+// Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
+// Agrupado por uso: lo diario arriba, la administración abajo.
+const sections = [
+  {
+    id: 'daily',
+    items: [
+      { id: 'dashboard', label: 'Inicio', icon: 'home' },
+      { id: 'modules', label: 'Módulos', icon: 'book' },
+      { id: 'progress', label: 'Mi progreso', icon: 'chart' },
+      { id: 'practices', label: 'Prácticas', icon: 'wrench' },
+      { id: 'tlb', label: 'Task Log Book', icon: 'clipboard' },
+      { id: 'videos', label: 'Vídeos', icon: 'play' },
+      { id: 'students', label: 'Alumnos', icon: 'users' },
+      { id: 'aircraft', label: 'Aviones', icon: 'plane' },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'Administración',
+    items: [
+      { id: 'schools', label: 'Escuelas', icon: 'school' },
+      { id: 'assignments', label: 'Asignaciones', icon: 'link' },
+      { id: 'teachers', label: 'Perfiles', icon: 'idcard' },
+      { id: 'reports', label: 'Informes', icon: 'chart' },
+      { id: 'settings', label: 'Configuración', icon: 'settings' },
+    ],
+  },
 ]
 
+const ROLE_LABELS = { [ROLES.ADMIN]: 'Administración', [ROLES.TEACHER]: 'Profesor', [ROLES.STUDENT]: 'Alumno' }
+
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
-  const visibleItems = navigation.filter((item) => item.roles.includes(user.role))
+  const isActive = (id) => activePage === id || (activePage === 'module-detail' && id === 'modules')
+
+  const navButton = (item) => (
+    <button
+      key={item.id}
+      type="button"
+      onClick={() => setActivePage(item.id)}
+      aria-current={isActive(item.id) ? 'page' : undefined}
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+        isActive(item.id)
+          ? 'bg-accent-soft font-semibold text-accent-strong'
+          : 'text-ink-soft hover:bg-subtle hover:text-ink'
+      }`}
+    >
+      <Icon name={item.icon} className={isActive(item.id) ? 'text-accent' : 'text-faint'} />
+      {item.label}
+    </button>
+  )
 
   return (
-    <aside className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col bg-[#0a2540] text-white shadow-xl transition-transform duration-200 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="border-b border-white/10 px-6 py-5">
-        <div className="flex items-center gap-3">
-          <span aria-hidden="true" className="text-2xl">✈️</span>
-          <div>
-            <h2 className="text-base font-bold">AviaTrack</h2>
-            <p className="mt-1 text-[11px] text-blue-100/70">EASA Part 66 · Gestión 26-27</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Cerrar menú" className="ml-auto rounded p-2 text-white/70 hover:bg-white/10 md:hidden">×</button>
+    <aside className={`fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r border-line bg-surface transition-transform duration-200 md:translate-x-0 ${isOpen ? 'translate-x-0 shadow-lift' : '-translate-x-full'}`}>
+      <div className="flex items-center gap-3 px-5 pb-4 pt-6">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-soft text-accent">
+          <Icon name="plane" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[15px] font-semibold leading-tight text-ink">AviaTrack</p>
+          <p className="text-xs text-muted">EASA Part-147</p>
         </div>
+        <button type="button" onClick={onClose} aria-label="Cerrar menú" className="ml-auto rounded-lg p-2 text-muted hover:bg-subtle md:hidden">
+          <Icon name="x" />
+        </button>
       </div>
 
-      <div className="border-b border-white/10 bg-white/[0.04] px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1e88e5] font-bold">
-            {user.name?.[0]?.toUpperCase() || 'U'}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{user.name}</p>
-            <p className="mt-0.5 text-xs capitalize text-blue-100/70">{user.role}</p>
-          </div>
-        </div>
-      </div>
-
-      <nav aria-label="Navegación principal" className="flex-1 overflow-y-auto px-3 py-4">
-        <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
-          {user.role === 'alumno' ? 'Mi formación' : 'Gestión académica'}
-        </p>
-        <div className="space-y-1">
-          {visibleItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setActivePage(item.id)}
-              aria-current={activePage === item.id || (activePage === 'module-detail' && item.id === 'modules') ? 'page' : undefined}
-              className={`flex w-full items-center gap-3 border-l-[3px] px-3 py-2.5 text-left text-sm transition-colors ${
-                activePage === item.id || (activePage === 'module-detail' && item.id === 'modules')
-                  ? 'border-[#ffb300] bg-white/10 font-semibold text-white'
-                  : 'border-transparent text-blue-100/85 hover:bg-white/[0.07] hover:text-white'
-              }`}
-            >
-              <span aria-hidden="true" className="w-5 text-center text-base">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </div>
+      <nav aria-label="Navegación principal" className="flex-1 space-y-6 overflow-y-auto px-3 py-3">
+        {sections.map((section) => {
+          const items = section.items.filter((item) => canAccessPage(item.id, user.role))
+          if (!items.length) return null
+          return (
+            <div key={section.id}>
+              {section.label && <p className="px-3 pb-2 text-xs font-medium text-faint">{section.label}</p>}
+              <div className="space-y-0.5">{items.map(navButton)}</div>
+            </div>
+          )
+        })}
       </nav>
 
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-line p-3">
+        <button
+          type="button"
+          onClick={() => setActivePage('mydata')}
+          aria-current={activePage === 'mydata' ? 'page' : undefined}
+          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${activePage === 'mydata' ? 'bg-accent-soft' : 'hover:bg-subtle'}`}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold text-accent-strong">
+            {user.name?.[0]?.toUpperCase() || 'U'}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-ink">{user.name}</span>
+            <span className="block text-xs text-muted">{ROLE_LABELS[user.role] || user.role} · Mis datos</span>
+          </span>
+        </button>
         <button
           type="button"
           onClick={onLogout}
-          className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-blue-100/85 transition-colors hover:bg-[#c62828] hover:text-white"
+          className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-muted transition-colors hover:bg-danger-soft hover:text-danger"
         >
-          <span aria-hidden="true" className="w-5 text-center">🚪</span>
+          <Icon name="logout" className="text-faint" />
           Cerrar sesión
         </button>
       </div>

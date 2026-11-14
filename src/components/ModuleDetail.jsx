@@ -2,14 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
-
-const inputClass = 'rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-
-function formatDate(value) {
-  if (!value) return '—'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
-}
+import { formatDate } from '../lib/format.js'
+import Icon from './Icon.jsx'
+import { youtubeId } from '../lib/youtube.js'
+import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 
 export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   const [module, setModule] = useState(null)
@@ -122,9 +118,23 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
     setMessage('Evaluación guardada.')
   }
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-[#6b7280]">Cargando detalle del módulo…</div>
-  if (error) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">{error}</div>
-  if (!module) return <div className="rounded-lg border border-[#e5e7eb] bg-white p-6">Módulo no encontrado.</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando módulo…</div>
+  if (error) return <div role="alert" className="notice-error">{error}</div>
+  if (!module) return <div className="card empty">Módulo no encontrado.</div>
+
+  const runSave = async (save) => { setBusy(true); await save(); setBusy(false) }
+  const tlbRow = (tlb, title) => (
+    <li key={tlb.id}>
+      <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => onOpenTLB(tlb.id)}>
+        <Icon name="clipboard" className="text-faint" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-ink">{title}</span>
+          <span className="mt-0.5 block text-xs text-muted">{formatDate(tlb.date)} · {defectsForTLB(tlb.id).length} defectos</span>
+        </span>
+        <span className={`badge ${tlb.published ? 'bg-success-soft text-success' : ''}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>
+      </button>
+    </li>
+  )
 
   if (selectedPractice) {
     const practiceRecords = recordsForPractice(selectedPractice.id)
@@ -133,47 +143,89 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
       if (record.attendance) counts[record.attendance] += 1
       if (record.evaluation === 'Apto') counts.apto += 1
     })
-    return <div className="space-y-5">
-      <button className="text-sm font-semibold text-[#1565c0]" onClick={() => { setSelectedPractice(null); setMessage('') }}>← Volver a {module.id}</button>
-      <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white">
-        <p className="text-xs font-semibold uppercase text-blue-100">{module.id} · {selectedPractice.ata} · {formatDate(selectedPractice.date)}</p>
-        <h2 className="mt-2 text-2xl font-bold">{selectedPractice.title}</h2>
-        <p className="mt-1 text-sm text-blue-100">{selectedPractice.detail}</p>
-        <p className="mt-4 text-sm">{selectedPractice.start_time} · {selectedPractice.hours} h · {students.length} alumnos</p>
+    const practiceTLBs = tlbForPractice(selectedPractice.id)
+    return <div className="space-y-6">
+      <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
+      <section>
+        <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
+        <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
+        {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
+        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+          <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
+          {selectedPractice.start_time && <span className="badge gap-1.5 bg-surface py-1"><Icon name="clock" size={14} className="text-faint" />{String(selectedPractice.start_time).slice(0, 5)} · {selectedPractice.hours} h</span>}
+          <span className="badge gap-1.5 bg-surface py-1"><Icon name="users" size={14} className="text-faint" />{students.length} alumnos</span>
+        </div>
       </section>
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">{[['Presentes', counts.P], ['Tarde', counts.L], ['Faltas', counts.A], ['Aptos', `${counts.apto}/${students.length}`]].map(([label, value]) => <div key={label} className="rounded-lg border border-[#e5e7eb] border-l-4 border-l-[#1e88e5] bg-white p-4"><p className="text-xs uppercase text-[#6b7280]">{label}</p><p className="mt-1 text-2xl font-bold text-[#0a2540]">{value}</p></div>)}</section>
-      {message && <p role="status" className="rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
-      <section className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
-        <div className="border-b border-[#e5e7eb] p-4"><h3 className="font-bold text-[#0a2540]">Alumnos · asistencia y evaluación</h3><p className="mt-1 text-xs text-[#6b7280]">Los cambios se guardan en Supabase y se sincronizan con otras sesiones.</p></div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{['Alumno', 'Grupo', 'Asistencia', 'Evaluación'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{students.map((student) => {
-          const record = getRecord(student.id, selectedPractice.id)
-          return <tr key={student.id} className="border-b border-[#e5e7eb]"><td className="p-3 font-semibold">{student.name}</td><td className="p-3">{student.group_name || '—'}</td><td className="p-3"><div className="flex gap-1">{[['P', 'Presente', '#2e7d32'], ['L', 'Tarde', '#ef6c00'], ['A', 'Falta', '#c62828']].map(([value, label, color]) => <button key={value} title={label} aria-pressed={record.attendance === value} disabled={!canEdit || busy} onClick={async () => { setBusy(true); await saveAttendance(student, selectedPractice, value); setBusy(false) }} className={`h-8 w-9 rounded border text-xs font-bold ${record.attendance === value ? 'text-white' : 'bg-white text-[#374151] disabled:opacity-50'}`} style={record.attendance === value ? { backgroundColor: color, borderColor: color } : undefined}>{value}</button>)}</div></td><td className="p-3"><select className={`${inputClass} max-w-40`} disabled={!canEdit || busy} value={record.evaluation || ''} onChange={async (event) => { setBusy(true); await saveEvaluation(student, selectedPractice, event.target.value); setBusy(false) }}><option value="">Sin evaluar</option><option value="Apto">Apto</option><option value="No Apto">No apto</option></select></td></tr>
-        })}</tbody></table></div>
-        {students.length === 0 && <p className="p-8 text-center text-sm text-[#6b7280]">No hay alumnos matriculados en este módulo.</p>}
+      <RecordSummary items={[['Presentes', counts.P, 'bg-success'], ['Tarde', counts.L, 'bg-warn'], ['Faltas', counts.A, 'bg-danger'], ['Aptos', `${counts.apto}/${students.length}`, 'bg-accent']]} />
+      <section className="card overflow-hidden">
+        <div className="px-5 pb-3 pt-5">
+          <h3 className="font-semibold text-ink">Asistencia y evaluación</h3>
+          <p className="mt-0.5 text-xs text-muted">{canEdit ? 'Se guarda al instante y se sincroniza con otras sesiones.' : 'Solo lectura.'}</p>
+        </div>
+        {message && <p role="status" className="notice mx-5 mb-3">{message}</p>}
+        <ul className="divide-y divide-line border-t border-line">
+          {students.map((student) => (
+            <StudentRecordRow
+              key={student.id}
+              student={student}
+              record={getRecord(student.id, selectedPractice.id)}
+              canEdit={canEdit}
+              busy={busy}
+              meta={student.group_name || '—'}
+              onAttendance={(value) => runSave(() => saveAttendance(student, selectedPractice, value))}
+              onEvaluation={(value) => runSave(() => saveEvaluation(student, selectedPractice, value))}
+            />
+          ))}
+        </ul>
+        {students.length === 0 && <p className="empty">No hay alumnos matriculados en este módulo.</p>}
       </section>
-      <section className="rounded-lg border border-[#e5e7eb] bg-white p-4"><h3 className="mb-3 font-bold text-[#0a2540]">Task Log Book de la práctica</h3>{tlbForPractice(selectedPractice.id).length ? <div className="space-y-2">{tlbForPractice(selectedPractice.id).map((tlb) => <button key={tlb.id} className="flex w-full flex-wrap items-center justify-between gap-2 rounded border border-[#e5e7eb] p-3 text-left hover:bg-[#f4f6f9]" onClick={() => onOpenTLB(tlb.id)}><span className="font-semibold">{tlb.aircraft} · {tlb.registration}</span><span className="text-xs text-[#6b7280]">{formatDate(tlb.date)} · {tlb.published ? 'Publicado' : 'Pendiente'} · {defectsForTLB(tlb.id).length} defectos</span></button>)}</div> : <p className="text-sm text-[#6b7280]">No hay TLB para esta práctica.</p>}</section>
+      <section className="card p-3">
+        <h3 className="px-3 pb-1 pt-2 font-semibold text-ink">Task Log Book de la práctica</h3>
+        {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
+      </section>
     </div>
   }
 
-  const tabs = [['resumen', 'Resumen'], ['practicas', `Prácticas (${practices.length})`], ['tlb', `TLB (${tlbs.length})`], ['videos', `Vídeos (${videos.length})`]]
-  return <div className="space-y-5">
-    <button className="text-sm font-semibold text-[#1565c0]" onClick={onBack}>← Volver a módulos</button>
-    <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white">
-      <p className="text-xs font-semibold uppercase text-blue-100">Módulo EASA Part 66</p><h2 className="mt-2 text-2xl font-bold">{module.id} · {module.name}</h2><p className="mt-1 text-sm text-blue-100">{module.description || 'Sin descripción'}</p>
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="rounded bg-white/15 p-3"><p className="text-[10px] uppercase text-blue-100">{label}</p><p className="mt-1 text-lg font-bold">{value}</p></div>)}</div>
+  const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
+  const todayKey = new Date().toLocaleDateString('sv-SE')
+  const upcomingPractices = practices.filter((practice) => String(practice.date || '') >= todayKey)
+  const tabs = [['resumen', 'Resumen'], ['practicas', `Prácticas · ${practices.length}`], ['tlb', `TLB · ${tlbs.length}`], ['videos', `Vídeos · ${videos.length}`]]
+  const practiceRow = (practice) => (
+    <li key={practice.id}>
+      <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => { setSelectedPractice(practice); setSection('practicas') }}>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-ink">{practice.title}</span>
+          <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
+        </span>
+        <span className="text-right text-sm text-muted">{formatDate(practice.date)}{practice.start_time ? <span className="block text-xs text-faint">{String(practice.start_time).slice(0, 5)}</span> : null}</span>
+        <Icon name="next" size={16} className="text-faint" />
+      </button>
+    </li>
+  )
+
+  return <div className="space-y-6">
+    <button type="button" className="back-link" onClick={onBack}>← Módulos</button>
+    <section>
+      <span className="badge bg-accent-soft text-accent-strong">{module.id}</span>
+      <h2 className="mt-2 text-2xl font-semibold text-ink">{module.name}</h2>
+      <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
+      <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
     </section>
-    <nav aria-label="Contenido del módulo" className="flex flex-wrap gap-2 border-b border-[#d1d5db]">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className={`border-b-2 px-3 py-2 text-sm font-semibold ${section === id ? 'border-[#1e88e5] text-[#0a2540]' : 'border-transparent text-[#6b7280]'}`} onClick={() => { setSection(id); setSelectedPractice(null) }}>{label}</button>)}</nav>
+    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null) }}>{label}</button>)}</nav>
 
     {section === 'resumen' && <div className="grid gap-5 lg:grid-cols-2">
-      <section className="rounded-lg border border-[#e5e7eb] bg-white p-5"><h3 className="mb-3 font-bold text-[#0a2540]">Profesores asociados</h3>{teachers.length ? <ul className="space-y-2">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center justify-between rounded border border-[#e5e7eb] p-3"><span className="font-semibold">{teacher.full_name || 'Profesor'}</span><span className="text-xs text-[#6b7280]">{teacher.email || ''}</span></li>)}</ul> : <p className="text-sm text-[#6b7280]">No hay profesores asociados.</p>}</section>
-      <section className="rounded-lg border border-[#e5e7eb] bg-white p-5"><h3 className="mb-3 font-bold text-[#0a2540]">Alumnos asociados</h3>{students.length ? <ul className="max-h-72 space-y-2 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between rounded border border-[#e5e7eb] p-3"><span className="font-semibold">{student.name}</span><span className="text-xs text-[#6b7280]">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-[#6b7280]">No hay alumnos asociados.</p>}</section>
-      <section className="rounded-lg border border-[#e5e7eb] bg-white p-5 lg:col-span-2"><div className="mb-3 flex items-center justify-between"><h3 className="font-bold text-[#0a2540]">Próximas prácticas</h3><button className="text-sm font-semibold text-[#1565c0]" onClick={() => setSection('practicas')}>Ver todas</button></div>{practices.slice(0, 5).map((practice) => <button key={practice.id} className="flex w-full flex-wrap items-center justify-between gap-2 border-t border-[#e5e7eb] py-3 text-left" onClick={() => { setSelectedPractice(practice); setSection('practicas') }}><span><strong>{practice.title}</strong><span className="ml-2 text-xs text-[#6b7280]">{practice.id} · {practice.ata}</span></span><span className="text-sm text-[#6b7280]">{formatDate(practice.date)} · {practice.start_time}</span></button>)}{practices.length === 0 && <p className="text-sm text-[#6b7280]">No hay prácticas asociadas.</p>}</section>
+      <section className="card p-3 lg:col-span-2">
+        <div className="flex items-center justify-between px-3 pb-1 pt-2"><h3 className="font-semibold text-ink">Próximas prácticas</h3>{practices.length > 0 && <button className="link" onClick={() => setSection('practicas')}>Ver todas</button>}</div>
+        {upcomingPractices.length ? <ul>{upcomingPractices.slice(0, 5).map(practiceRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">{practices.length ? 'No hay prácticas próximas.' : 'No hay prácticas asociadas.'}</p>}
+      </section>
+      <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Profesores</h3>{teachers.length ? <ul className="space-y-3">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">{(teacher.full_name || 'P')[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-ink">{teacher.full_name || 'Profesor'}</span><span className="block truncate text-xs text-muted">{teacher.email || ''}</span></span></li>)}</ul> : <p className="text-sm text-muted">No hay profesores asociados.</p>}</section>
+      <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
     </div>}
 
-    {section === 'practicas' && <section className="rounded-lg border border-[#e5e7eb] bg-white p-4">{practices.length ? <div className="space-y-2">{practices.map((practice) => <button key={practice.id} className="flex w-full flex-wrap items-center justify-between gap-3 rounded border border-[#e5e7eb] p-4 text-left hover:border-l-4 hover:border-l-[#1e88e5] hover:bg-[#f9fbfd]" onClick={() => setSelectedPractice(practice)}><span><span className="block font-bold text-[#0a2540]">{practice.title}</span><span className="mt-1 block text-xs text-[#6b7280]">{practice.id} · {practice.ata} · {practice.hours || 0} h</span></span><span className="text-sm text-[#6b7280]">{formatDate(practice.date)} · {practice.start_time}</span></button>)}</div> : <p className="p-8 text-center text-sm text-[#6b7280]">No hay prácticas en este módulo.</p>}</section>}
+    {section === 'practicas' && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
 
-    {section === 'tlb' && <section className="rounded-lg border border-[#e5e7eb] bg-white p-4"><h3 className="mb-3 font-bold text-[#0a2540]">Task Log Book asociados</h3>{tlbs.length ? <div className="space-y-2">{tlbs.map((tlb) => <button key={tlb.id} className="flex w-full flex-wrap items-center justify-between gap-2 rounded border border-[#e5e7eb] p-3 text-left hover:bg-[#f4f6f9]" onClick={() => onOpenTLB(tlb.id)}><span className="font-semibold">{getPractice(tlb.practice_id)?.title || tlb.practice_id} · {tlb.aircraft} ({tlb.registration})</span><span className="text-xs text-[#6b7280]">{formatDate(tlb.date)} · {tlb.published ? 'Publicado' : 'Pendiente'} · {defectsForTLB(tlb.id).length} defectos</span></button>)}</div> : <p className="text-sm text-[#6b7280]">No hay TLB asociados.</p>}</section>}
+    {section === 'tlb' && <section className="card p-3">{tlbs.length ? <ul>{tlbs.map((tlb) => tlbRow(tlb, `${getPractice(tlb.practice_id)?.title || tlb.practice_id} · ${tlb.aircraft} (${tlb.registration})`))}</ul> : <p className="empty">No hay TLB asociados.</p>}</section>}
 
-    {section === 'videos' && <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{videos.map((video) => <article key={video.id} className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white"><div className="relative aspect-video bg-[#0a2540]"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${video.youtube_url}`} title={video.title} loading="lazy" allowFullScreen /></div><div className="p-4"><h3 className="font-semibold text-[#0a2540]">{video.title}</h3><span className="mt-2 inline-block rounded bg-[#d1ecf1] px-2 py-1 text-xs text-[#0c5460]">{video.ata}</span></div></article>)}{videos.length === 0 && <p className="text-sm text-[#6b7280]">No hay vídeos en este módulo.</p>}</section>}
+    {section === 'videos' && <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{videos.map((video) => <article key={video.id} className="card overflow-hidden"><div className="relative aspect-video bg-ink"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${youtubeId(video.youtube_url)}`} title={video.title} loading="lazy" allowFullScreen /></div><div className="p-4"><h3 className="font-medium text-ink">{video.title}</h3><span className="badge mt-2">{video.ata}</span></div></article>)}{videos.length === 0 && <p className="card empty sm:col-span-2 xl:col-span-3">No hay vídeos en este módulo.</p>}</section>}
   </div>
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
 
-export default function StudentList({ user, schoolId }) {
+export default function StudentList({ schoolId }) {
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -100,158 +101,87 @@ export default function StudentList({ user, schoolId }) {
   const hasActiveFilters = searchQuery || filterClass || filterGroup || filterPromo
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-gray-500">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600"></div>
-        <p className="mt-3 text-sm font-medium">Cargando listado de alumnos...</p>
-      </div>
-    )
+    return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando alumnos…</div>
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-700">
-        <p className="font-semibold">⚠️ Error de conexión</p>
-        <p className="mt-1 text-sm">{error}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="mt-4 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
-        >
-          Reintentar
-        </button>
+      <div role="alert" className="card p-6 text-center">
+        <p className="font-medium text-ink">No se pudo cargar el listado</p>
+        <p className="mt-1 text-sm text-muted">{error}</p>
+        <button onClick={() => window.location.reload()} className="btn-secondary mt-4">Reintentar</button>
       </div>
     )
   }
 
+  const filterSelect = (value, setValue, placeholder, options) => (
+    <select value={value} onChange={(e) => setValue(e.target.value)} className="input">
+      <option value="">{placeholder}</option>
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+    </select>
+  )
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">
-          Alumnos <span className="text-gray-500 text-lg font-normal">({filteredStudents.length} de {students.length})</span>
-        </h2>
+    <div className="space-y-5">
+      <div className="page-intro">
+        <div>
+          <h2>Alumnos</h2>
+          <p>{hasActiveFilters ? `${filteredStudents.length} de ${students.length}` : `${students.length} ${students.length === 1 ? 'alumno' : 'alumnos'}`}</p>
+        </div>
+        {hasActiveFilters && <button type="button" onClick={clearFilters} className="btn-ghost text-muted">Limpiar filtros</button>}
       </div>
 
-      {/* Barra de búsqueda y filtros */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
-        {/* Búsqueda */}
+      <div className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr]">
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
-            type="text"
-            placeholder="Buscar por nombre, número, clase, grupo o promoción..."
+            type="search"
+            placeholder="Buscar alumno…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            className="input pl-9"
           />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer text-lg"
-            >
-              ×
-            </button>
-          )}
         </div>
-
-        {/* Filtros */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <select
-            value={filterClass}
-            onChange={(e) => setFilterClass(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-          >
-            <option value="">Todas las clases</option>
-            {uniqueClasses.map(cls => (
-              <option key={cls} value={cls}>{cls}</option>
-            ))}
-          </select>
-
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-          >
-            <option value="">Todos los grupos</option>
-            {uniqueGroups.map(grp => (
-              <option key={grp} value={grp}>{grp}</option>
-            ))}
-          </select>
-
-          <select
-            value={filterPromo}
-            onChange={(e) => setFilterPromo(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-          >
-            <option value="">Todas las promociones</option>
-            {uniquePromos.map(promo => (
-              <option key={promo} value={promo}>{promo}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Botón limpiar filtros */}
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
-          >
-            🗑️ Limpiar todos los filtros
-          </button>
-        )}
+        {filterSelect(filterClass, setFilterClass, 'Todas las clases', uniqueClasses)}
+        {filterSelect(filterGroup, setFilterGroup, 'Todos los grupos', uniqueGroups)}
+        {filterSelect(filterPromo, setFilterPromo, 'Todas las promociones', uniquePromos)}
       </div>
 
-      {/* Resultados */}
       {filteredStudents.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center">
-          <div className="text-5xl mb-4">👥</div>
-          <p className="text-lg font-semibold text-gray-700">
-            {hasActiveFilters ? 'No hay alumnos que coincidan con los filtros' : 'No hay alumnos registrados'}
+        <div className="card empty">
+          <p className="font-medium text-ink-soft">{hasActiveFilters ? 'Ningún alumno coincide con la búsqueda' : 'Todavía no hay alumnos'}</p>
+          <p className="mt-1">
+            {hasActiveFilters
+              ? 'Prueba con otros criterios.'
+              : 'Aparecerán aquí cuando estén matriculados en tus módulos.'}
           </p>
-          <p className="text-sm text-gray-500 mt-2">
-            {hasActiveFilters 
-              ? 'Prueba a cambiar los criterios de búsqueda o limpia los filtros.' 
-              : schoolId 
-                ? 'No hay alumnos asignados a esta escuela todavía.' 
-                : 'Los alumnos aparecerán aquí cuando se asignen a una escuela.'}
-          </p>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="mt-4 rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-            >
-              Limpiar filtros
-            </button>
-          )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm" aria-label="Tabla de alumnos">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="p-4 font-semibold text-gray-700">Nombre</th>
-                <th className="p-4 font-semibold text-gray-700">Nº Alumno</th>
-                <th className="p-4 font-semibold text-gray-700">Clase</th>
-                <th className="p-4 font-semibold text-gray-700">Grupo</th>
-                <th className="p-4 font-semibold text-gray-700">Promo</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredStudents.map((student) => (
-                <tr key={student.id} className="hover:bg-blue-50/50 transition-colors duration-150">
-                  <td className="p-4 font-medium text-gray-900">{student.name || 'Sin nombre'}</td>
-                  <td className="p-4 font-mono text-xs text-gray-600 bg-gray-50/50 rounded">
-                    {student.student_number || '—'}
-                  </td>
-                  <td className="p-4 text-gray-600">{student.class_name || '—'}</td>
-                  <td className="p-4 text-gray-600">{student.group_name || '—'}</td>
-                  <td className="p-4 text-gray-600">{student.promo || '—'}</td>
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm" aria-label="Tabla de alumnos">
+              <thead>
+                <tr>
+                  <th className="px-5 py-3">Nombre</th>
+                  <th className="px-5 py-3">Nº</th>
+                  <th className="px-5 py-3">Clase</th>
+                  <th className="px-5 py-3">Grupo</th>
+                  <th className="px-5 py-3">Promoción</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => (
+                  <tr key={student.id} className="border-t border-line">
+                    <td className="px-5 py-3.5 font-medium text-ink">{student.name || 'Sin nombre'}</td>
+                    <td className="px-5 py-3.5 tabular-nums text-muted">{student.student_number || '—'}</td>
+                    <td className="px-5 py-3.5 text-ink-soft">{student.class_name || '—'}</td>
+                    <td className="px-5 py-3.5 text-ink-soft">{student.group_name || '—'}</td>
+                    <td className="px-5 py-3.5 text-ink-soft">{student.promo || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

@@ -1,8 +1,24 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'w-full rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
+const inputClass = 'input'
+const buttonClass = 'btn-primary h-11 w-full'
+
+// Pantalla común para enlaces de invitación/recuperación caducados o ya usados.
+export function InvalidLinkNotice() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4"><div className="card fade-in w-full max-w-md p-8 text-center">
+      <h1 className="mb-2 text-xl font-semibold text-ink">Enlace no válido</h1>
+      <p className="mb-4 text-sm text-muted">
+        El enlace ha caducado o ya se ha usado. Pide una nueva invitación al administrador
+        o usa «¿Olvidaste tu contraseña?» en la pantalla de acceso.
+      </p>
+      <button type="button" className={buttonClass} onClick={() => window.location.replace(window.location.pathname)}>
+        Ir al inicio
+      </button>
+    </div></div>
+  )
+}
 
 export default function SetPassword({ onDone }) {
   const [checking, setChecking] = useState(true)
@@ -14,10 +30,10 @@ export default function SetPassword({ onDone }) {
 
   // getSession espera a que Supabase termine de procesar el enlace
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setHasSession(Boolean(data.session))
-      setChecking(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data }) => setHasSession(Boolean(data.session)))
+      .catch(() => setHasSession(false))
+      .finally(() => setChecking(false))
   }, [])
 
   async function handleSubmit(event) {
@@ -61,34 +77,21 @@ export default function SetPassword({ onDone }) {
   }
 
   if (checking) {
-    return <div className="p-8 text-center text-[#0a2540]">Verificando enlace...</div>
+    return <div className="flex min-h-screen items-center justify-center bg-canvas text-sm text-muted">Verificando enlace…</div>
   }
 
-  if (!hasSession) {
-    return (
-      <div className="mx-auto mt-16 max-w-md rounded-lg border border-[#e5e7eb] bg-white p-6 text-center shadow">
-        <h1 className="mb-2 text-lg font-bold text-[#0a2540]">Enlace no válido</h1>
-        <p className="mb-4 text-sm text-[#6b7280]">
-          El enlace ha caducado o ya se ha usado. Pide una nueva invitación al administrador
-          o usa «¿Olvidaste tu contraseña?» en la pantalla de acceso.
-        </p>
-        <button className={buttonClass} onClick={() => window.location.replace(window.location.pathname)}>
-          Ir al inicio
-        </button>
-      </div>
-    )
-  }
+  if (!hasSession) return <InvalidLinkNotice />
 
   return (
-    <div className="mx-auto mt-16 max-w-md rounded-lg border border-[#e5e7eb] bg-white p-6 shadow">
-      <h1 className="mb-1 text-lg font-bold text-[#0a2540]">Elige tu contraseña</h1>
-      <p className="mb-4 text-sm text-[#6b7280]">
-        Mínimo 8 caracteres. La usarás para entrar en Aviatrack.
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4"><div className="card fade-in w-full max-w-md p-8">
+      <h1 className="mb-1 text-xl font-semibold text-ink">Elige tu contraseña</h1>
+      <p className="mb-6 text-sm text-muted">
+        Mínimo 8 caracteres. La usarás para entrar en AviaTrack.
       </p>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nueva contraseña</label>
+          <label className="mb-1.5 block text-sm font-medium text-ink-soft">Nueva contraseña</label>
           <input
             className={inputClass}
             type="password"
@@ -100,7 +103,7 @@ export default function SetPassword({ onDone }) {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Repite la contraseña</label>
+          <label className="mb-1.5 block text-sm font-medium text-ink-soft">Repite la contraseña</label>
           <input
             className={inputClass}
             type="password"
@@ -111,15 +114,15 @@ export default function SetPassword({ onDone }) {
           />
         </div>
 
-        {error && <div className="rounded bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+        {error && <div className="notice-error">{error}</div>}
 
         <button className={buttonClass} disabled={busy}>
           {busy ? 'Guardando...' : 'Guardar contraseña'}
         </button>
-        <button type="button" className="w-full text-xs text-[#6b7280] underline" onClick={handleCancel}>
+        <button type="button" className="w-full text-sm text-muted hover:text-ink" onClick={handleCancel}>
           Cancelar y cerrar sesión
         </button>
       </form>
-    </div>
+    </div></div>
   )
 }

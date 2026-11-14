@@ -1,14 +1,18 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
-import { useTheme, COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../contexts/ThemeContext.jsx'
+import { useTheme } from '../contexts/useTheme.js'
+import { COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../lib/theme.js'
+import { downloadCsv } from '../lib/download.js'
+import { ROLES } from '../lib/roles.js'
 
 const ITEMS_PER_PAGE = 6
 const DEBOUNCE_DELAY = 300
 
-const inputClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all'
-const buttonPrimary = 'rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer'
-const buttonSecondary = 'rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all cursor-pointer'
+const inputClass = 'input'
+const buttonPrimary = 'btn-primary'
+const buttonSecondary = 'btn-secondary'
 
 function parseSupabaseError(err) {
   const code = err?.code
@@ -26,14 +30,6 @@ function generateId() {
   return Math.random().toString(36).substring(2, 11)
 }
 
-function escapeCSV(value) {
-  const str = String(value ?? '')
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`
-  }
-  return str
-}
-
 function exportToCSV(schools, filename = 'escuelas') {
   const headers = ['ID', 'Nombre', 'Dirección', 'Ciudad', 'Teléfono', 'Email', 'Color', 'Alumnos', 'Profesores', 'Supervisores']
   const rows = schools.map(s => [
@@ -41,13 +37,18 @@ function exportToCSV(schools, filename = 'escuelas') {
     s.school_phone || '', s.school_email || '', s.brand_color || '',
     s.total_students, s.total_teachers, s.total_supervisors,
   ])
-  const csv = [headers.join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n')
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`
-  link.click()
-  URL.revokeObjectURL(link.href)
+  downloadCsv([headers, ...rows], `${filename}_${new Date().toISOString().split('T')[0]}.csv`)
+}
+
+const ACTIVE_SCHOOL_KEY = 'activeSchoolId'
+function readActiveSchool() {
+  try { return localStorage.getItem(ACTIVE_SCHOOL_KEY) } catch { return null }
+}
+function writeActiveSchool(id) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_SCHOOL_KEY, id)
+    else localStorage.removeItem(ACTIVE_SCHOOL_KEY)
+  } catch { /* almacenamiento no disponible */ }
 }
 
 function isValidHexColor(color) {
@@ -56,7 +57,7 @@ function isValidHexColor(color) {
 
 export default function SchoolManagement({ user }) {
   const { setPrimaryColor } = useTheme()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.role === ROLES.ADMIN
 
   const [schools, setSchools] = useState([])
   const [unassignedSupervisors, setUnassignedSupervisors] = useState([])
@@ -65,7 +66,7 @@ export default function SchoolManagement({ user }) {
   const [loading, setLoading] = useState(true)
   const [toasts, setToasts] = useState([])
 
-  const [activeSchoolId, setActiveSchoolId] = useState(() => localStorage.getItem('activeSchoolId'))
+  const [activeSchoolId, setActiveSchoolId] = useState(readActiveSchool)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -97,7 +98,7 @@ export default function SchoolManagement({ user }) {
   const [removing, setRemoving] = useState(null)
   const [savingColor, setSavingColor] = useState(false)
 
-  const loadAbortRef = useRef(null)
+  const loadRequestRef = useRef(0)
   const debounceRef = useRef(null)
 
   const addToast = useCallback((type, message) => {
@@ -111,15 +112,17 @@ export default function SchoolManagement({ user }) {
     return schools.find(s => s.school_id === activeSchoolId)?.brand_color || null
   }, [activeSchoolId, schools])
 
+  // Solo se aplica cuando hay un color concreto: así no se pisa el tema de la escuela
+  // del usuario mientras la lista aún se está cargando.
   useEffect(() => {
-    setPrimaryColor(activeSchoolColor || DEFAULT_BRAND_COLOR)
+    if (activeSchoolColor) setPrimaryColor(activeSchoolColor)
   }, [activeSchoolColor, setPrimaryColor])
 
   const handleSetActiveSchool = useCallback((id) => {
     setActiveSchoolId(id)
-    if (id) localStorage.setItem('activeSchoolId', id)
-    else localStorage.removeItem('activeSchoolId')
-  }, [])
+    writeActiveSchool(id)
+    if (!id) setPrimaryColor(DEFAULT_BRAND_COLOR)
+  }, [setPrimaryColor])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -153,21 +156,21 @@ export default function SchoolManagement({ user }) {
   const totalPages = Math.ceil(filteredAndSortedSchools.length / ITEMS_PER_PAGE)
   const paginatedSchools = filteredAndSortedSchools.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
+  // Las recargas tras guardar se hacen en segundo plano (sin ocultar la lista).
+  // Un contador descarta respuestas de peticiones ya superadas.
   const loadSchools = useCallback(async () => {
-    if (loadAbortRef.current) loadAbortRef.current.abort()
-    loadAbortRef.current = new AbortController()
-    setLoading(true)
+    const requestId = ++loadRequestRef.current
     try {
-      const { data, error } = await supabase.rpc('admin_list_schools_with_stats_v2')
-      if (loadAbortRef.current?.signal.aborted) return
+      const { data, error } = await supabase.rpc('admin_list_schools_with_stats')
+      if (requestId !== loadRequestRef.current) return
       if (error) throw error
       setSchools(data || [])
     } catch (err) {
-      if (err?.name === 'AbortError') return
+      if (requestId !== loadRequestRef.current) return
       const { message } = parseSupabaseError(err)
       addToast('error', `Error: ${message}`)
     } finally {
-      if (!loadAbortRef.current?.signal.aborted) setLoading(false)
+      if (requestId === loadRequestRef.current) setLoading(false)
     }
   }, [addToast])
 
@@ -192,9 +195,10 @@ export default function SchoolManagement({ user }) {
   }, [addToast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
     loadSchools()
     loadUnassignedSupervisors()
-    return () => { loadAbortRef.current?.abort() }
+    return () => { loadRequestRef.current += 1 }
   }, [loadSchools, loadUnassignedSupervisors])
 
   function validateForm(form) {
@@ -388,11 +392,10 @@ export default function SchoolManagement({ user }) {
     }
   }
 
-  if (user?.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center">
-        <div className="text-5xl mb-4">🔒</div>
-        <p className="text-lg font-semibold text-red-500">Solo los administradores pueden gestionar escuelas</p>
+        <p className="text-lg font-semibold text-danger">Solo los administradores pueden gestionar escuelas</p>
       </div>
     )
   }
@@ -402,10 +405,10 @@ export default function SchoolManagement({ user }) {
       {/* Toasts */}
       <div className="fixed top-4 right-4 z-[100] space-y-2 max-w-sm">
         {toasts.map(toast => (
-          <div key={toast.id} className={`rounded-lg p-4 shadow-lg border animate-[slideIn_0.3s_ease-out] ${
-            toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-            toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-            'bg-blue-50 border-blue-200 text-blue-800'
+          <div key={toast.id} className={`fade-in rounded-xl border border-line bg-surface p-4 shadow-lift ${
+            toast.type === 'success' ? 'text-success' :
+            toast.type === 'error' ? 'text-danger' :
+            'text-ink-soft'
           }`}>
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-medium">{toast.message}</p>
@@ -416,28 +419,25 @@ export default function SchoolManagement({ user }) {
       </div>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="page-intro">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">
-            Gestión de Escuelas
-            <span className="ml-2 text-sm font-normal text-gray-500">({schools.length})</span>
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">Administra centros, colores de marca y supervisores</p>
+          <h2>Escuelas</h2>
+          <p>{schools.length} {schools.length === 1 ? 'centro' : 'centros'} · colores de marca y supervisores</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={() => exportToCSV(filteredAndSortedSchools)} className={buttonSecondary} title="Exportar CSV">
-            📥 CSV
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => exportToCSV(filteredAndSortedSchools)} className={buttonSecondary}>
+            <Icon name="download" size={16} />CSV
           </button>
-          <button type="button" onClick={openCreateModal} className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`}>
-            ➕ Nueva Escuela
+          <button type="button" onClick={openCreateModal} className={buttonPrimary}>
+            <Icon name="plus" size={16} />Nueva escuela
           </button>
         </div>
       </div>
 
       {/* Selector de Escuela */}
-<div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-  <label className="block text-sm font-semibold text-gray-700 mb-2">
-    Escuela
+<div className="card p-5">
+  <label className="mb-1.5 block text-sm font-medium text-ink-soft">
+    Escuela activa
   </label>
   <select
     value={activeSchoolId || ''}
@@ -452,26 +452,26 @@ export default function SchoolManagement({ user }) {
     ))}
   </select>
   {activeSchoolId && (
-    <p className="mt-2 text-xs text-gray-500">
-      ✨ Los títulos y acentos de la aplicación usan el color de esta escuela.
+    <p className="mt-2 text-xs text-muted">
+      Los acentos de la aplicación usan el color de esta escuela.
     </p>
   )}
 </div>
 
       {/* Búsqueda y filtros */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-3">
+      <div>
+        <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex-1 relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="text"
-              placeholder="Buscar por nombre, ciudad o email..."
+              placeholder="Buscar por nombre, ciudad o correo…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className={`${inputClass} pl-10`}
+              className={`${inputClass} pl-9`}
             />
             {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer">×</button>
+              <button type="button" onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink-soft cursor-pointer">×</button>
             )}
           </div>
           <select
@@ -492,7 +492,7 @@ export default function SchoolManagement({ user }) {
           </select>
         </div>
         {debouncedSearch && (
-          <p className="mt-2 text-xs text-gray-500">
+          <p className="mt-2 text-xs text-muted">
             {filteredAndSortedSchools.length} resultado{filteredAndSortedSchools.length !== 1 ? 's' : ''} para "{debouncedSearch}"
           </p>
         )}
@@ -500,18 +500,14 @@ export default function SchoolManagement({ user }) {
 
       {/* Contenido Principal */}
       {loading ? (
-        <div className="py-16 text-center">
-          <div className="inline-block h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"></div>
-          <p className="mt-4 text-gray-500">Cargando escuelas...</p>
-        </div>
+        <div className="py-16 text-center text-sm text-muted">Cargando escuelas…</div>
       ) : filteredAndSortedSchools.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center">
-          <div className="text-5xl mb-4">🏫</div>
-          <p className="text-lg font-semibold text-gray-700">
+        <div className="card empty">
+          <p className="font-medium text-ink-soft">
             {debouncedSearch ? 'Sin resultados' : 'No hay escuelas registradas'}
           </p>
-          <p className="text-sm text-gray-500 mt-2">
-            {debouncedSearch ? 'Prueba con otros términos de búsqueda' : 'Haz clic en "Nueva Escuela" para comenzar'}
+          <p className="mt-1">
+            {debouncedSearch ? 'Prueba con otros términos de búsqueda.' : 'Crea la primera con «Nueva escuela».'}
           </p>
         </div>
       ) : (
@@ -523,45 +519,45 @@ export default function SchoolManagement({ user }) {
               return (
                 <div
                   key={school.school_id}
-                  className={`group rounded-lg border bg-white p-5 shadow-sm hover:shadow-md transition-all ${
-                    isActive ? 'ring-2 ring-offset-2' : 'border-gray-200'
+                  className={`card group p-5 transition-shadow hover:shadow-lift ${
+                    isActive ? 'ring-2 ring-offset-2 ring-offset-canvas' : ''
                   }`}
                   style={isActive ? { borderColor: schoolColor, '--tw-ring-color': schoolColor } : {}}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <div
-                        className="h-4 w-4 rounded-full flex-shrink-0 border border-gray-200"
+                        className="h-4 w-4 rounded-full flex-shrink-0 border border-line"
                         style={{ backgroundColor: schoolColor }}
                         title={`Color: ${schoolColor}`}
                       />
-                      <h3 className="text-lg font-bold text-gray-800 truncate">{school.school_name}</h3>
+                      <h3 className="text-lg font-semibold text-ink truncate">{school.school_name}</h3>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={() => openColorModal(school)} className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer" title="Cambiar color">🎨</button>
-                      <button type="button" onClick={() => openEditModal(school)} className="rounded p-1.5 hover:bg-gray-100 transition-colors cursor-pointer" title="Editar">✏️</button>
-                      <button type="button" onClick={() => openAssignModal(school)} className="rounded p-1.5 hover:bg-blue-50 transition-colors cursor-pointer" title="Supervisores">👥</button>
+                    <div className="-mr-1.5 -mt-1 flex text-muted">
+                      <button type="button" onClick={() => openColorModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Color de marca" aria-label={`Color de ${school.school_name}`}><Icon name="sun" size={16} /></button>
+                      <button type="button" onClick={() => openEditModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Editar" aria-label={`Editar ${school.school_name}`}><Icon name="edit" size={16} /></button>
+                      <button type="button" onClick={() => openAssignModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Supervisores" aria-label={`Supervisores de ${school.school_name}`}><Icon name="users" size={16} /></button>
                     </div>
                   </div>
 
-                  <div className="space-y-1 text-sm text-gray-500">
-                    {school.school_city && <p>📍 {school.school_city}</p>}
-                    {school.school_email && <p>📧 <a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>}
-                    {school.school_phone && <p>📞 <a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>}
+                  <div className="space-y-1 text-sm text-muted">
+                    {school.school_city && <p>{school.school_city}</p>}
+                    {school.school_email && <p className="truncate"><a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>}
+                    {school.school_phone && <p><a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>}
                   </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
+                  <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3">
                     <div className="text-center">
-                      <div className="text-lg font-bold text-gray-800">{school.total_students}</div>
-                      <div className="text-[10px] text-gray-500">Alumnos</div>
+                      <div className="text-lg font-semibold text-ink">{school.total_students}</div>
+                      <div className="text-xs text-muted">Alumnos</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-lg font-bold text-gray-800">{school.total_teachers}</div>
-                      <div className="text-[10px] text-gray-500">Profesores</div>
+                      <div className="text-lg font-semibold text-ink">{school.total_teachers}</div>
+                      <div className="text-xs text-muted">Profesores</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-lg font-bold text-gray-800">{school.total_supervisors}</div>
-                      <div className="text-[10px] text-gray-500">Supervisores</div>
+                      <div className="text-lg font-semibold text-ink">{school.total_supervisors}</div>
+                      <div className="text-xs text-muted">Supervisores</div>
                     </div>
                   </div>
                 </div>
@@ -571,18 +567,18 @@ export default function SchoolManagement({ user }) {
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-4">
-              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={buttonSecondary + ' disabled:opacity-50'}>← Anterior</button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={buttonSecondary}>Anterior</button>
               <div className="flex gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                   <button
                     type="button" key={page} onClick={() => setCurrentPage(page)}
                     className={`h-9 w-9 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                      page === currentPage ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                      page === currentPage ? 'bg-accent text-white' : 'border border-line-strong bg-surface text-ink-soft hover:bg-subtle'
                     }`}
                   >{page}</button>
                 ))}
               </div>
-              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={buttonSecondary + ' disabled:opacity-50'}>Siguiente →</button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={buttonSecondary}>Siguiente</button>
             </div>
           )}
         </>
@@ -590,7 +586,7 @@ export default function SchoolManagement({ user }) {
 
       {/* Modal Crear */}
       {createModalOpen && (
-        <Modal onClose={() => setCreateModalOpen(false)} title="Nueva Escuela">
+        <Modal onClose={() => setCreateModalOpen(false)} title="Nueva escuela">
           <form className="space-y-4" onSubmit={handleCreate} noValidate>
             <FormField label="Nombre" required error={createErrors.name}>
               <input className={inputClass} value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Escuela Ejemplo" maxLength={200} />
@@ -616,7 +612,7 @@ export default function SchoolManagement({ user }) {
             />
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setCreateModalOpen(false)} disabled={creating}>Cancelar</button>
-              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={creating}>{creating ? 'Creando...' : 'Crear'}</button>
+              <button type="submit" className={`${buttonPrimary} bg-accent hover:bg-accent-strong`} disabled={creating}>{creating ? 'Creando...' : 'Crear'}</button>
             </div>
           </form>
         </Modal>
@@ -645,7 +641,7 @@ export default function SchoolManagement({ user }) {
             </FormField>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setEditModalOpen(false)} disabled={editing}>Cancelar</button>
-              <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} disabled={editing}>{editing ? 'Guardando...' : 'Guardar'}</button>
+              <button type="submit" className={`${buttonPrimary} bg-accent hover:bg-accent-strong`} disabled={editing}>{editing ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         </Modal>
@@ -655,27 +651,27 @@ export default function SchoolManagement({ user }) {
       {colorModalOpen && colorEditingSchool && (
         <Modal onClose={() => setColorModalOpen(false)} title={`Color de marca: ${colorEditingSchool.school_name}`}>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">Este color se aplicará sutilmente en la interfaz para todos los usuarios de este centro.</p>
-            <div className="rounded-lg border border-gray-200 p-4">
-              <p className="text-xs text-gray-500 mb-2">Vista previa:</p>
+            <p className="text-sm text-ink-soft">Este color se aplicará sutilmente en la interfaz para todos los usuarios de este centro.</p>
+            <div className="rounded-lg border border-line p-4">
+              <p className="text-xs text-muted mb-2">Vista previa:</p>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold" style={{ color: customColor || selectedColor }}>Título del centro</h3>
+                <h3 className="text-xl font-semibold" style={{ color: customColor || selectedColor }}>Título del centro</h3>
                 <p className="text-sm" style={{ color: customColor || selectedColor }}>Enlace de ejemplo →</p>
                 <div className="flex gap-2">
-                  <div className="rounded px-3 py-1 text-white text-sm" style={{ backgroundColor: customColor || selectedColor }}>Botón</div>
-                  <div className="rounded border px-3 py-1 text-sm" style={{ borderColor: customColor || selectedColor, color: customColor || selectedColor }}>Botón outline</div>
+                  <div className="rounded-lg px-3 py-1 text-white text-sm" style={{ backgroundColor: customColor || selectedColor }}>Botón</div>
+                  <div className="rounded-lg border px-3 py-1 text-sm" style={{ borderColor: customColor || selectedColor, color: customColor || selectedColor }}>Botón outline</div>
                 </div>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Colores sugeridos</label>
+              <label className="block text-sm font-semibold text-ink-soft mb-2">Colores sugeridos</label>
               <div className="grid grid-cols-5 gap-2">
                 {COLOR_PRESETS.map(preset => (
                   <button
                     type="button" key={preset.value}
                     onClick={() => { setSelectedColor(preset.value); setCustomColor(''); setColorError('') }}
                     className={`h-10 rounded-lg border-2 transition-all cursor-pointer ${
-                      selectedColor === preset.value && !customColor ? 'border-gray-800 scale-110' : 'border-gray-200 hover:border-gray-400'
+                      selectedColor === preset.value && !customColor ? 'border-ink scale-110' : 'border-line hover:border-line-strong'
                     }`}
                     style={{ backgroundColor: preset.value }}
                     title={preset.name}
@@ -684,16 +680,16 @@ export default function SchoolManagement({ user }) {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Color personalizado</label>
+              <label className="block text-sm font-semibold text-ink-soft mb-2">Color personalizado</label>
               <div className="flex gap-2">
-                <input type="color" value={customColor || selectedColor} onChange={(e) => handleColorChange(e.target.value)} className="h-10 w-14 rounded border border-gray-300 cursor-pointer" />
+                <input type="color" value={customColor || selectedColor} onChange={(e) => handleColorChange(e.target.value)} className="h-10 w-14 rounded-lg border border-line-strong cursor-pointer" />
                 <input type="text" value={customColor || selectedColor} onChange={(e) => handleColorChange(e.target.value)} placeholder="#3B82F6" className={inputClass} maxLength={7} />
               </div>
-              {colorError && <p className="mt-1 text-xs text-red-600">{colorError}</p>}
+              {colorError && <p className="mt-1 text-xs text-danger">{colorError}</p>}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className={buttonSecondary} onClick={() => setColorModalOpen(false)}>Cancelar</button>
-              <button type="button" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700`} onClick={handleSaveColor} disabled={savingColor || !!colorError}>{savingColor ? 'Guardando...' : 'Guardar color'}</button>
+              <button type="button" className={`${buttonPrimary} bg-accent hover:bg-accent-strong`} onClick={handleSaveColor} disabled={savingColor || !!colorError}>{savingColor ? 'Guardando...' : 'Guardar color'}</button>
             </div>
           </div>
         </Modal>
@@ -704,21 +700,21 @@ export default function SchoolManagement({ user }) {
         <Modal onClose={() => setAssignModalOpen(false)} title={`Supervisores: ${selectedSchool.school_name}`} size="lg">
           <div className="space-y-4">
             <div>
-              <h4 className="mb-2 text-sm font-semibold text-gray-700">Asignados ({schoolSupervisors.length})</h4>
+              <h4 className="mb-2 text-sm font-semibold text-ink-soft">Asignados ({schoolSupervisors.length})</h4>
               {schoolSupervisors.length === 0 ? (
-                <p className="text-sm text-gray-500 bg-gray-50 p-3 rounded">Sin supervisores asignados</p>
+                <p className="text-sm text-muted bg-subtle p-3 rounded-lg">Sin supervisores asignados</p>
               ) : (
                 <div className="space-y-2">
                   {schoolSupervisors.map(sup => (
-                    <div key={sup.profile_id} className="flex items-center justify-between rounded border border-gray-200 p-3 hover:bg-gray-50">
+                    <div key={sup.profile_id} className="flex items-center justify-between rounded-lg border border-line p-3 hover:bg-subtle">
                       <div className="flex-1 min-w-0 mr-3">
-                        <div className="font-semibold text-gray-800 truncate">{sup.full_name}</div>
-                        <div className="text-xs text-gray-500 truncate">{sup.email}</div>
+                        <div className="font-semibold text-ink truncate">{sup.full_name}</div>
+                        <div className="text-xs text-muted truncate">{sup.email}</div>
                       </div>
                       <button
                         type="button" onClick={() => handleRemoveSupervisor(sup)}
                         disabled={removing !== null}
-                        className="rounded border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 cursor-pointer disabled:opacity-50"
+                        className="rounded-lg border border-danger-soft px-3 py-1 text-xs font-semibold text-danger hover:bg-danger-soft cursor-pointer disabled:opacity-50"
                       >
                         {removing === sup.profile_id ? '...' : 'Quitar'}
                       </button>
@@ -727,10 +723,10 @@ export default function SchoolManagement({ user }) {
                 </div>
               )}
             </div>
-            <div className="border-t border-gray-200 pt-4">
-              <h4 className="mb-2 text-sm font-semibold text-gray-700">Asignar nuevo</h4>
+            <div className="border-t border-line pt-4">
+              <h4 className="mb-2 text-sm font-semibold text-ink-soft">Asignar nuevo</h4>
               {unassignedSupervisors.length === 0 ? (
-                <p className="text-sm text-gray-500">No hay supervisores disponibles sin asignar</p>
+                <p className="text-sm text-muted">No hay supervisores disponibles sin asignar</p>
               ) : (
                 <form className="flex gap-2" onSubmit={handleAssign}>
                   <select className={inputClass} value={assignForm.profileId} onChange={e => setAssignForm({ profileId: e.target.value })} required>
@@ -739,7 +735,7 @@ export default function SchoolManagement({ user }) {
                       <option key={s.profile_id} value={s.profile_id}>{s.full_name} ({s.email})</option>
                     ))}
                   </select>
-                  <button type="submit" className={`${buttonPrimary} bg-blue-600 hover:bg-blue-700 whitespace-nowrap`} disabled={assigning || !assignForm.profileId}>
+                  <button type="submit" className={`${buttonPrimary} bg-accent hover:bg-accent-strong whitespace-nowrap`} disabled={assigning || !assignForm.profileId}>
                     {assigning ? '...' : 'Asignar'}
                   </button>
                 </form>
@@ -765,11 +761,11 @@ function Modal({ children, onClose, title, size = 'md' }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className={`w-full ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-800">{title}</h3>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none cursor-pointer w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100">×</button>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`fade-in w-full ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} max-h-[92vh] overflow-y-auto rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl`}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-ink">{title}</h3>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="-mr-2 rounded-lg p-2 text-muted hover:bg-subtle hover:text-ink"><Icon name="x" /></button>
         </div>
         {children}
       </div>
@@ -780,11 +776,11 @@ function Modal({ children, onClose, title, size = 'md' }) {
 function FormField({ label, required, error, children }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-semibold text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="mb-1.5 block text-sm font-medium text-ink-soft">
+        {label}{required && <span className="text-faint"> *</span>}
       </label>
       {children}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   )
 }
@@ -792,10 +788,10 @@ function FormField({ label, required, error, children }) {
 function ColorPickerField({ label, value, onChange }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-semibold text-gray-700">{label}</label>
+      <label className="mb-2 block text-sm font-medium text-ink-soft">{label}</label>
       <div className="space-y-2">
         <div className="flex gap-2">
-          <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-14 rounded border border-gray-300 cursor-pointer" />
+          <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-14 rounded-lg border border-line-strong cursor-pointer" />
           <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} maxLength={7} placeholder="#3B82F6" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
@@ -803,7 +799,7 @@ function ColorPickerField({ label, value, onChange }) {
             <button
               type="button" key={preset.value} onClick={() => onChange(preset.value)}
               className={`h-7 w-7 rounded-full border-2 transition-all cursor-pointer ${
-                value === preset.value ? 'border-gray-800 scale-110' : 'border-gray-200 hover:border-gray-400'
+                value === preset.value ? 'border-ink scale-110' : 'border-line hover:border-line-strong'
               }`}
               style={{ backgroundColor: preset.value }}
               title={preset.name}

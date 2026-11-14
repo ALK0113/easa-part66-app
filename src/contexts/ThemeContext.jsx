@@ -1,80 +1,58 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-
-const ThemeContext = createContext()
-export const DEFAULT_BRAND_COLOR = '#3B82F6' // Azul moderno por defecto
-
-export const COLOR_PRESETS = [
-  { name: 'Azul', value: '#3B82F6' },
-  { name: 'Rojo', value: '#EF4444' },
-  { name: 'Verde', value: '#10B981' },
-  { name: 'Ámbar', value: '#F59E0B' },
-  { name: 'Púrpura', value: '#8B5CF6' },
-  { name: 'Rosa', value: '#EC4899' },
-  { name: 'Cian', value: '#06B6D4' },
-  { name: 'Gris', value: '#6B7280' },
-  { name: 'Oscuro', value: '#1F2937' },
-  { name: 'Indigo', value: '#6366F1' },
-]
+import { DEFAULT_BRAND_COLOR } from '../lib/theme.js'
+import { ThemeContext } from './useTheme.js'
 
 export function ThemeProvider({ children, user }) {
   const [brandColor, setBrandColor] = useState(DEFAULT_BRAND_COLOR)
   const [loading, setLoading] = useState(true)
+  const userId = user?.id
 
   useEffect(() => {
+    let cancelled = false
+
     async function fetchSchoolTheme() {
-      if (!user) {
-        setBrandColor(DEFAULT_BRAND_COLOR)
-        setLoading(false)
-        return
-      }
-
+      let color = DEFAULT_BRAND_COLOR
       try {
-        const { data, error } = await supabase
-          .from('school_profiles')
-          .select('school_id, schools(brand_color)')
-          .eq('profile_id', user.id)
-          .maybeSingle()
-
-        if (error) throw error
-
-        if (data?.schools?.brand_color) {
-          setBrandColor(data.schools.brand_color)
-        } else {
-          const { data: defaultSchool } = await supabase
-            .from('schools')
-            .select('brand_color')
-            .order('created_at', { ascending: true })
-            .limit(1)
+        if (userId) {
+          const { data, error } = await supabase
+            .from('school_profiles')
+            .select('school_id, schools(brand_color)')
+            .eq('profile_id', userId)
             .maybeSingle()
-          
-          setBrandColor(defaultSchool?.brand_color || DEFAULT_BRAND_COLOR)
+          if (error) throw error
+
+          if (data?.schools?.brand_color) {
+            color = data.schools.brand_color
+          } else {
+            const { data: defaultSchool } = await supabase
+              .from('schools')
+              .select('brand_color')
+              .order('created_at', { ascending: true })
+              .limit(1)
+              .maybeSingle()
+            color = defaultSchool?.brand_color || DEFAULT_BRAND_COLOR
+          }
         }
       } catch (err) {
         console.error('Error al cargar el tema:', err)
-        setBrandColor(DEFAULT_BRAND_COLOR)
-      } finally {
+      }
+      if (!cancelled) {
+        setBrandColor(color)
         setLoading(false)
       }
     }
 
     fetchSchoolTheme()
-  }, [user])
+    return () => { cancelled = true }
+  }, [userId])
 
   useEffect(() => {
     document.documentElement.style.setProperty('--brand-primary', brandColor)
     document.documentElement.style.setProperty('--brand-subtle', brandColor + '15')
   }, [brandColor])
 
-  return (
-    <ThemeContext.Provider value={{ brandColor, setPrimaryColor: setBrandColor, loading }}>
-      {children}
-    </ThemeContext.Provider>
-  )
-}
+  const value = useMemo(() => ({ brandColor, setPrimaryColor: setBrandColor, loading }), [brandColor, loading])
 
-export const useTheme = () => {
-  const context = useContext(ThemeContext)
-  if (!context) throw new Error('useTheme debe usarse dentro de un ThemeProvider')
-  return context
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
