@@ -201,6 +201,7 @@ textarea {
 
 	.tabs {
 		@apply flex gap-1 overflow-x-auto rounded-xl bg-subtle p-1;
+		scrollbar-width: none;
 	}
 
 	.tab {
