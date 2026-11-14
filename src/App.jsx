@@ -9,6 +9,7 @@ import Icon from './components/Icon.jsx'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
+const AcademicStructure = lazy(() => import('./components/AcademicStructure.jsx'))
 const StudentList = lazy(() => import('./components/StudentList.jsx'))
 const PracticeList = lazy(() => import('./components/PracticeList.jsx'))
 const TLBList = lazy(() => import('./components/TLBList.jsx'))
@@ -170,6 +171,7 @@ function App() {
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyDataPage user={user} />
       case 'schools': return <SchoolManagement user={user} />
+      case 'structure': return <AcademicStructure />
       default: return <DashboardHome user={user} setActivePage={setActivePage} onOpenModule={openModule} />
     }
   }
@@ -190,6 +192,7 @@ function App() {
     mydata: 'Mis datos',
     progress: 'Mi progreso',
     schools: 'Escuelas',
+    structure: 'Estructura académica',
   }
 
   return (

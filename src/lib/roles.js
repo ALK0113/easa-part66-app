@@ -9,6 +9,7 @@ const ADMIN_ONLY = [ROLES.ADMIN]
 export const PAGE_ACCESS = {
   dashboard: ALL_ROLES,
   schools: ADMIN_ONLY,
+  structure: ADMIN_ONLY,
   modules: ALL_ROLES,
   'module-detail': ALL_ROLES,
   students: STAFF,
