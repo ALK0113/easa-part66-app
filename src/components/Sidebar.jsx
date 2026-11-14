@@ -8,9 +8,11 @@ const sections = [
     id: 'daily',
     items: [
       { id: 'dashboard', label: 'Inicio', icon: 'home' },
+      { id: 'timetable', label: 'Horario', icon: 'calendar' },
       { id: 'modules', label: 'Módulos', icon: 'book' },
       { id: 'progress', label: 'Mi progreso', icon: 'chart' },
       { id: 'practices', label: 'Prácticas', icon: 'wrench' },
+      { id: 'grades', label: 'Notas', icon: 'grade' },
       { id: 'tlb', label: 'Task Log Book', icon: 'clipboard' },
       { id: 'videos', label: 'Vídeos', icon: 'play' },
       { id: 'students', label: 'Alumnos', icon: 'users' },

@@ -275,155 +275,6 @@ export function ModulesPage({ user, onOpenModule }) {
 /* Asignaciones                                                        */
 /* ------------------------------------------------------------------ */
 
-export function AssignmentsPage({ user }) {
-  const { rows: students, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,student_number,group_name,promo')
-  const { rows: modules, loading: modulesLoading } = useRows('modules', 'id,name')
-  const { rows: profiles, loading: profilesLoading } = useRows('profiles', 'id,full_name,email,role')
-  const { rows: studentModules, reload: reloadStudentModules } = useRows('student_modules', 'student_id,module_id')
-  const { rows: teacherModules, reload: reloadTeacherModules } = useRows('teacher_modules', 'profile_id,module_id')
-  const { rows: studentProfiles, reload: reloadStudentProfiles } = useRows('student_profiles', 'student_id,profile_id')
-  const [selectedStudent, setSelectedStudent] = useState('')
-  const [selectedTeacher, setSelectedTeacher] = useState('')
-  const [selectedGroup, setSelectedGroup] = useState('')
-  const [selectedPromo, setSelectedPromo] = useState('')
-  const [bulkModuleIds, setBulkModuleIds] = useState([])
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const [saving, setSaving] = useState(false) // evita que dos clics rápidos se pisen
-  const [notice, notify] = useNotice()
-
-  const activeStudentModules = studentModules.filter((entry) => String(entry.student_id) === selectedStudent).map((entry) => entry.module_id)
-  const activeTeacherModules = teacherModules.filter((entry) => String(entry.profile_id) === selectedTeacher).map((entry) => entry.module_id)
-  const linkedProfile = studentProfiles.find((entry) => String(entry.student_id) === selectedStudent)?.profile_id || ''
-  const teachers = profiles.filter((profile) => profile.role === ROLES.TEACHER)
-  const groups = [...new Set(students.map((student) => student.group_name).filter(Boolean))].sort()
-  const promos = [...new Set(students.map((student) => String(student.promo || '')).filter(Boolean))].sort()
-  const selectedClassCount = students.filter((student) => student.group_name === selectedGroup && String(student.promo || '') === selectedPromo).length
-  const canEdit = user.role === ROLES.ADMIN
-
-  async function replaceLinks(table, ownerId, values) {
-    const result = table === 'student_modules'
-      ? await supabase.rpc('admin_replace_student_modules', { p_student_id: ownerId, p_module_ids: values })
-      : await supabase.rpc('admin_replace_teacher_modules', { p_profile_id: ownerId, p_module_ids: values })
-    if (result.error) { notify(errorText(result.error), true); return false }
-    notify('Asignaciones guardadas.')
-    return true
-  }
-
-  async function toggleModule(table, ownerId, current, reloadFn, moduleId, checked) {
-    if (saving) return
-    setSaving(true)
-    try {
-      const next = new Set(current)
-      if (checked) next.add(moduleId)
-      else next.delete(moduleId)
-      if (await replaceLinks(table, ownerId, [...next])) await reloadFn()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const toggleStudentModule = (moduleId, checked) => toggleModule('student_modules', selectedStudent, activeStudentModules, reloadStudentModules, moduleId, checked)
-  const toggleTeacherModule = (moduleId, checked) => toggleModule('teacher_modules', selectedTeacher, activeTeacherModules, reloadTeacherModules, moduleId, checked)
-
-  async function linkProfile(profileId) {
-    setSaving(true)
-    try {
-      const { error: saveError } = await supabase.rpc('admin_link_student_profile', {
-        p_student_id: selectedStudent,
-        p_profile_id: profileId || null,
-      })
-      if (saveError) { notify(errorText(saveError), true); return }
-      notify('Cuenta vinculada.')
-      await reloadStudentProfiles()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function assignClassModules(event) {
-    event.preventDefault()
-    if (!selectedGroup || !selectedPromo || !bulkModuleIds.length) {
-      notify('Selecciona clase, promoción y al menos un módulo.', true)
-      return
-    }
-    if (!window.confirm(`Se agregarán ${bulkModuleIds.length} módulo(s) a ${selectedClassCount} alumno(s) de ${selectedGroup}, promoción ${selectedPromo}. Las matrículas existentes se conservan. ¿Continuar?`)) return
-    setBulkBusy(true)
-    notify('')
-    try {
-      const { data, error: assignmentError } = await supabase.rpc('admin_assign_class_modules', {
-        p_group_name: selectedGroup,
-        p_promo: selectedPromo,
-        p_module_ids: bulkModuleIds,
-      })
-      if (assignmentError) { notify(errorText(assignmentError), true); return }
-      notify(`Asignación completada: ${data?.assignments_added ?? 0} matrícula(s) nueva(s) para ${data?.students ?? selectedClassCount} alumno(s).`)
-      await reloadStudentModules()
-    } finally {
-      setBulkBusy(false)
-    }
-  }
-
-  if (!canEdit) return <Notice error>Solo administración puede gestionar asignaciones.</Notice>
-
-  return (
-    <div className="space-y-5">
-      <div className="page-intro"><div><h2>Asignaciones</h2><p>Qué módulos cursa cada alumno y cuáles imparte cada profesor.</p></div></div>
-      {(studentsLoading || modulesLoading || profilesLoading) && <Notice>Cargando asignaciones…</Notice>}
-      {studentsError && <Notice error>{studentsError}</Notice>}
-      <NoticeBar notice={notice} />
-      <section className={cardClass}>
-        <div className="mb-4"><h2 className="text-lg font-semibold text-ink">Asignación por clase y promoción</h2><p className="mt-1 text-sm text-muted">Añade módulos a todos los alumnos seleccionados; las matrículas ya existentes se mantienen.</p></div>
-        <form className="space-y-4" onSubmit={assignClassModules}>
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="field">Clase<select className={inputClass} value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} required><option value="">Selecciona clase</option>{groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
-            <label className="field">Promoción<select className={inputClass} value={selectedPromo} onChange={(event) => setSelectedPromo(event.target.value)} required><option value="">Selecciona promoción</option>{promos.map((promo) => <option key={promo} value={promo}>{promo}</option>)}</select></label>
-            <div className="self-end rounded-lg border border-line bg-subtle px-3 py-2 text-sm text-ink-soft">Alumnos incluidos: <strong className="text-ink">{selectedClassCount}</strong></div>
-          </div>
-          <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos que se agregarán</legend>
-            {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={bulkModuleIds.includes(mod.id)} onChange={(event) => setBulkModuleIds((current) => event.target.checked ? [...current, mod.id] : current.filter((id) => id !== mod.id))} />{mod.id} · {mod.name}</label>)}
-          </fieldset>
-          <button className={primaryButton} disabled={bulkBusy || studentsLoading || selectedClassCount === 0}>{bulkBusy ? 'Asignando…' : 'Asignar a toda la clase'}</button>
-        </form>
-      </section>
-      <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-semibold text-ink">Alumnos: módulos y cuentas</h2>
-        <label className="mb-4 block max-w-xl text-sm font-medium text-ink-soft">Alumno
-          <select className={`${inputClass} mt-1`} value={selectedStudent} onChange={(event) => { setSelectedStudent(event.target.value); notify('') }}>
-            <option value="">Selecciona un alumno</option>
-            {students.map((student) => <option key={student.id} value={String(student.id)}>{student.name} · {student.student_number}</option>)}
-          </select>
-        </label>
-        {selectedStudent && <>
-          <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" disabled={saving}>
-            <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos matriculados</legend>
-            {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={activeStudentModules.includes(mod.id)} onChange={(event) => toggleStudentModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
-          </fieldset>
-          <label className="mt-5 block max-w-xl text-sm font-medium text-ink-soft">Cuenta de acceso asociada
-            <select className={`${inputClass} mt-1`} value={linkedProfile} disabled={saving} onChange={(event) => linkProfile(event.target.value)}>
-              <option value="">Sin vincular</option>
-              {profiles.filter((profile) => profile.role === ROLES.STUDENT).map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} · {profile.email}</option>)}
-            </select>
-          </label>
-        </>}
-      </section>
-      <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-semibold text-ink">Profesores: módulos impartidos</h2>
-        <label className="mb-4 block max-w-xl text-sm font-medium text-ink-soft">Profesor
-          <select className={`${inputClass} mt-1`} value={selectedTeacher} onChange={(event) => setSelectedTeacher(event.target.value)}>
-            <option value="">Selecciona un profesor</option>
-            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name || teacher.email}</option>)}
-          </select>
-        </label>
-        {selectedTeacher && <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" disabled={saving}>
-          <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos asignados</legend>
-          {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={activeTeacherModules.includes(mod.id)} onChange={(event) => toggleTeacherModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
-        </fieldset>}
-      </section>
-    </div>
-  )
-}
-
 /* ------------------------------------------------------------------ */
 /* Aviones                                                             */
 /* ------------------------------------------------------------------ */
@@ -635,6 +486,7 @@ export function MyDataPage({ user }) {
   const [modules, setModules] = useState([])
   const [practices, setPractices] = useState([])
   const [records, setRecords] = useState([])
+  const [grades, setGrades] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -646,10 +498,11 @@ export function MyDataPage({ user }) {
         if (linkError) throw linkError
         if (!link) { if (!cancelled) { setStudent(null); setError('') } return }
 
-        const [studentResult, memberships, studentRecords] = await Promise.all([
+        const [studentResult, memberships, studentRecords, gradeResult] = await Promise.all([
           supabase.from('students').select('id,student_number,name,group_name,promo').eq('id', link.student_id).maybeSingle(),
           fetchAll('student_modules', 'module_id', ['module_id'], (query) => query.eq('student_id', link.student_id)),
           fetchAll('practice_records', 'practice_id,attendance,evaluation', ['practice_id'], (query) => query.eq('student_id', link.student_id)),
+          supabase.from('module_enrollments').select('id,is_carryover,theory_grade,practical_result,status,degree_modules(module_id,kind),academic_years(name,is_current,starts_on,schools(grade_max)),class_groups(level,name)').eq('student_id', link.student_id),
         ])
         if (studentResult.error) throw studentResult.error
         const moduleIds = memberships.map((entry) => entry.module_id)
@@ -666,6 +519,7 @@ export function MyDataPage({ user }) {
         setModules(moduleRows)
         setPractices([...practiceRows].sort((a, b) => (a.date || '').localeCompare(b.date || '')))
         setRecords(studentRecords)
+        setGrades((gradeResult.data || []).sort((a, b) => (b.academic_years?.starts_on || '').localeCompare(a.academic_years?.starts_on || '') || (a.degree_modules?.module_id || '').localeCompare(b.degree_modules?.module_id || '')))
         setError('')
       } catch (loadError) {
         if (!cancelled) setError(loadError.message || 'No se pudieron cargar tus datos.')
@@ -674,7 +528,7 @@ export function MyDataPage({ user }) {
       }
     }
     load()
-    const unsubscribe = subscribeToTables(['student_profiles', 'student_modules', 'practice_records', 'practices', 'modules'], load, `my-data-${user.id}`)
+    const unsubscribe = subscribeToTables(['student_profiles', 'student_modules', 'practice_records', 'practices', 'modules', 'module_enrollments'], load, `my-data-${user.id}`)
     return () => { cancelled = true; unsubscribe() }
   }, [user.id])
 
@@ -695,6 +549,7 @@ export function MyDataPage({ user }) {
   return <div className="space-y-6">
     <div className="page-intro"><div><h2>{student.name}</h2><p>Alumno {student.student_number} · {student.group_name || 'Sin grupo'} · Promoción {student.promo || '—'}</p></div></div>
     <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">{[['Módulos', modules.length], ['Prácticas', practices.length], ['Asistencia', `${attendanceRate}%`], ['Aptos', `${aptitudeRate}%`]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-2xl font-semibold text-ink">{value}</dd></div>)}</dl>
+    <MyGrades grades={grades} />
     <section className={cardClass}><h3 className="mb-4 font-semibold text-ink">Mis módulos</h3>{modules.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{modules.map((mod) => <article key={mod.id} className="rounded-xl bg-subtle p-4"><span className="badge bg-surface">{mod.id}</span><h4 className="mt-2 font-medium text-ink">{mod.name}</h4><p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p></article>)}</div> : <p className="text-sm text-muted">Aún no tienes módulos asignados.</p>}</section>
     <section className="card overflow-hidden"><h3 className="px-6 pb-3 pt-5 font-semibold text-ink">Historial de prácticas</h3>
       <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm">
@@ -717,6 +572,49 @@ export function MyDataPage({ user }) {
   </div>
 }
 
+const GRADE_STATUS = { aprobado: ['Aprobado', 'bg-success-soft text-success'], suspendido: ['Suspendido', 'bg-danger-soft text-danger'], cursando: ['Pendiente', ''] }
+
+// Notas por curso escolar: el actual primero.
+function MyGrades({ grades }) {
+  if (!grades.length) return null
+  const years = []
+  grades.forEach((item) => {
+    const name = item.academic_years?.name || '—'
+    let year = years.find((entry) => entry.name === name)
+    if (!year) { year = { name, current: item.academic_years?.is_current, items: [] }; years.push(year) }
+    year.items.push(item)
+  })
+  return (
+    <section className={cardClass}>
+      <h3 className="mb-4 font-semibold text-ink">Mis notas</h3>
+      <div className="space-y-5">
+        {years.map((year) => (
+          <div key={year.name}>
+            <p className="mb-2 text-xs font-medium text-faint">{year.name}{year.current ? ' · curso actual' : ''}</p>
+            <ul className="divide-y divide-line rounded-xl border border-line">
+              {year.items.map((item) => {
+                const [label, tone] = GRADE_STATUS[item.status] || GRADE_STATUS.cursando
+                const isPractice = item.degree_modules?.kind === 'practica'
+                const result = isPractice
+                  ? ({ apto: 'Apto', no_apto: 'No apto' }[item.practical_result] || '')
+                  : (item.theory_grade != null ? `${Number(item.theory_grade)} / ${Number(item.academic_years?.schools?.grade_max ?? 100)}` : '')
+                return (
+                  <li key={item.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-12 font-semibold tabular-nums text-ink">{item.degree_modules?.module_id}</span>
+                    <span className="flex-1 text-ink-soft">{isPractice ? 'Práctica' : 'Teoría'}{item.is_carryover && <span className="ml-2 text-xs text-warn">Arrastrado</span>}</span>
+                    {result && <span className="tabular-nums text-ink">{result}</span>}
+                    <span className={`badge ${tone}`}>{label}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* Configuración: datos iniciales, backup y reseteo                    */
 /* ------------------------------------------------------------------ */
@@ -734,6 +632,18 @@ const backupTables = {
   tlbs: 'id',
   defects: 'id',
   practice_records: 'student_id,practice_id',
+  // Estructura académica: se exporta para archivo (la importación aún no la restaura)
+  degrees: 'id',
+  degree_modules: 'id',
+  academic_years: 'id',
+  cohorts: 'id',
+  class_groups: 'id',
+  enrollments: 'id',
+  module_enrollments: 'id',
+  teaching_assignments: 'id',
+  schedule_slots: 'id',
+  class_sessions: 'id',
+  session_attendance: 'session_id,student_id',
 }
 
 async function insertMissingRows(table, key, rows) {

@@ -5,6 +5,7 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import Modal from './Modal.jsx'
 import Icon from './Icon.jsx'
 import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
+import CloseYear from './CloseYear.jsx'
 
 // Estructura académica de una escuela: grados y sus módulos, grupos por curso escolar,
 // promociones, cursos escolares y escala de calificación.
@@ -125,7 +126,7 @@ export default function AcademicStructure() {
       {data && tab === 'degrees' && <DegreesTab data={data} schoolId={schoolId} run={run} />}
       {data && tab === 'groups' && <GroupsTab data={data} run={run} />}
       {data && tab === 'cohorts' && <CohortsTab data={data} schoolId={schoolId} run={run} />}
-      {data && tab === 'years' && <YearsTab data={data} schoolId={schoolId} run={run} />}
+      {data && tab === 'years' && <YearsTab data={data} schoolId={schoolId} run={run} reload={reload} notify={setNotice} />}
       {data && tab === 'grading' && <GradingTab school={data.school} run={run} />}
     </div>
   )
@@ -490,8 +491,9 @@ function nextYearDraft(years) {
   return { name: `${start}-${String((start + 1) % 100).padStart(2, '0')}`, starts_on: `${start}-09-01`, ends_on: `${start + 1}-07-31`, is_current: false }
 }
 
-function YearsTab({ data, schoolId, run }) {
+function YearsTab({ data, schoolId, run, reload, notify }) {
   const [editing, setEditing] = useState(null)
+  const [closing, setClosing] = useState(false)
 
   async function save(form) {
     const values = { name: form.name.trim(), starts_on: form.starts_on, ends_on: form.ends_on }
@@ -514,6 +516,23 @@ function YearsTab({ data, schoolId, run }) {
 
   const formatDay = (value) => new Date(`${value}T00:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
 
+  if (closing) {
+    return (
+      <CloseYear
+        schoolId={schoolId}
+        years={data.years}
+        degrees={data.degrees}
+        onClose={() => setClosing(false)}
+        onDone={(finished, text) => {
+          reload()
+          if (finished) { setClosing(false); notify({ error: false, text }) }
+        }}
+      />
+    )
+  }
+
+  const current = data.years.find((year) => year.is_current)
+
   return (
     <div className="space-y-4">
       <ul className="card divide-y divide-line overflow-hidden">
@@ -527,7 +546,10 @@ function YearsTab({ data, schoolId, run }) {
           </li>
         ))}
       </ul>
-      <button type="button" className="btn-secondary" onClick={() => setEditing(nextYearDraft(data.years))}><Icon name="plus" size={16} />Nuevo curso escolar</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={() => setEditing(nextYearDraft(data.years))}><Icon name="plus" size={16} />Nuevo curso escolar</button>
+        {current && <button type="button" className="btn-ghost" onClick={() => setClosing(true)}><Icon name="next" size={16} />Cerrar el curso {current.name}</button>}
+      </div>
 
       {editing && (
         <Modal title={editing.id ? `Curso ${editing.name}` : 'Nuevo curso escolar'} onClose={() => setEditing(null)}>

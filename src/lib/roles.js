@@ -14,6 +14,8 @@ export const PAGE_ACCESS = {
   'module-detail': ALL_ROLES,
   students: STAFF,
   practices: STAFF,
+  timetable: ALL_ROLES,
+  grades: STAFF,
   tlb: ALL_ROLES,
   videos: ALL_ROLES,
   assignments: ADMIN_ONLY,
