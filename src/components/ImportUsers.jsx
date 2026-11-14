@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
 import { MAX_ROWS, downloadTemplate, parseUsersFile } from '../lib/importUsers.js'
 
 const CHUNK_SIZE = 15
@@ -122,21 +123,19 @@ export default function ImportUsers({ onBack, onImported }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <button type="button" className="back-link" onClick={onBack} disabled={phase === 'running'}>← Perfiles</button>
+      <div className="page-intro">
         <div>
-          <h2 className="text-xl font-semibold text-ink">Importar usuarios desde Excel</h2>
-          <p className="text-sm text-muted">Crea muchos usuarios de una vez con una plantilla.</p>
+          <h2>Importar usuarios</h2>
+          <p>Crea muchos usuarios de una vez a partir de una plantilla de Excel.</p>
         </div>
-        <button className={secondaryClass} onClick={onBack} disabled={phase === 'running'}>
-          ← Volver
-        </button>
       </div>
 
       {/* Instrucciones */}
       <div className="card p-5">
-        <h3 className="mb-2 text-base font-semibold text-ink">Instrucciones</h3>
-        <ol className="list-decimal space-y-1 pl-5 text-sm text-ink-soft">
+        <h3 className="mb-3 font-semibold text-ink">Cómo funciona</h3>
+        <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink-soft marker:text-faint">
           <li>Descarga la plantilla y ábrela con Excel.</li>
           <li>
             Rellena una fila por usuario en la hoja «Usuarios» (máximo {MAX_ROWS}). Los encabezados en rojo son
@@ -151,7 +150,7 @@ export default function ImportUsers({ onBack, onImported }) {
         </ol>
         <div className="mt-4">
           <button className={secondaryClass} onClick={handleTemplate}>
-            ⬇️ Descargar plantilla (.xlsx)
+            <Icon name="download" size={16} />Descargar plantilla (.xlsx)
           </button>
         </div>
       </div>
@@ -159,16 +158,16 @@ export default function ImportUsers({ onBack, onImported }) {
       {/* Subida del archivo */}
       {phase === 'select' && (
         <div className="card p-5">
-          <h3 className="mb-2 text-base font-semibold text-ink">Subir archivo</h3>
+          <h3 className="mb-3 font-semibold text-ink">Subir archivo</h3>
           <input
-            className={`${inputClass} w-full`}
+            className="block w-full rounded-xl border border-dashed border-line-strong bg-subtle p-4 text-sm text-muted file:mr-4 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink-soft"
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={handleFile}
             disabled={reading}
           />
-          {reading && <p className="mt-2 text-sm text-muted">Leyendo el archivo...</p>}
-          {fileError && <div className="mt-3 rounded-lg bg-danger-soft p-3 text-sm text-danger">{fileError}</div>}
+          {reading && <p className="mt-2 text-sm text-muted">Leyendo el archivo…</p>}
+          {fileError && <p role="alert" className="notice-error mt-3">{fileError}</p>}
         </div>
       )}
 
@@ -176,14 +175,14 @@ export default function ImportUsers({ onBack, onImported }) {
       {phase === 'select' && parsed && (
         <div className="space-y-4 card p-5">
           <div>
-            <h3 className="text-base font-semibold text-ink">Vista previa: {parsed.fileName}</h3>
+            <h3 className="font-semibold text-ink">Vista previa · {parsed.fileName}</h3>
             <p className="text-sm text-muted">
               {parsed.rows.length} filas · <span className="text-success">{validRows.length} válidas</span> ·{' '}
               <span className={invalidRows.length ? 'text-danger' : ''}>{invalidRows.length} con errores</span>
             </p>
           </div>
 
-          <div className="max-h-96 overflow-auto rounded-lg border border-line">
+          <div className="max-h-96 overflow-auto rounded-xl border border-line">
             <table className="w-full text-left text-xs">
               <thead className="sticky top-0 bg-subtle text-xs text-muted">
                 <tr>
@@ -220,7 +219,7 @@ export default function ImportUsers({ onBack, onImported }) {
 
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-soft">Rol de los usuarios</label>
+              <label className="mb-1.5 block text-sm font-medium text-ink-soft">Rol de los usuarios</label>
               <select className={inputClass} value={role} onChange={(e) => setRole(e.target.value)}>
                 <option value="alumno">Alumno</option>
                 <option value="profesor">Profesor</option>
@@ -232,7 +231,7 @@ export default function ImportUsers({ onBack, onImported }) {
             </label>
           </div>
 
-          <div className="rounded-lg bg-warn-soft p-3 text-xs text-warn">
+          <div className="notice text-xs">
             El servicio de correo integrado de Supabase permite muy pocos envíos por hora. Para importaciones grandes
             configura un SMTP propio (Authentication → SMTP Settings) o desmarca la casilla: los usuarios se crearán
             sin enviar correo y podrán entrar con «¿Olvidaste tu contraseña?».
@@ -250,9 +249,9 @@ export default function ImportUsers({ onBack, onImported }) {
       {/* Progreso */}
       {phase === 'running' && (
         <div className="card p-5">
-          <h3 className="mb-2 text-base font-semibold text-ink">Importando...</h3>
-          <div className="h-2 rounded-lg bg-line">
-            <div className="h-2 rounded-lg bg-accent" style={{ width: `${percent}%` }} />
+          <h3 className="mb-3 font-semibold text-ink">Importando…</h3>
+          <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
+            <div className="h-1.5 rounded-full bg-accent transition-[width] duration-300" style={{ width: `${percent}%` }} />
           </div>
           <p className="mt-2 text-sm text-muted">
             {progress.done} de {progress.total}. No cierres esta página hasta que termine.
@@ -263,14 +262,14 @@ export default function ImportUsers({ onBack, onImported }) {
       {/* Resultado */}
       {phase === 'done' && (
         <div className="space-y-4 card p-5">
-          <h3 className="text-base font-semibold text-ink">Importación terminada</h3>
+          <h3 className="font-semibold text-ink">Importación terminada</h3>
           <p className="text-sm">
-            <span className="text-success">✅ {created.length} usuarios creados</span>
-            {failed.length > 0 && <span className="text-danger"> · ❌ {failed.length} con errores</span>}
+            <span className="text-success">{created.length} usuarios creados</span>
+            {failed.length > 0 && <span className="text-danger"> · {failed.length} con errores</span>}
           </p>
 
           {failed.length > 0 && (
-            <div className="max-h-80 overflow-auto rounded-lg border border-line">
+            <div className="max-h-80 overflow-auto rounded-xl border border-line">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-subtle text-xs text-muted">
                   <tr>

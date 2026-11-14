@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { useTheme } from '../contexts/useTheme.js'
 import { COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../lib/theme.js'
@@ -394,7 +395,6 @@ export default function SchoolManagement({ user }) {
   if (!isAdmin) {
     return (
       <div className="p-8 text-center">
-        <div className="text-5xl mb-4">🔒</div>
         <p className="text-lg font-semibold text-danger">Solo los administradores pueden gestionar escuelas</p>
       </div>
     )
@@ -405,10 +405,10 @@ export default function SchoolManagement({ user }) {
       {/* Toasts */}
       <div className="fixed top-4 right-4 z-[100] space-y-2 max-w-sm">
         {toasts.map(toast => (
-          <div key={toast.id} className={`rounded-lg p-4 shadow-lg border animate-[slideIn_0.3s_ease-out] ${
-            toast.type === 'success' ? 'bg-success-soft border-success-soft text-success' :
-            toast.type === 'error' ? 'bg-danger-soft border-danger-soft text-danger' :
-            'bg-accent-soft border-accent text-ink-soft'
+          <div key={toast.id} className={`fade-in rounded-xl border border-line bg-surface p-4 shadow-lift ${
+            toast.type === 'success' ? 'text-success' :
+            toast.type === 'error' ? 'text-danger' :
+            'text-ink-soft'
           }`}>
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-medium">{toast.message}</p>
@@ -419,28 +419,25 @@ export default function SchoolManagement({ user }) {
       </div>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="page-intro">
         <div>
-          <h2 className="text-2xl font-semibold text-ink text-ink">
-            Gestión de Escuelas
-            <span className="ml-2 text-sm font-normal text-muted">({schools.length})</span>
-          </h2>
-          <p className="text-sm text-muted mt-1">Administra centros, colores de marca y supervisores</p>
+          <h2>Escuelas</h2>
+          <p>{schools.length} {schools.length === 1 ? 'centro' : 'centros'} · colores de marca y supervisores</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={() => exportToCSV(filteredAndSortedSchools)} className={buttonSecondary} title="Exportar CSV">
-            📥 CSV
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => exportToCSV(filteredAndSortedSchools)} className={buttonSecondary}>
+            <Icon name="download" size={16} />CSV
           </button>
-          <button type="button" onClick={openCreateModal} className={`${buttonPrimary} bg-accent hover:bg-accent-strong`}>
-            ➕ Nueva Escuela
+          <button type="button" onClick={openCreateModal} className={buttonPrimary}>
+            <Icon name="plus" size={16} />Nueva escuela
           </button>
         </div>
       </div>
 
       {/* Selector de Escuela */}
-<div className="rounded-lg border border-line bg-subtle p-4">
-  <label className="block text-sm font-semibold text-ink-soft mb-2">
-    Escuela
+<div className="card p-5">
+  <label className="mb-1.5 block text-sm font-medium text-ink-soft">
+    Escuela activa
   </label>
   <select
     value={activeSchoolId || ''}
@@ -456,22 +453,22 @@ export default function SchoolManagement({ user }) {
   </select>
   {activeSchoolId && (
     <p className="mt-2 text-xs text-muted">
-      ✨ Los títulos y acentos de la aplicación usan el color de esta escuela.
+      Los acentos de la aplicación usan el color de esta escuela.
     </p>
   )}
 </div>
 
       {/* Búsqueda y filtros */}
-      <div className="card p-4 shadow-soft">
-        <div className="flex flex-col sm:flex-row gap-3">
+      <div>
+        <div className="flex flex-col sm:flex-row gap-2">
           <div className="flex-1 relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint">🔍</span>
+            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="text"
-              placeholder="Buscar por nombre, ciudad o email..."
+              placeholder="Buscar por nombre, ciudad o correo…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className={`${inputClass} pl-10`}
+              className={`${inputClass} pl-9`}
             />
             {searchQuery && (
               <button type="button" onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink-soft cursor-pointer">×</button>
@@ -503,18 +500,14 @@ export default function SchoolManagement({ user }) {
 
       {/* Contenido Principal */}
       {loading ? (
-        <div className="py-16 text-center">
-          <div className="inline-block h-10 w-10 rounded-full border-4 border-line border-t-blue-500 animate-spin"></div>
-          <p className="mt-4 text-muted">Cargando escuelas...</p>
-        </div>
+        <div className="py-16 text-center text-sm text-muted">Cargando escuelas…</div>
       ) : filteredAndSortedSchools.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-line-strong bg-surface p-12 text-center">
-          <div className="text-5xl mb-4">🏫</div>
-          <p className="text-lg font-semibold text-ink-soft">
+        <div className="card empty">
+          <p className="font-medium text-ink-soft">
             {debouncedSearch ? 'Sin resultados' : 'No hay escuelas registradas'}
           </p>
-          <p className="text-sm text-muted mt-2">
-            {debouncedSearch ? 'Prueba con otros términos de búsqueda' : 'Haz clic en "Nueva Escuela" para comenzar'}
+          <p className="mt-1">
+            {debouncedSearch ? 'Prueba con otros términos de búsqueda.' : 'Crea la primera con «Nueva escuela».'}
           </p>
         </div>
       ) : (
@@ -526,8 +519,8 @@ export default function SchoolManagement({ user }) {
               return (
                 <div
                   key={school.school_id}
-                  className={`group rounded-lg border bg-surface p-5 shadow-soft hover:shadow-md transition-all ${
-                    isActive ? 'ring-2 ring-offset-2' : 'border-line'
+                  className={`card group p-5 transition-shadow hover:shadow-lift ${
+                    isActive ? 'ring-2 ring-offset-2 ring-offset-canvas' : ''
                   }`}
                   style={isActive ? { borderColor: schoolColor, '--tw-ring-color': schoolColor } : {}}
                 >
@@ -540,31 +533,31 @@ export default function SchoolManagement({ user }) {
                       />
                       <h3 className="text-lg font-semibold text-ink truncate">{school.school_name}</h3>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={() => openColorModal(school)} className="rounded-lg p-1.5 hover:bg-subtle transition-colors cursor-pointer" title="Cambiar color">🎨</button>
-                      <button type="button" onClick={() => openEditModal(school)} className="rounded-lg p-1.5 hover:bg-subtle transition-colors cursor-pointer" title="Editar">✏️</button>
-                      <button type="button" onClick={() => openAssignModal(school)} className="rounded-lg p-1.5 hover:bg-accent-soft transition-colors cursor-pointer" title="Supervisores">👥</button>
+                    <div className="-mr-1.5 -mt-1 flex text-muted">
+                      <button type="button" onClick={() => openColorModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Color de marca" aria-label={`Color de ${school.school_name}`}><Icon name="sun" size={16} /></button>
+                      <button type="button" onClick={() => openEditModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Editar" aria-label={`Editar ${school.school_name}`}><Icon name="edit" size={16} /></button>
+                      <button type="button" onClick={() => openAssignModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Supervisores" aria-label={`Supervisores de ${school.school_name}`}><Icon name="users" size={16} /></button>
                     </div>
                   </div>
 
                   <div className="space-y-1 text-sm text-muted">
-                    {school.school_city && <p>📍 {school.school_city}</p>}
-                    {school.school_email && <p>📧 <a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>}
-                    {school.school_phone && <p>📞 <a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>}
+                    {school.school_city && <p>{school.school_city}</p>}
+                    {school.school_email && <p className="truncate"><a href={`mailto:${school.school_email}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_email}</a></p>}
+                    {school.school_phone && <p><a href={`tel:${school.school_phone}`} className="hover:underline" style={{ color: schoolColor }}>{school.school_phone}</a></p>}
                   </div>
 
                   <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3">
                     <div className="text-center">
                       <div className="text-lg font-semibold text-ink">{school.total_students}</div>
-                      <div className="text-[10px] text-muted">Alumnos</div>
+                      <div className="text-xs text-muted">Alumnos</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-semibold text-ink">{school.total_teachers}</div>
-                      <div className="text-[10px] text-muted">Profesores</div>
+                      <div className="text-xs text-muted">Profesores</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-semibold text-ink">{school.total_supervisors}</div>
-                      <div className="text-[10px] text-muted">Supervisores</div>
+                      <div className="text-xs text-muted">Supervisores</div>
                     </div>
                   </div>
                 </div>
@@ -574,7 +567,7 @@ export default function SchoolManagement({ user }) {
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-4">
-              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={buttonSecondary + ' disabled:opacity-50'}>← Anterior</button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={buttonSecondary}>Anterior</button>
               <div className="flex gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                   <button
@@ -585,7 +578,7 @@ export default function SchoolManagement({ user }) {
                   >{page}</button>
                 ))}
               </div>
-              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={buttonSecondary + ' disabled:opacity-50'}>Siguiente →</button>
+              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={buttonSecondary}>Siguiente</button>
             </div>
           )}
         </>
@@ -593,7 +586,7 @@ export default function SchoolManagement({ user }) {
 
       {/* Modal Crear */}
       {createModalOpen && (
-        <Modal onClose={() => setCreateModalOpen(false)} title="Nueva Escuela">
+        <Modal onClose={() => setCreateModalOpen(false)} title="Nueva escuela">
           <form className="space-y-4" onSubmit={handleCreate} noValidate>
             <FormField label="Nombre" required error={createErrors.name}>
               <input className={inputClass} value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Escuela Ejemplo" maxLength={200} />
@@ -678,7 +671,7 @@ export default function SchoolManagement({ user }) {
                     type="button" key={preset.value}
                     onClick={() => { setSelectedColor(preset.value); setCustomColor(''); setColorError('') }}
                     className={`h-10 rounded-lg border-2 transition-all cursor-pointer ${
-                      selectedColor === preset.value && !customColor ? 'border-gray-800 scale-110' : 'border-line hover:border-line-strong'
+                      selectedColor === preset.value && !customColor ? 'border-ink scale-110' : 'border-line hover:border-line-strong'
                     }`}
                     style={{ backgroundColor: preset.value }}
                     title={preset.name}
@@ -768,11 +761,11 @@ function Modal({ children, onClose, title, size = 'md' }) {
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className={`w-full ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} rounded-lg bg-surface p-6 shadow-xl max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`fade-in w-full ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} max-h-[92vh] overflow-y-auto rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl`}>
+        <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-ink">{title}</h3>
-          <button type="button" onClick={onClose} className="text-faint hover:text-ink-soft text-2xl leading-none cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg hover:bg-subtle">×</button>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="-mr-2 rounded-lg p-2 text-muted hover:bg-subtle hover:text-ink"><Icon name="x" /></button>
         </div>
         {children}
       </div>
@@ -783,8 +776,8 @@ function Modal({ children, onClose, title, size = 'md' }) {
 function FormField({ label, required, error, children }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-semibold text-ink-soft">
-        {label} {required && <span className="text-danger">*</span>}
+      <label className="mb-1.5 block text-sm font-medium text-ink-soft">
+        {label}{required && <span className="text-faint"> *</span>}
       </label>
       {children}
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
@@ -795,7 +788,7 @@ function FormField({ label, required, error, children }) {
 function ColorPickerField({ label, value, onChange }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-semibold text-ink-soft">{label}</label>
+      <label className="mb-2 block text-sm font-medium text-ink-soft">{label}</label>
       <div className="space-y-2">
         <div className="flex gap-2">
           <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-14 rounded-lg border border-line-strong cursor-pointer" />
@@ -806,7 +799,7 @@ function ColorPickerField({ label, value, onChange }) {
             <button
               type="button" key={preset.value} onClick={() => onChange(preset.value)}
               className={`h-7 w-7 rounded-full border-2 transition-all cursor-pointer ${
-                value === preset.value ? 'border-gray-800 scale-110' : 'border-line hover:border-line-strong'
+                value === preset.value ? 'border-ink scale-110' : 'border-line hover:border-line-strong'
               }`}
               style={{ backgroundColor: preset.value }}
               title={preset.name}

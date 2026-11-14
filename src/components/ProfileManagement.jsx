@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Icon from './Icon.jsx'
+import Modal from './Modal.jsx'
 import ImportUsers from './ImportUsers.jsx'
 
 const inputClass = 'input'
@@ -179,42 +181,39 @@ export default function ProfileManagement({ user }) {
     return <ImportUsers onBack={() => setView('list')} onImported={loadProfiles} />
   }
 
-  if (loading) return <div className="p-8 text-center text-ink">Cargando perfiles...</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando perfiles…</div>
+
+  const isError = message.startsWith('❌')
+  const messageText = message.replace(/^(❌|✅)\s*/, '')
+  const ROLE_LABELS = { admin: 'Administración', profesor: 'Profesor', alumno: 'Alumno' }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="page-intro">
         <div>
-          <h2 className="text-xl font-semibold text-ink">Gestión de Perfiles</h2>
-          <p className="text-sm text-muted">Administra todos los usuarios del sistema.</p>
+          <h2>Perfiles</h2>
+          <p>{profiles.length} usuarios</p>
         </div>
         <div className="flex gap-2">
-          <button
-            className="rounded-lg border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft"
-            onClick={() => setView('import')}
-          >
-            📥 Importar usuarios
+          <button className="btn-secondary" onClick={() => setView('import')}>
+            <Icon name="upload" size={16} />Importar
           </button>
           <button className={buttonClass} onClick={openAddModal}>
-            ➕ Añadir Usuario
+            <Icon name="plus" size={16} />Añadir usuario
           </button>
         </div>
       </div>
 
-      {message && (
-        <div className={`rounded-lg p-3 text-sm ${message.includes('✅') ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>
-          {message}
-        </div>
-      )}
+      {message && !editModalOpen && !addModalOpen && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
 
-      {/* Filtros y búsqueda */}
-      <div className="card p-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="md:col-span-2">
+      <div>
+        <div className="grid gap-2 md:grid-cols-[2fr_1fr]">
+          <div className="relative">
+            <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
-              className={inputClass}
-              type="text"
-              placeholder="Buscar por nombre, email o rol..."
+              className={`${inputClass} pl-9`}
+              type="search"
+              placeholder="Buscar por nombre o correo…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -227,9 +226,9 @@ export default function ProfileManagement({ user }) {
           </select>
         </div>
         {(search || filterRole) && (
-          <div className="mt-3">
-            <button 
-              className="rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-subtle"
+          <div className="mt-2">
+            <button
+              className="btn-ghost text-muted"
               onClick={() => { setSearch(''); setFilterRole('') }}
             >
               Limpiar filtros
@@ -238,47 +237,37 @@ export default function ProfileManagement({ user }) {
         )}
       </div>
 
-      <div className="overflow-hidden card">
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-subtle text-xs text-muted">
+          <thead>
             <tr>
-              <th className="p-4">Nombre</th>
-              <th className="p-4">Correo</th>
-              <th className="p-4">Rol</th>
-              <th className="p-4">Teléfono</th>
-              <th className="p-4 text-right">Acciones</th>
+              <th className="px-5 py-3">Nombre</th>
+              <th className="px-5 py-3">Correo</th>
+              <th className="px-5 py-3">Rol</th>
+              <th className="px-5 py-3">Teléfono</th>
+              <th className="px-5 py-3"><span className="sr-only">Acciones</span></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
+          <tbody>
             {filteredProfiles.map((profile) => (
-              <tr key={profile.id} className="hover:bg-subtle">
-                <td className="p-4 font-medium text-ink">{profile.full_name || 'Sin nombre'}</td>
-                <td className="p-4 text-muted">{profile.email || '—'}</td>
-                <td className="p-4">
-                  <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${
-                    profile.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                    profile.role === 'profesor' ? 'bg-accent-soft text-ink-soft' :
-                    'bg-subtle text-ink'
-                  }`}>
-                    {profile.role}
+              <tr key={profile.id} className="border-t border-line">
+                <td className="px-5 py-3 font-medium text-ink">{profile.full_name || 'Sin nombre'}</td>
+                <td className="px-5 py-3 text-muted">{profile.email || '—'}</td>
+                <td className="px-5 py-3">
+                  <span className={`badge ${profile.role === 'admin' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
+                    {ROLE_LABELS[profile.role] || profile.role}
                   </span>
                 </td>
-                <td className="p-4 text-muted">{profile.phone || '—'}</td>
-                <td className="p-4 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      className="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-subtle"
-                      onClick={() => openEditModal(profile)}
-                    >
-                      ✏️ Editar
+                <td className="px-5 py-3 text-muted">{profile.phone || '—'}</td>
+                <td className="px-5 py-3">
+                  <div className="flex justify-end gap-1 text-muted">
+                    <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${profile.full_name || profile.email}`} onClick={() => openEditModal(profile)}>
+                      <Icon name="edit" size={16} />
                     </button>
                     {profile.id !== user.id && (
-                      <button
-                        className="rounded-lg border border-danger-soft px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger-soft"
-                        onClick={() => deleteProfile(profile)}
-                        disabled={busy}
-                      >
-                        🗑️ Eliminar
+                      <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${profile.full_name || profile.email}`} onClick={() => deleteProfile(profile)} disabled={busy}>
+                        <Icon name="trash" size={16} />
                       </button>
                     )}
                   </div>
@@ -287,23 +276,22 @@ export default function ProfileManagement({ user }) {
             ))}
             {filteredProfiles.length === 0 && (
               <tr>
-                <td colSpan="5" className="p-8 text-center text-muted">
+                <td colSpan="5" className="empty">
                   {profiles.length === 0 ? 'No hay perfiles registrados.' : 'No hay perfiles que coincidan con los filtros.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Modal de Edición */}
       {editModalOpen && editingProfile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setEditModalOpen(false)}>
-          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-semibold text-ink">Editar Perfil: {editingProfile.full_name}</h3>
+        <Modal title={`Editar perfil · ${editingProfile.full_name || editingProfile.email}`} onClose={() => setEditModalOpen(false)}>
             <form className="space-y-4" onSubmit={saveProfile}>
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Nombre Completo</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Nombre completo</label>
                 <input
                   className={inputClass}
                   value={formData.full_name}
@@ -313,12 +301,12 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Correo Electrónico</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Correo electrónico</label>
                 <input className={`${inputClass} bg-subtle text-muted`} value={formData.email} disabled />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Rol</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Rol</label>
                 <select
                   className={inputClass}
                   value={formData.role}
@@ -335,7 +323,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Teléfono</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Teléfono</label>
                 <input
                   className={inputClass}
                   value={formData.phone}
@@ -345,7 +333,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Biografía / Notas</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Notas</label>
                 <textarea
                   className={inputClass}
                   rows="3"
@@ -355,23 +343,21 @@ export default function ProfileManagement({ user }) {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded-lg border border-line-strong px-4 py-2 text-sm" onClick={() => setEditModalOpen(false)}>Cancelar</button>
-                <button className={buttonClass} disabled={busy}>{busy ? 'Guardando...' : 'Guardar Cambios'}</button>
+              {message && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" className="btn-secondary" onClick={() => setEditModalOpen(false)}>Cancelar</button>
+                <button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Modal de Añadir Usuario */}
       {addModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setAddModalOpen(false)}>
-          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-semibold text-ink">Añadir Nuevo Usuario</h3>
+        <Modal title="Añadir usuario" onClose={() => setAddModalOpen(false)}>
             <form className="space-y-4" onSubmit={addNewProfile}>
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Correo Electrónico *</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Correo electrónico</label>
                 <input
                   className={inputClass}
                   type="email"
@@ -383,7 +369,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Nombre Completo *</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Nombre completo</label>
                 <input
                   className={inputClass}
                   value={formData.full_name}
@@ -394,7 +380,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Rol *</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Rol</label>
                 <select
                   className={inputClass}
                   value={newUserRole}
@@ -406,7 +392,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Teléfono</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Teléfono</label>
                 <input
                   className={inputClass}
                   value={formData.phone}
@@ -416,7 +402,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-soft">Biografía / Notas</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Notas</label>
                 <textarea
                   className={inputClass}
                   rows="3"
@@ -426,18 +412,18 @@ export default function ProfileManagement({ user }) {
                 />
               </div>
 
-              <div className="rounded-lg bg-warn-soft p-3 text-xs text-warn">
-                Se enviará una invitación por correo. El usuario elegirá su contraseña al aceptarla.
-                Para crear administradores, cambia el rol después desde "Editar".
-              </div>
+              <p className="notice text-xs">
+                Le enviaremos una invitación por correo para que elija su contraseña.
+                Para crear un administrador, cambia el rol después desde «Editar».
+              </p>
+              {message && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded-lg border border-line-strong px-4 py-2 text-sm" onClick={() => setAddModalOpen(false)}>Cancelar</button>
-                <button className={buttonClass} disabled={busy}>{busy ? 'Enviando...' : 'Enviar invitación'}</button>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" className="btn-secondary" onClick={() => setAddModalOpen(false)}>Cancelar</button>
+                <button className={buttonClass} disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
