@@ -112,13 +112,22 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   useEffect(() => {
     async function loadSubmissions() {
       if (userRole !== 'profesor' && userRole !== 'admin') return
+      // tlb_submissions.student_id es el id de usuario (profiles.id), no el de la
+      // ficha del alumno: se resuelve con student_profiles → students.
       const { data, error } = await supabase
         .from('tlb_submissions')
-        .select('*, students!inner(name, student_number, group_name)')
+        .select('*')
         .order('completed_at', { ascending: false })
-      if (!error && data) {
-        setSubmissions(data)
-      }
+      if (error || !data) return
+      const profileIds = [...new Set(data.map((s) => s.student_id))]
+      const { data: links } = profileIds.length
+        ? await supabase
+          .from('student_profiles')
+          .select('profile_id, students(name, student_number, group_name)')
+          .in('profile_id', profileIds)
+        : { data: [] }
+      const studentByProfile = new Map((links || []).map((link) => [link.profile_id, link.students]))
+      setSubmissions(data.map((s) => ({ ...s, students: studentByProfile.get(s.student_id) || null })))
     }
     loadSubmissions()
   }, [userRole, selectedTLBId])
