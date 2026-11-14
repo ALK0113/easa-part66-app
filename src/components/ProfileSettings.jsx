@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
+const inputClass = 'input'
+const buttonClass = 'btn-primary'
 
 export default function ProfileSettings({ user }) {
   const [profile, setProfile] = useState(null)
@@ -20,7 +20,7 @@ export default function ProfileSettings({ user }) {
         .eq('id', user.id)
         .single()
       if (cancelled) return
-      if (error) setMessage('Error al cargar perfil: ' + error.message)
+      if (error) setMessage('❌ No se pudo cargar tu perfil: ' + error.message)
       else {
         setProfile(data)
         setFormData({
@@ -55,72 +55,70 @@ export default function ProfileSettings({ user }) {
     else setMessage('✅ Perfil actualizado correctamente.')
   }
 
-  if (loading) return <div className="p-8 text-center text-[#0a2540]">Cargando tu perfil...</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando tu perfil…</div>
+
+  const ROLE_LABELS = { admin: 'Administración', profesor: 'Profesor', alumno: 'Alumno' }
+  const isError = message.startsWith('❌')
+  const messageText = message.replace(/^(❌|✅)\s*/, '')
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-[#0a2540]">Mi Perfil</h2>
-        <p className="text-sm text-[#6b7280]">Actualiza tu información personal y de contacto.</p>
+      <div className="page-intro">
+        <div>
+          <h2>Mis datos</h2>
+          <p>Tu información personal y de contacto.</p>
+        </div>
       </div>
 
-      {message && (
-        <div className={`rounded p-3 text-sm ${message.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-          {message}
+      <section className="card divide-y divide-line">
+        <div className="flex items-center justify-between gap-4 px-6 py-4 text-sm">
+          <span className="text-muted">Correo</span>
+          <span className="truncate font-medium text-ink">{profile?.email || '—'}</span>
         </div>
-      )}
-
-      <form className="space-y-4 rounded-lg border border-[#e5e7eb] bg-white p-6" onSubmit={handleSave}>
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Correo Electrónico</label>
-          <input className={`${inputClass} bg-[#f3f4f6] text-[#6b7280]`} value={profile?.email || ''} disabled />
-          <p className="mt-1 text-xs text-[#6b7280]">Tu correo de inicio de sesión. Para cambiarlo, contacta al administrador.</p>
+        <div className="flex items-center justify-between gap-4 px-6 py-4 text-sm">
+          <span className="text-muted">Rol</span>
+          <span className="badge">{ROLE_LABELS[formData.role] || formData.role}</span>
         </div>
+        <p className="px-6 py-3 text-xs text-faint">El correo y el rol los gestiona administración.</p>
+      </section>
 
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Rol</label>
-          <input 
-            className={`${inputClass} bg-[#f3f4f6] text-[#6b7280]`} 
-            value={formData.role} 
-            disabled 
+      <form className="card space-y-4 p-6" onSubmit={handleSave}>
+        <label className="field">
+          Nombre completo
+          <input
+            className={inputClass}
+            value={formData.full_name}
+            onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+            required
           />
-          <p className="mt-1 text-xs text-[#6b7280]">El rol solo puede ser modificado por el administrador.</p>
-        </div>
+        </label>
 
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nombre Completo</label>
-          <input 
-            className={inputClass} 
-            value={formData.full_name} 
-            onChange={(e) => setFormData({...formData, full_name: e.target.value})} 
-            required 
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Teléfono</label>
-          <input 
-            className={inputClass} 
-            value={formData.phone} 
-            onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+        <label className="field">
+          Teléfono
+          <input
+            className={inputClass}
+            value={formData.phone}
+            onChange={(e) => setFormData({...formData, phone: e.target.value})}
             placeholder="+34 600 000 000"
           />
-        </div>
+        </label>
 
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Biografía / Notas</label>
-          <textarea 
-            className={inputClass} 
-            rows="4" 
-            value={formData.bio} 
-            onChange={(e) => setFormData({...formData, bio: e.target.value})} 
-            placeholder="Especialidad, información adicional..."
+        <label className="field">
+          Sobre mí
+          <textarea
+            className={inputClass}
+            rows="4"
+            value={formData.bio}
+            onChange={(e) => setFormData({...formData, bio: e.target.value})}
+            placeholder="Especialidad, información adicional…"
           />
-        </div>
+        </label>
 
-        <div className="flex justify-end pt-2">
+        {message && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
+
+        <div className="flex justify-end pt-1">
           <button className={buttonClass} disabled={saving}>
-            {saving ? 'Guardando...' : 'Guardar Cambios'}
+            {saving ? 'Guardando…' : 'Guardar cambios'}
           </button>
         </div>
       </form>

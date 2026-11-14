@@ -2,8 +2,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
 import ImportUsers from './ImportUsers.jsx'
 
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
+const inputClass = 'input'
+const buttonClass = 'btn-primary'
 
 async function getFunctionErrorMessage(error, fallback) {
   try {
@@ -179,18 +179,18 @@ export default function ProfileManagement({ user }) {
     return <ImportUsers onBack={() => setView('list')} onImported={loadProfiles} />
   }
 
-  if (loading) return <div className="p-8 text-center text-[#0a2540]">Cargando perfiles...</div>
+  if (loading) return <div className="p-8 text-center text-ink">Cargando perfiles...</div>
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-[#0a2540]">Gestión de Perfiles</h2>
-          <p className="text-sm text-[#6b7280]">Administra todos los usuarios del sistema.</p>
+          <h2 className="text-xl font-semibold text-ink">Gestión de Perfiles</h2>
+          <p className="text-sm text-muted">Administra todos los usuarios del sistema.</p>
         </div>
         <div className="flex gap-2">
           <button
-            className="rounded border border-[#1e88e5] px-4 py-2 text-sm font-semibold text-[#1e88e5] hover:bg-[#e3f2fd]"
+            className="rounded-lg border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft"
             onClick={() => setView('import')}
           >
             📥 Importar usuarios
@@ -202,13 +202,13 @@ export default function ProfileManagement({ user }) {
       </div>
 
       {message && (
-        <div className={`rounded p-3 text-sm ${message.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+        <div className={`rounded-lg p-3 text-sm ${message.includes('✅') ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>
           {message}
         </div>
       )}
 
       {/* Filtros y búsqueda */}
-      <div className="rounded-lg border border-[#e5e7eb] bg-white p-4">
+      <div className="card p-4">
         <div className="grid gap-3 md:grid-cols-3">
           <div className="md:col-span-2">
             <input
@@ -229,7 +229,7 @@ export default function ProfileManagement({ user }) {
         {(search || filterRole) && (
           <div className="mt-3">
             <button 
-              className="rounded border border-[#d1d5db] bg-white px-4 py-2 text-sm font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
+              className="rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink hover:bg-subtle"
               onClick={() => { setSearch(''); setFilterRole('') }}
             >
               Limpiar filtros
@@ -238,9 +238,9 @@ export default function ProfileManagement({ user }) {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
+      <div className="overflow-hidden card">
         <table className="w-full text-left text-sm">
-          <thead className="bg-[#0a2540] text-xs uppercase text-white">
+          <thead className="bg-subtle text-xs text-muted">
             <tr>
               <th className="p-4">Nombre</th>
               <th className="p-4">Correo</th>
@@ -249,32 +249,32 @@ export default function ProfileManagement({ user }) {
               <th className="p-4 text-right">Acciones</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#e5e7eb]">
+          <tbody className="divide-y divide-line">
             {filteredProfiles.map((profile) => (
-              <tr key={profile.id} className="hover:bg-[#f9fafb]">
-                <td className="p-4 font-medium text-[#0a2540]">{profile.full_name || 'Sin nombre'}</td>
-                <td className="p-4 text-[#6b7280]">{profile.email || '—'}</td>
+              <tr key={profile.id} className="hover:bg-subtle">
+                <td className="p-4 font-medium text-ink">{profile.full_name || 'Sin nombre'}</td>
+                <td className="p-4 text-muted">{profile.email || '—'}</td>
                 <td className="p-4">
-                  <span className={`rounded px-2 py-1 text-xs font-semibold ${
+                  <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${
                     profile.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                    profile.role === 'profesor' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
+                    profile.role === 'profesor' ? 'bg-accent-soft text-ink-soft' :
+                    'bg-subtle text-ink'
                   }`}>
                     {profile.role}
                   </span>
                 </td>
-                <td className="p-4 text-[#6b7280]">{profile.phone || '—'}</td>
+                <td className="p-4 text-muted">{profile.phone || '—'}</td>
                 <td className="p-4 text-right">
                   <div className="flex justify-end gap-2">
                     <button
-                      className="rounded border border-[#d1d5db] px-3 py-1.5 text-xs font-semibold text-[#0a2540] hover:bg-[#f4f6f9]"
+                      className="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-semibold text-ink hover:bg-subtle"
                       onClick={() => openEditModal(profile)}
                     >
                       ✏️ Editar
                     </button>
                     {profile.id !== user.id && (
                       <button
-                        className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                        className="rounded-lg border border-danger-soft px-3 py-1.5 text-xs font-semibold text-danger hover:bg-danger-soft"
                         onClick={() => deleteProfile(profile)}
                         disabled={busy}
                       >
@@ -287,7 +287,7 @@ export default function ProfileManagement({ user }) {
             ))}
             {filteredProfiles.length === 0 && (
               <tr>
-                <td colSpan="5" className="p-8 text-center text-[#6b7280]">
+                <td colSpan="5" className="p-8 text-center text-muted">
                   {profiles.length === 0 ? 'No hay perfiles registrados.' : 'No hay perfiles que coincidan con los filtros.'}
                 </td>
               </tr>
@@ -299,11 +299,11 @@ export default function ProfileManagement({ user }) {
       {/* Modal de Edición */}
       {editModalOpen && editingProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setEditModalOpen(false)}>
-          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-bold text-[#0a2540]">Editar Perfil: {editingProfile.full_name}</h3>
+          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
+            <h3 className="mb-4 text-lg font-semibold text-ink">Editar Perfil: {editingProfile.full_name}</h3>
             <form className="space-y-4" onSubmit={saveProfile}>
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nombre Completo</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Nombre Completo</label>
                 <input
                   className={inputClass}
                   value={formData.full_name}
@@ -313,12 +313,12 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Correo Electrónico</label>
-                <input className={`${inputClass} bg-[#f3f4f6] text-[#6b7280]`} value={formData.email} disabled />
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Correo Electrónico</label>
+                <input className={`${inputClass} bg-subtle text-muted`} value={formData.email} disabled />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Rol</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Rol</label>
                 <select
                   className={inputClass}
                   value={formData.role}
@@ -330,12 +330,12 @@ export default function ProfileManagement({ user }) {
                   <option value="admin">Administrador</option>
                 </select>
                 {editingProfile.id === user.id && (
-                  <p className="mt-1 text-xs text-[#6b7280]">No puedes cambiar tu propio rol.</p>
+                  <p className="mt-1 text-xs text-muted">No puedes cambiar tu propio rol.</p>
                 )}
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Teléfono</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Teléfono</label>
                 <input
                   className={inputClass}
                   value={formData.phone}
@@ -345,7 +345,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Biografía / Notas</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Biografía / Notas</label>
                 <textarea
                   className={inputClass}
                   rows="3"
@@ -356,7 +356,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setEditModalOpen(false)}>Cancelar</button>
+                <button type="button" className="rounded-lg border border-line-strong px-4 py-2 text-sm" onClick={() => setEditModalOpen(false)}>Cancelar</button>
                 <button className={buttonClass} disabled={busy}>{busy ? 'Guardando...' : 'Guardar Cambios'}</button>
               </div>
             </form>
@@ -367,11 +367,11 @@ export default function ProfileManagement({ user }) {
       {/* Modal de Añadir Usuario */}
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(e) => e.target === e.currentTarget && setAddModalOpen(false)}>
-          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-2xl">
-            <h3 className="mb-4 text-lg font-bold text-[#0a2540]">Añadir Nuevo Usuario</h3>
+          <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
+            <h3 className="mb-4 text-lg font-semibold text-ink">Añadir Nuevo Usuario</h3>
             <form className="space-y-4" onSubmit={addNewProfile}>
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Correo Electrónico *</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Correo Electrónico *</label>
                 <input
                   className={inputClass}
                   type="email"
@@ -383,7 +383,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Nombre Completo *</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Nombre Completo *</label>
                 <input
                   className={inputClass}
                   value={formData.full_name}
@@ -394,7 +394,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Rol *</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Rol *</label>
                 <select
                   className={inputClass}
                   value={newUserRole}
@@ -406,7 +406,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Teléfono</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Teléfono</label>
                 <input
                   className={inputClass}
                   value={formData.phone}
@@ -416,7 +416,7 @@ export default function ProfileManagement({ user }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-[#0a2540]">Biografía / Notas</label>
+                <label className="mb-1 block text-sm font-medium text-ink-soft">Biografía / Notas</label>
                 <textarea
                   className={inputClass}
                   rows="3"
@@ -426,13 +426,13 @@ export default function ProfileManagement({ user }) {
                 />
               </div>
 
-              <div className="rounded bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="rounded-lg bg-warn-soft p-3 text-xs text-warn">
                 Se enviará una invitación por correo. El usuario elegirá su contraseña al aceptarla.
                 Para crear administradores, cambia el rol después desde "Editar".
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setAddModalOpen(false)}>Cancelar</button>
+                <button type="button" className="rounded-lg border border-line-strong px-4 py-2 text-sm" onClick={() => setAddModalOpen(false)}>Cancelar</button>
                 <button className={buttonClass} disabled={busy}>{busy ? 'Enviando...' : 'Enviar invitación'}</button>
               </div>
             </form>

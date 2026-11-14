@@ -9,6 +9,7 @@ import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
 import { downloadBlob, downloadCsv } from '../lib/download.js'
 import { ROLES } from '../lib/roles.js'
+import Icon from './Icon.jsx'
 
 /* ------------------------------------------------------------------ */
 /* Constantes                                                          */
@@ -18,10 +19,10 @@ const STARTER_MODULE_ID = 'M11'
 const MAX_COLOR = 18
 const PAGE_SIZE = 1000
 
-const cardClass = 'rounded-lg border border-[#e5e7eb] bg-white p-5 shadow-sm'
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5] disabled:bg-[#f3f4f6] disabled:text-[#6b7280]'
-const primaryButton = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
-const secondaryButton = 'rounded border border-[#d1d5db] bg-white px-4 py-2 text-sm font-semibold text-[#0a2540] hover:bg-[#f4f6f9]'
+const cardClass = 'card p-5 md:p-6'
+const inputClass = 'input'
+const primaryButton = 'btn-primary'
+const secondaryButton = 'btn-secondary'
 
 /* ------------------------------------------------------------------ */
 /* Utilidades                                                          */
@@ -105,7 +106,7 @@ function useRows(table, columns = '*') {
 /* ------------------------------------------------------------------ */
 
 function Notice({ children, error = false }) {
-  return <p role={error ? 'alert' : 'status'} className={`rounded p-3 text-sm ${error ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-900'}`}>{children}</p>
+  return <p role={error ? 'alert' : 'status'} className={error ? 'notice-error' : 'notice'}>{children}</p>
 }
 
 function NoticeBar({ notice }) {
@@ -124,13 +125,13 @@ function Dialog({ title, onClose, children }) {
 
   // No se cierra al hacer clic fuera, para no perder formularios a medias.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white shadow-2xl outline-none">
-        <header className="flex items-center justify-between border-b border-[#e5e7eb] px-5 py-4">
-          <h2 className="font-bold text-[#0a2540]">{title}</h2>
-          <button type="button" className="px-2 text-2xl text-[#6b7280]" aria-label="Cerrar" onClick={onClose}>×</button>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
+      <section ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="fade-in max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-surface shadow-lift outline-none sm:rounded-2xl">
+        <header className="flex items-center justify-between px-6 pb-2 pt-5">
+          <h2 className="text-lg font-semibold text-ink">{title}</h2>
+          <button type="button" className="-mr-2 rounded-lg p-2 text-muted hover:bg-subtle hover:text-ink" aria-label="Cerrar" onClick={onClose}><Icon name="x" /></button>
         </header>
-        <div className="space-y-4 p-5">{children}</div>
+        <div className="space-y-4 px-6 pb-6 pt-2">{children}</div>
       </section>
     </div>
   )
@@ -138,7 +139,7 @@ function Dialog({ title, onClose, children }) {
 
 function FormField({ label, value, onChange, type = 'text', required = false, disabled = false, min, max }) {
   return (
-    <label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">
+    <label className="field">
       {label}
       <input className={inputClass} type={type} value={value} min={min} max={max} disabled={disabled} onChange={(event) => onChange(event.target.value)} required={required} />
     </label>
@@ -215,32 +216,39 @@ export function ModulesPage({ user, onOpenModule }) {
 
   return (
     <div className="space-y-5">
-      <section className={cardClass}>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-bold text-[#0a2540]">{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66'}</h2><p className="mt-1 text-sm text-[#6b7280]">{visibleModules.length} módulos · datos de Supabase</p></div>
-          {canEdit && <button className={primaryButton} onClick={() => openForm()}>+ Nuevo módulo</button>}
+      <div className="page-intro">
+        <div>
+          <h2>{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66'}</h2>
+          <p>{visibleModules.length} {visibleModules.length === 1 ? 'módulo' : 'módulos'}</p>
         </div>
-        <ErrorOrLoading loading={loading} error={error} />
-        {!formOpen && <NoticeBar notice={notice} />}
+        {canEdit && <button className={primaryButton} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo módulo</button>}
+      </div>
+      <ErrorOrLoading loading={loading} error={error} />
+      {!formOpen && <NoticeBar notice={notice} />}
+      {!loading && !error && visibleModules.length === 0 && (
+        <div className="card empty">{user.role === ROLES.ADMIN ? 'Aún no hay módulos. Crea el primero.' : 'Todavía no tienes módulos asignados. Administración te los asignará en breve.'}</div>
+      )}
+      <section>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {visibleModules.map((mod) => {
             const count = practices.filter((practice) => practice.module_id === mod.id).length
             const studentCount = studentAssignments.filter((entry) => entry.module_id === mod.id).length
             return (
-              <article
-                key={mod.id}
-                className="cursor-pointer rounded-md border border-[#e5e7eb] border-t-4 border-t-[#1e88e5] p-4 transition-all duration-200 hover:-translate-y-1 hover:border-blue-500 hover:shadow-lg"
-              >
-                <button className="w-full text-left" onClick={() => onOpenModule(mod.id)}>
-                  <p className="text-xs font-bold uppercase text-[#6b7280]">{mod.id}</p>
-                  <h3 className="mt-1 font-bold text-[#0a2540]">{mod.name}</h3>
-                  <p className="mt-1 min-h-10 text-sm text-[#6b7280]">{mod.description || 'Sin descripción'}</p>
-                  <span className="mt-2 inline-block text-xs font-semibold text-[#1565c0]">Abrir detalle →</span>
+              <article key={mod.id} className="card group flex flex-col transition-shadow hover:shadow-lift">
+                <button className="flex-1 p-5 text-left" onClick={() => onOpenModule(mod.id)}>
+                  <span className="badge bg-accent-soft text-accent-strong">{mod.id}</span>
+                  <h3 className="mt-3 font-semibold text-ink">{mod.name}</h3>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p>
                 </button>
-                <div className="mt-3 flex items-center justify-between border-t border-[#e5e7eb] pt-3 text-xs text-[#6b7280]">
-                  <span><strong className="text-[#0a2540]">{count}</strong> prácticas</span>
-                  <span><strong className="text-[#0a2540]">{studentCount}</strong> alumnos</span>
-                  {canEdit && <div className="flex gap-2"><button className="text-[#1565c0]" onClick={() => openForm(mod)}>Editar</button><button className="text-red-700" onClick={() => deleteModule(mod)}>Eliminar</button></div>}
+                <div className="flex items-center gap-4 border-t border-line px-5 py-3 text-xs text-muted">
+                  <span><strong className="font-semibold text-ink-soft">{count}</strong> prácticas</span>
+                  {user.role !== ROLES.STUDENT && <span><strong className="font-semibold text-ink-soft">{studentCount}</strong> alumnos</span>}
+                  {canEdit ? (
+                    <span className="ml-auto flex gap-1">
+                      <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${mod.id}`} onClick={() => openForm(mod)}><Icon name="edit" size={16} /></button>
+                      <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${mod.id}`} onClick={() => deleteModule(mod)}><Icon name="trash" size={16} /></button>
+                    </span>
+                  ) : <Icon name="next" size={16} className="ml-auto text-faint transition-colors group-hover:text-accent" />}
                 </div>
               </article>
             )
@@ -363,23 +371,23 @@ export function AssignmentsPage({ user }) {
       {studentsError && <Notice error>{studentsError}</Notice>}
       <NoticeBar notice={notice} />
       <section className={cardClass}>
-        <div className="mb-4"><h2 className="text-lg font-bold text-[#0a2540]">Asignación por clase y promoción</h2><p className="mt-1 text-sm text-[#6b7280]">Añade módulos a todos los alumnos seleccionados; las matrículas ya existentes se mantienen.</p></div>
+        <div className="mb-4"><h2 className="text-lg font-semibold text-ink">Asignación por clase y promoción</h2><p className="mt-1 text-sm text-muted">Añade módulos a todos los alumnos seleccionados; las matrículas ya existentes se mantienen.</p></div>
         <form className="space-y-4" onSubmit={assignClassModules}>
           <div className="grid gap-3 md:grid-cols-3">
-            <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Clase<select className={inputClass} value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} required><option value="">Selecciona clase</option>{groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
-            <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Promoción<select className={inputClass} value={selectedPromo} onChange={(event) => setSelectedPromo(event.target.value)} required><option value="">Selecciona promoción</option>{promos.map((promo) => <option key={promo} value={promo}>{promo}</option>)}</select></label>
-            <div className="self-end rounded border border-[#e5e7eb] bg-[#f9fafb] px-3 py-2 text-sm text-[#4b5563]">Alumnos incluidos: <strong className="text-[#0a2540]">{selectedClassCount}</strong></div>
+            <label className="field">Clase<select className={inputClass} value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} required><option value="">Selecciona clase</option>{groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
+            <label className="field">Promoción<select className={inputClass} value={selectedPromo} onChange={(event) => setSelectedPromo(event.target.value)} required><option value="">Selecciona promoción</option>{promos.map((promo) => <option key={promo} value={promo}>{promo}</option>)}</select></label>
+            <div className="self-end rounded-lg border border-line bg-subtle px-3 py-2 text-sm text-ink-soft">Alumnos incluidos: <strong className="text-ink">{selectedClassCount}</strong></div>
           </div>
           <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <legend className="mb-2 text-sm font-semibold text-[#0a2540]">Módulos que se agregarán</legend>
-            {modules.map((mod) => <label key={mod.id} className="flex items-center gap-2 rounded border border-[#e5e7eb] p-2 text-sm"><input type="checkbox" checked={bulkModuleIds.includes(mod.id)} onChange={(event) => setBulkModuleIds((current) => event.target.checked ? [...current, mod.id] : current.filter((id) => id !== mod.id))} />{mod.id} · {mod.name}</label>)}
+            <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos que se agregarán</legend>
+            {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={bulkModuleIds.includes(mod.id)} onChange={(event) => setBulkModuleIds((current) => event.target.checked ? [...current, mod.id] : current.filter((id) => id !== mod.id))} />{mod.id} · {mod.name}</label>)}
           </fieldset>
           <button className={primaryButton} disabled={bulkBusy || studentsLoading || selectedClassCount === 0}>{bulkBusy ? 'Asignando…' : 'Asignar a toda la clase'}</button>
         </form>
       </section>
       <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-bold text-[#0a2540]">Alumnos: módulos y cuentas</h2>
-        <label className="mb-4 block max-w-xl text-sm font-semibold text-[#0a2540]">Alumno
+        <h2 className="mb-4 text-lg font-semibold text-ink">Alumnos: módulos y cuentas</h2>
+        <label className="mb-4 block max-w-xl text-sm font-medium text-ink-soft">Alumno
           <select className={`${inputClass} mt-1`} value={selectedStudent} onChange={(event) => { setSelectedStudent(event.target.value); notify('') }}>
             <option value="">Selecciona un alumno</option>
             {students.map((student) => <option key={student.id} value={String(student.id)}>{student.name} · {student.student_number}</option>)}
@@ -387,10 +395,10 @@ export function AssignmentsPage({ user }) {
         </label>
         {selectedStudent && <>
           <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" disabled={saving}>
-            <legend className="mb-2 text-sm font-semibold text-[#0a2540]">Módulos matriculados</legend>
-            {modules.map((mod) => <label key={mod.id} className="flex items-center gap-2 rounded border border-[#e5e7eb] p-2 text-sm"><input type="checkbox" checked={activeStudentModules.includes(mod.id)} onChange={(event) => toggleStudentModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
+            <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos matriculados</legend>
+            {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={activeStudentModules.includes(mod.id)} onChange={(event) => toggleStudentModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
           </fieldset>
-          <label className="mt-5 block max-w-xl text-sm font-semibold text-[#0a2540]">Cuenta de acceso asociada
+          <label className="mt-5 block max-w-xl text-sm font-medium text-ink-soft">Cuenta de acceso asociada
             <select className={`${inputClass} mt-1`} value={linkedProfile} disabled={saving} onChange={(event) => linkProfile(event.target.value)}>
               <option value="">Sin vincular</option>
               {profiles.filter((profile) => profile.role === ROLES.STUDENT).map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} · {profile.email}</option>)}
@@ -399,16 +407,16 @@ export function AssignmentsPage({ user }) {
         </>}
       </section>
       <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-bold text-[#0a2540]">Profesores: módulos impartidos</h2>
-        <label className="mb-4 block max-w-xl text-sm font-semibold text-[#0a2540]">Profesor
+        <h2 className="mb-4 text-lg font-semibold text-ink">Profesores: módulos impartidos</h2>
+        <label className="mb-4 block max-w-xl text-sm font-medium text-ink-soft">Profesor
           <select className={`${inputClass} mt-1`} value={selectedTeacher} onChange={(event) => setSelectedTeacher(event.target.value)}>
             <option value="">Selecciona un profesor</option>
             {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name || teacher.email}</option>)}
           </select>
         </label>
         {selectedTeacher && <fieldset className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" disabled={saving}>
-          <legend className="mb-2 text-sm font-semibold text-[#0a2540]">Módulos asignados</legend>
-          {modules.map((mod) => <label key={mod.id} className="flex items-center gap-2 rounded border border-[#e5e7eb] p-2 text-sm"><input type="checkbox" checked={activeTeacherModules.includes(mod.id)} onChange={(event) => toggleTeacherModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
+          <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos asignados</legend>
+          {modules.map((mod) => <label key={mod.id} className="choice"><input type="checkbox" checked={activeTeacherModules.includes(mod.id)} onChange={(event) => toggleTeacherModule(mod.id, event.target.checked)} />{mod.id} · {mod.name}</label>)}
         </fieldset>}
       </section>
     </div>
@@ -469,14 +477,14 @@ export function AircraftPage({ user }) {
 
   return (
     <div className="space-y-5">
-      <section className={cardClass}>
-        <div className="mb-5 flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-[#0a2540]">Tipos de avión</h2><p className="mt-1 text-sm text-[#6b7280]">{aircraft.length} aeronaves</p></div>{canEdit && <button className={primaryButton} onClick={() => openForm()}>+ Nuevo avión</button>}</div>
+      <section className="space-y-5">
+        <div className="page-intro"><div><h2>Aviones</h2><p>{aircraft.length} {aircraft.length === 1 ? 'aeronave' : 'aeronaves'} para prácticas y TLB</p></div>{canEdit && <button className={primaryButton} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo avión</button>}</div>
         <ErrorOrLoading loading={loading} error={error} />
         {!formOpen && <NoticeBar notice={notice} />}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {aircraft.map((item) => <article key={item.id} className="rounded-lg bg-gradient-to-br from-[#0a2540] to-[#1e88e5] p-5 text-white">
-            <div className="flex justify-between gap-2"><div><p className="text-xs uppercase text-blue-100">{item.category || 'Aeronave'}</p><h3 className="mt-1 text-lg font-bold">{item.type}</h3></div>{canEdit && <div className="flex gap-2 text-xs"><button onClick={() => openForm(item)}>Editar</button><button onClick={() => remove(item)}>Eliminar</button></div>}</div>
-            <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">{[['Matrícula', item.registration], ['MSN', item.msn], ['Motor', item.engines], ['Asientos', item.seats]].map(([label, value]) => <div key={label} className="rounded bg-white/10 p-2"><dt className="text-[10px] uppercase text-blue-100">{label}</dt><dd className="mt-1 font-semibold">{value || '—'}</dd></div>)}</dl>
+          {aircraft.map((item) => <article key={item.id} className="card p-5">
+            <div className="flex items-start justify-between gap-2"><div><span className="badge">{item.category || 'Aeronave'}</span><h3 className="mt-2.5 text-lg font-semibold text-ink">{item.type}</h3></div>{canEdit && <div className="flex gap-1 text-muted"><button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${item.type}`} onClick={() => openForm(item)}><Icon name="edit" size={16} /></button><button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${item.type}`} onClick={() => remove(item)}><Icon name="trash" size={16} /></button></div>}</div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">{[['Matrícula', item.registration], ['MSN', item.msn], ['Motor', item.engines], ['Asientos', item.seats]].map(([label, value]) => <div key={label} className="stat py-2"><dt>{label}</dt><dd className="!text-sm">{value || '—'}</dd></div>)}</dl>
           </article>)}
         </div>
       </section>
@@ -486,7 +494,7 @@ export function AircraftPage({ user }) {
         <FormField label="MSN" value={form.msn || ''} onChange={(msn) => setForm({ ...form, msn })} />
         <FormField label="Motores" value={form.engines || ''} onChange={(engines) => setForm({ ...form, engines })} />
         <FormField label="Asientos" type="number" min={0} value={form.seats} onChange={(seats) => setForm({ ...form, seats })} />
-        <label className="grid gap-1.5 text-sm font-semibold text-[#0a2540]">Categoría<select className={inputClass} value={form.category || ''} onChange={(event) => setForm({ ...form, category: event.target.value })}>{['Light Jet', 'Narrow Body', 'Wide Body', 'Regional'].map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label className="field">Categoría<select className={inputClass} value={form.category || ''} onChange={(event) => setForm({ ...form, category: event.target.value })}>{['Light Jet', 'Narrow Body', 'Wide Body', 'Regional'].map((item) => <option key={item}>{item}</option>)}</select></label>
         <NoticeBar notice={notice} />
         <div className="flex justify-end gap-2"><button type="button" className={secondaryButton} onClick={closeForm}>Cancelar</button><button className={primaryButton} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
       </form></Dialog>}
@@ -582,8 +590,8 @@ export function ReportsPage() {
   const studentHeaders = ['Alumno', 'Grupo', 'Promoción', 'Prácticas', 'P', 'T', 'F', 'Aptos', '% Asistencia', '% Aptos']
 
   return <section className={cardClass}>
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div><h2 className="text-lg font-bold text-[#0a2540]">Informe de asistencia por alumno y clase</h2><p className="mt-1 text-sm text-[#6b7280]">Asistencia y evaluación agregadas desde Supabase</p></div>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div><h2 className="text-lg font-semibold text-ink">Asistencia y evaluación</h2><p className="mt-1 text-sm text-muted">Por clase y por alumno</p></div>
       <div className="flex flex-wrap gap-2">
         <select className={`${inputClass} min-w-36`} value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todas las clases</option>{groups.map((item) => <option key={item}>{item}</option>)}</select>
         <select className={`${inputClass} min-w-40`} value={promo} onChange={(event) => setPromo(event.target.value)}><option value="">Todas las promociones</option>{promos.map((item) => <option key={item}>{item}</option>)}</select>
@@ -592,24 +600,24 @@ export function ReportsPage() {
       </div>
     </div>
     <ErrorOrLoading loading={loading} error={studentsError || recordsError} />
-    <h3 className="mb-2 font-bold text-[#0a2540]">Resumen por clase</h3>
+    <h3 className="mb-2 text-sm font-semibold text-ink-soft">Resumen por clase</h3>
     <div className="mb-6 overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{classHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{classReports.map((item) => <tr key={item.key} className="border-b border-[#e5e7eb]">
-          <td className="p-3 font-semibold">{item.group}</td><td className="p-3">{item.promo}</td><td className="p-3">{item.students}</td>
+        <thead className="bg-subtle text-xs text-muted"><tr>{classHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+        <tbody>{classReports.map((item) => <tr key={item.key} className="border-b border-line">
+          <td className="p-3 font-medium text-ink">{item.group}</td><td className="p-3">{item.promo}</td><td className="p-3">{item.students}</td>
           <td className="p-3">{item.present}</td><td className="p-3">{item.late}</td><td className="p-3">{item.absent}</td>
           <td className="p-3">{item.apto}/{item.evaluated}</td><td className="p-3">{item.attendanceRate}%</td><td className="p-3">{item.aptitudeRate}%</td>
         </tr>)}</tbody>
       </table>
-      {classReports.length === 0 && <p className="p-4 text-center text-sm text-[#6b7280]">No hay datos para estos filtros.</p>}
+      {classReports.length === 0 && <p className="p-4 text-center text-sm text-muted">No hay datos para estos filtros.</p>}
     </div>
-    <h3 className="mb-2 font-bold text-[#0a2540]">Detalle por alumno</h3>
+    <h3 className="mb-2 text-sm font-semibold text-ink-soft">Detalle por alumno</h3>
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{studentHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{report.map((student) => <tr key={student.id} className="border-b border-[#e5e7eb] hover:bg-gray-50">
-          <td className="p-3 font-semibold">{student.name}</td><td className="p-3">{student.group_name}</td><td className="p-3">{student.promo || '—'}</td>
+        <thead className="bg-subtle text-xs text-muted"><tr>{studentHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+        <tbody>{report.map((student) => <tr key={student.id} className="border-b border-line hover:bg-subtle">
+          <td className="p-3 font-medium text-ink">{student.name}</td><td className="p-3">{student.group_name}</td><td className="p-3">{student.promo || '—'}</td>
           <td className="p-3">{student.relevantCount}</td><td className="p-3">{student.present}</td><td className="p-3">{student.late}</td><td className="p-3">{student.absent}</td>
           <td className="p-3">{student.apto}</td><td className="p-3">{student.attendanceRate}%</td><td className="p-3">{student.aptitudeRate}%</td>
         </tr>)}</tbody>
@@ -672,7 +680,7 @@ export function MyDataPage({ user }) {
 
   if (loading) return <Notice>Cargando tus datos…</Notice>
   if (error) return <Notice error>{error}</Notice>
-  if (!student) return <section className={cardClass}><h2 className="font-bold text-[#0a2540]">Perfil de alumno sin vincular</h2><p className="mt-2 text-sm text-[#6b7280]">Pide a administración que asocie tu cuenta a una ficha de alumno.</p></section>
+  if (!student) return <section className={`${cardClass} text-center`}><h2 className="font-semibold text-ink">Tu cuenta aún no está vinculada</h2><p className="mt-2 text-sm text-muted">Pide a administración que asocie tu cuenta a una ficha de alumno.</p></section>
 
   const recordFor = (practiceId) => records.find((record) => String(record.practice_id) === String(practiceId)) || {}
   const attendance = records.filter((record) => record.attendance)
@@ -682,26 +690,29 @@ export function MyDataPage({ user }) {
   const attendanceRate = percent(present, attendance.length)
   const aptitudeRate = percent(apto, evaluations.length)
 
-  return <div className="space-y-5">
-    <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white"><p className="text-xs font-semibold uppercase text-blue-100">Mi formación</p><h2 className="mt-2 text-2xl font-bold">{student.name}</h2><p className="mt-1 text-sm text-blue-100">Alumno {student.student_number} · {student.group_name || 'Sin grupo'} · Promoción {student.promo || '—'}</p></section>
-    <section className="grid grid-cols-2 gap-3 md:grid-cols-4">{[['Módulos', modules.length], ['Prácticas', practices.length], ['Asistencia', `${attendanceRate}%`], ['Aptos', `${aptitudeRate}%`]].map(([label, value]) => <div key={label} className={cardClass}><p className="text-xs uppercase text-[#6b7280]">{label}</p><p className="mt-2 text-2xl font-bold text-[#0a2540]">{value}</p></div>)}</section>
-    <section className={cardClass}><h3 className="mb-4 font-bold text-[#0a2540]">Mis módulos</h3><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{modules.map((mod) => <article key={mod.id} className="rounded-md border border-[#e5e7eb] border-t-4 border-t-[#1e88e5] p-4"><p className="text-xs font-bold text-[#6b7280]">{mod.id}</p><h4 className="mt-1 font-bold text-[#0a2540]">{mod.name}</h4><p className="mt-1 text-sm text-[#6b7280]">{mod.description || 'Sin descripción'}</p></article>)}</div></section>
-    <section className={`${cardClass} overflow-x-auto`}><h3 className="mb-4 font-bold text-[#0a2540]">Historial de prácticas</h3>
-      <table className="w-full min-w-[700px] text-left text-sm">
-        <thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{['Fecha', 'Hora', 'Módulo', 'Práctica', 'Asistencia', 'Evaluación'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+  const attendanceLabels = { P: ['Presente', 'text-success'], L: ['Tarde', 'text-warn'], A: ['Falta', 'text-danger'] }
+
+  return <div className="space-y-6">
+    <div className="page-intro"><div><h2>{student.name}</h2><p>Alumno {student.student_number} · {student.group_name || 'Sin grupo'} · Promoción {student.promo || '—'}</p></div></div>
+    <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">{[['Módulos', modules.length], ['Prácticas', practices.length], ['Asistencia', `${attendanceRate}%`], ['Aptos', `${aptitudeRate}%`]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-2xl font-semibold text-ink">{value}</dd></div>)}</dl>
+    <section className={cardClass}><h3 className="mb-4 font-semibold text-ink">Mis módulos</h3>{modules.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{modules.map((mod) => <article key={mod.id} className="rounded-xl bg-subtle p-4"><span className="badge bg-surface">{mod.id}</span><h4 className="mt-2 font-medium text-ink">{mod.name}</h4><p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p></article>)}</div> : <p className="text-sm text-muted">Aún no tienes módulos asignados.</p>}</section>
+    <section className="card overflow-hidden"><h3 className="px-6 pb-3 pt-5 font-semibold text-ink">Historial de prácticas</h3>
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm">
+        <thead><tr>{['Fecha', 'Hora', 'Módulo', 'Práctica', 'Asistencia', 'Evaluación'].map((label) => <th key={label} className="px-6 py-3">{label}</th>)}</tr></thead>
         <tbody>{practices.map((practice) => {
           const record = recordFor(practice.id)
-          return <tr key={practice.id} className="border-b border-[#e5e7eb]">
-            <td className="p-3">{practice.date ? new Date(`${practice.date}T00:00:00`).toLocaleDateString('es-ES') : '—'}</td>
-            <td className="p-3">{practice.start_time || '—'}</td>
-            <td className="p-3">{practice.module_id}</td>
-            <td className="p-3">{practice.title}</td>
-            <td className="p-3">{({ P: 'Presente', L: 'Tarde', A: 'Falta' })[record.attendance] || 'Pendiente'}</td>
-            <td className="p-3">{record.evaluation || 'Pendiente'}</td>
+          const [attendanceText, attendanceColor] = attendanceLabels[record.attendance] || ['Pendiente', 'text-faint']
+          return <tr key={practice.id} className="border-t border-line">
+            <td className="px-6 py-3 text-ink-soft">{practice.date ? new Date(`${practice.date}T00:00:00`).toLocaleDateString('es-ES') : '—'}</td>
+            <td className="px-6 py-3 text-muted">{practice.start_time ? String(practice.start_time).slice(0, 5) : '—'}</td>
+            <td className="px-6 py-3"><span className="badge">{practice.module_id}</span></td>
+            <td className="px-6 py-3 text-ink">{practice.title}</td>
+            <td className={`px-6 py-3 font-medium ${attendanceColor}`}>{attendanceText}</td>
+            <td className={`px-6 py-3 font-medium ${record.evaluation === 'Apto' ? 'text-success' : record.evaluation ? 'text-danger' : 'text-faint'}`}>{record.evaluation || 'Pendiente'}</td>
           </tr>
         })}</tbody>
-      </table>
-      {practices.length === 0 && <p className="mt-4 text-center text-sm text-[#6b7280]">No hay prácticas asignadas.</p>}
+      </table></div>
+      {practices.length === 0 && <p className="empty">No hay prácticas asignadas.</p>}
     </section>
   </div>
 }
@@ -877,11 +888,11 @@ export function SettingsPage({ user }) {
 
   if (user.role !== ROLES.ADMIN) return <Notice error>Solo administración puede acceder a configuración.</Notice>
   return <div className="space-y-5">
-    <section className={cardClass}><h2 className="text-lg font-bold text-[#0a2540]">Datos iniciales</h2><p className="mt-2 text-sm text-[#6b7280]">Carga los módulos, alumnos, prácticas, vídeos y aeronaves de ejemplo que ya están en el proyecto. Solo añade registros que falten; no modifica ni elimina datos existentes.</p><button className={`${primaryButton} mt-4`} disabled={busy} onClick={loadStarterData}>{busy ? 'Procesando…' : 'Cargar datos iniciales en Supabase'}</button></section>
-    <section className={cardClass}><h2 className="text-lg font-bold text-[#0a2540]">Configuración y copias de seguridad</h2><p className="mt-2 text-sm text-[#6b7280]">Las copias excluyen credenciales. La importación solo añade las filas que faltan: no elimina ni sobrescribe las existentes. El archivo contiene datos personales (RGPD): guárdalo cifrado o en un sitio de acceso restringido.</p>
-      <div className="mt-5 flex flex-wrap gap-3"><button className={primaryButton} disabled={busy} onClick={exportBackup}>{busy ? 'Procesando…' : 'Exportar backup'}</button><label className={`${secondaryButton} cursor-pointer`}>Importar backup<input className="sr-only" type="file" accept="application/json,.json" disabled={busy} onChange={importBackup} /></label><button className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50" disabled={busy} onClick={resetData}>Resetear datos académicos</button></div>
+    <section className={cardClass}><h2 className="text-lg font-semibold text-ink">Datos iniciales</h2><p className="mt-2 text-sm text-muted">Carga los módulos, alumnos, prácticas, vídeos y aeronaves de ejemplo que ya están en el proyecto. Solo añade registros que falten; no modifica ni elimina datos existentes.</p><button className={`${primaryButton} mt-4`} disabled={busy} onClick={loadStarterData}>{busy ? 'Procesando…' : 'Cargar datos iniciales en Supabase'}</button></section>
+    <section className={cardClass}><h2 className="text-lg font-semibold text-ink">Configuración y copias de seguridad</h2><p className="mt-2 text-sm text-muted">Las copias excluyen credenciales. La importación solo añade las filas que faltan: no elimina ni sobrescribe las existentes. El archivo contiene datos personales (RGPD): guárdalo cifrado o en un sitio de acceso restringido.</p>
+      <div className="mt-5 flex flex-wrap gap-3"><button className={primaryButton} disabled={busy} onClick={exportBackup}>{busy ? 'Procesando…' : 'Exportar backup'}</button><label className={`${secondaryButton} cursor-pointer`}>Importar backup<input className="sr-only" type="file" accept="application/json,.json" disabled={busy} onChange={importBackup} /></label><button className="btn-danger sm:ml-auto" disabled={busy} onClick={resetData}>Resetear datos académicos</button></div>
       {notice && <div className="mt-4"><NoticeBar notice={notice} /></div>}
     </section>
-    <section className={cardClass}><h2 className="text-lg font-bold text-[#0a2540]">Datos y acceso</h2><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#6b7280]">Estándar</dt><dd className="font-semibold">EASA Part-147 · Módulos Part-66</dd></div><div><dt className="text-[#6b7280]">Persistencia</dt><dd className="font-semibold">Supabase</dd></div><div><dt className="text-[#6b7280]">Cuenta</dt><dd className="font-semibold">{user.email}</dd></div><div><dt className="text-[#6b7280]">Rol</dt><dd className="font-semibold capitalize">{user.role}</dd></div></dl></section>
+    <section className={cardClass}><h2 className="text-lg font-semibold text-ink">Datos y acceso</h2><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted">Estándar</dt><dd className="font-semibold">EASA Part-147 · Módulos Part-66</dd></div><div><dt className="text-muted">Persistencia</dt><dd className="font-semibold">Supabase</dd></div><div><dt className="text-muted">Cuenta</dt><dd className="font-semibold">{user.email}</dd></div><div><dt className="text-muted">Rol</dt><dd className="font-semibold capitalize">{user.role}</dd></div></dl></section>
   </div>
 }

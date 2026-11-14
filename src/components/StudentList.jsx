@@ -101,8 +101,8 @@ export default function StudentList({ schoolId }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-gray-500">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600"></div>
+      <div className="flex flex-col items-center justify-center p-12 text-muted">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-line border-t-blue-600"></div>
         <p className="mt-3 text-sm font-medium">Cargando listado de alumnos...</p>
       </div>
     )
@@ -110,12 +110,12 @@ export default function StudentList({ schoolId }) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-700">
+      <div className="rounded-lg border border-danger-soft bg-danger-soft p-6 text-center text-danger">
         <p className="font-semibold">⚠️ Error de conexión</p>
         <p className="mt-1 text-sm">{error}</p>
         <button 
           onClick={() => window.location.reload()} 
-          className="mt-4 rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+          className="mt-4 rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white hover:bg-danger transition-colors"
         >
           Reintentar
         </button>
@@ -126,28 +126,28 @@ export default function StudentList({ schoolId }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-800">
-          Alumnos <span className="text-gray-500 text-lg font-normal">({filteredStudents.length} de {students.length})</span>
+        <h2 className="text-2xl font-semibold text-ink text-ink">
+          Alumnos <span className="text-muted text-lg font-normal">({filteredStudents.length} de {students.length})</span>
         </h2>
       </div>
 
       {/* Barra de búsqueda y filtros */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
+      <div className="card p-4 shadow-soft space-y-3">
         {/* Búsqueda */}
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint">🔍</span>
           <input
             type="text"
             placeholder="Buscar por nombre, número, clase, grupo o promoción..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            className="w-full rounded-lg border border-line-strong bg-surface pl-10 pr-4 py-2 text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer text-lg"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-faint hover:text-ink-soft cursor-pointer text-lg"
             >
               ×
             </button>
@@ -159,7 +159,7 @@ export default function StudentList({ schoolId }) {
           <select
             value={filterClass}
             onChange={(e) => setFilterClass(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
           >
             <option value="">Todas las clases</option>
             {uniqueClasses.map(cls => (
@@ -170,7 +170,7 @@ export default function StudentList({ schoolId }) {
           <select
             value={filterGroup}
             onChange={(e) => setFilterGroup(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
           >
             <option value="">Todos los grupos</option>
             {uniqueGroups.map(grp => (
@@ -181,7 +181,7 @@ export default function StudentList({ schoolId }) {
           <select
             value={filterPromo}
             onChange={(e) => setFilterPromo(e.target.value)}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+            className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
           >
             <option value="">Todas las promociones</option>
             {uniquePromos.map(promo => (
@@ -195,7 +195,7 @@ export default function StudentList({ schoolId }) {
           <button
             type="button"
             onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+            className="text-sm text-accent hover:text-ink-soft font-medium transition-colors"
           >
             🗑️ Limpiar todos los filtros
           </button>
@@ -204,12 +204,12 @@ export default function StudentList({ schoolId }) {
 
       {/* Resultados */}
       {filteredStudents.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-12 text-center">
+        <div className="rounded-lg border-2 border-dashed border-line-strong bg-surface p-12 text-center">
           <div className="text-5xl mb-4">👥</div>
-          <p className="text-lg font-semibold text-gray-700">
+          <p className="text-lg font-semibold text-ink-soft">
             {hasActiveFilters ? 'No hay alumnos que coincidan con los filtros' : 'No hay alumnos registrados'}
           </p>
-          <p className="text-sm text-gray-500 mt-2">
+          <p className="text-sm text-muted mt-2">
             {hasActiveFilters 
               ? 'Prueba a cambiar los criterios de búsqueda o limpia los filtros.' 
               : schoolId 
@@ -220,34 +220,34 @@ export default function StudentList({ schoolId }) {
             <button
               type="button"
               onClick={clearFilters}
-              className="mt-4 rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+              className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong transition-colors"
             >
               Limpiar filtros
             </button>
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto card">
           <table className="w-full text-left text-sm" aria-label="Tabla de alumnos">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-subtle border-b border-line">
               <tr>
-                <th className="p-4 font-semibold text-gray-700">Nombre</th>
-                <th className="p-4 font-semibold text-gray-700">Nº Alumno</th>
-                <th className="p-4 font-semibold text-gray-700">Clase</th>
-                <th className="p-4 font-semibold text-gray-700">Grupo</th>
-                <th className="p-4 font-semibold text-gray-700">Promo</th>
+                <th className="p-4 font-semibold text-ink-soft">Nombre</th>
+                <th className="p-4 font-semibold text-ink-soft">Nº Alumno</th>
+                <th className="p-4 font-semibold text-ink-soft">Clase</th>
+                <th className="p-4 font-semibold text-ink-soft">Grupo</th>
+                <th className="p-4 font-semibold text-ink-soft">Promo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredStudents.map((student) => (
-                <tr key={student.id} className="hover:bg-blue-50/50 transition-colors duration-150">
-                  <td className="p-4 font-medium text-gray-900">{student.name || 'Sin nombre'}</td>
-                  <td className="p-4 font-mono text-xs text-gray-600 bg-gray-50/50 rounded">
+                <tr key={student.id} className="hover:bg-accent-soft/50 transition-colors duration-150">
+                  <td className="p-4 font-medium text-ink">{student.name || 'Sin nombre'}</td>
+                  <td className="p-4 font-mono text-xs text-ink-soft bg-subtle/50 rounded-lg">
                     {student.student_number || '—'}
                   </td>
-                  <td className="p-4 text-gray-600">{student.class_name || '—'}</td>
-                  <td className="p-4 text-gray-600">{student.group_name || '—'}</td>
-                  <td className="p-4 text-gray-600">{student.promo || '—'}</td>
+                  <td className="p-4 text-ink-soft">{student.class_name || '—'}</td>
+                  <td className="p-4 text-ink-soft">{student.group_name || '—'}</td>
+                  <td className="p-4 text-ink-soft">{student.promo || '—'}</td>
                 </tr>
               ))}
             </tbody>

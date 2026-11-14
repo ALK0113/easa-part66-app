@@ -1,15 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
+import { youtubeId } from '../lib/youtube.js'
+import Icon from './Icon.jsx'
 
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
-
-function youtubeId(value) {
-  const raw = value.trim()
-  const match = raw.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/)
-  return match?.[1] || (/^[\w-]{11}$/.test(raw) ? raw : '')
-}
+const inputClass = 'input'
+const buttonClass = 'btn-primary'
 
 export default function VideoList({ user }) {
   const [videos, setVideos] = useState([])
@@ -90,29 +86,29 @@ export default function VideoList({ user }) {
     else { setVideos((current) => current.filter((item) => item.id !== video.id)); setMessage('Vídeo eliminado.') }
   }
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-[#0a2540]">Cargando vídeos…</div>
-  if (error) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">Error al cargar vídeos: {error}</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando vídeos…</div>
+  if (error) return <div role="alert" className="notice-error">Error al cargar vídeos: {error}</div>
 
-  return <div className="space-y-4">
-    <section className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold text-[#0a2540]">Vídeos formativos ({filteredVideos.length})</h2><p className="mt-1 text-sm text-[#6b7280]">Filtra recursos por ATA o busca por título.</p></div>{user.role !== 'alumno' && <button className={buttonClass} onClick={() => openForm()}>+ Nuevo vídeo</button>}</div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2"><input className={inputClass} placeholder="Buscar vídeo…" value={search} onChange={(event) => setSearch(event.target.value)} /><select className={inputClass} value={filterAta} onChange={(event) => setFilterAta(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
-      {message && <p role="status" className="mt-3 rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
+  return <div className="space-y-5">
+    <div className="page-intro"><div><h2>Vídeos formativos</h2><p>{filteredVideos.length} {filteredVideos.length === 1 ? 'vídeo' : 'vídeos'}</p></div>{user.role !== 'alumno' && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo vídeo</button>}</div>
+    <section>
+      <div className="grid gap-2 sm:grid-cols-[2fr_1fr]"><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar vídeo…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className={inputClass} value={filterAta} onChange={(event) => setFilterAta(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
+      {message && !formOpen && <p role="status" className="notice mt-3">{message}</p>}
     </section>
 
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filteredVideos.map((video) => <article key={video.id} className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white shadow-sm">
-      <div className="relative aspect-video bg-[#0a2540]"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${youtubeId(video.youtube_url)}`} title={video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
-      <div className="p-4"><div className="flex items-start justify-between gap-3"><h3 className="line-clamp-2 text-sm font-bold text-[#0a2540]">{video.title}</h3>{canEditVideo(video) && <div className="flex shrink-0 gap-2 text-xs font-semibold"><button className="text-[#1565c0]" onClick={() => openForm(video)}>Editar</button><button className="text-red-700" onClick={() => deleteVideo(video)}>Eliminar</button></div>}</div><div className="mt-3 flex flex-wrap gap-2"><span className="rounded bg-[#d1ecf1] px-2 py-1 text-xs font-semibold text-[#0c5460]">{video.ata}</span><span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-900">{video.module_id}</span></div></div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filteredVideos.map((video) => <article key={video.id} className="card overflow-hidden">
+      <div className="relative aspect-video bg-ink"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${youtubeId(video.youtube_url)}`} title={video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
+      <div className="p-4"><div className="flex items-start justify-between gap-3"><h3 className="line-clamp-2 text-sm font-medium text-ink">{video.title}</h3>{canEditVideo(video) && <div className="-mr-1.5 -mt-1 flex shrink-0 text-muted"><button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${video.title}`} onClick={() => openForm(video)}><Icon name="edit" size={16} /></button><button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${video.title}`} onClick={() => deleteVideo(video)}><Icon name="trash" size={16} /></button></div>}</div><div className="mt-2.5 flex flex-wrap gap-1.5"><span className="badge">{video.module_id}</span>{video.ata && <span className="badge">{video.ata}</span>}</div></div>
     </article>)}</div>
-    {filteredVideos.length === 0 && <p className="rounded-lg border border-dashed border-[#d1d5db] p-10 text-center text-sm text-[#6b7280]">No hay vídeos que coincidan con los filtros.</p>}
+    {filteredVideos.length === 0 && <p className="card empty">No hay vídeos que coincidan con los filtros.</p>}
 
-    {formOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar vídeo' : 'Nuevo vídeo'} className="w-full max-w-xl rounded-lg bg-white p-5 shadow-2xl"><h2 className="mb-4 text-lg font-bold text-[#0a2540]">{editing ? 'Editar vídeo' : 'Nuevo vídeo'}</h2><form className="space-y-4" onSubmit={saveVideo}>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">ATA<input className={inputClass} value={form.ata} onChange={(event) => setForm({ ...form, ata: event.target.value })} placeholder="ATA 21" required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Título<input className={inputClass} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">URL o ID de YouTube<input className={inputClass} value={form.youtube_url || ''} onChange={(event) => setForm({ ...form, youtube_url: event.target.value })} placeholder="https://youtu.be/…" required /></label>
-      {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
-      <div className="flex justify-end gap-2"><button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
+    {formOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar vídeo' : 'Nuevo vídeo'} className="fade-in w-full max-w-xl rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl"><h2 className="mb-5 text-lg font-semibold text-ink">{editing ? 'Editar vídeo' : 'Nuevo vídeo'}</h2><form className="space-y-4" onSubmit={saveVideo}>
+      <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
+      <label className="field">ATA<input className={inputClass} value={form.ata} onChange={(event) => setForm({ ...form, ata: event.target.value })} placeholder="ATA 21" required /></label>
+      <label className="field">Título<input className={inputClass} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
+      <label className="field">URL o ID de YouTube<input className={inputClass} value={form.youtube_url || ''} onChange={(event) => setForm({ ...form, youtube_url: event.target.value })} placeholder="https://youtu.be/…" required /></label>
+      {message && <p role="alert" className="notice-error">{message}</p>}
+      <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
     </form></section></div>}
   </div>
 }

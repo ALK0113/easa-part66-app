@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar.jsx'
 import { subscribeToTables } from './lib/supabaseRealtime.js'
 import { ROLES, canAccessPage } from './lib/roles.js'
 import { ThemeProvider } from './contexts/ThemeContext.jsx'
+import Icon from './components/Icon.jsx'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
@@ -19,6 +20,7 @@ const AssignmentsPage = lazy(() => loadManagementPages().then((mod) => ({ defaul
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
 const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
+const MyDataPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.MyDataPage })))
 
 const ProfileManagement = lazy(() => import('./components/ProfileManagement.jsx'))
 const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
@@ -32,10 +34,10 @@ class PageErrorBoundary extends Component {
   render() {
     if (!this.state.failed) return this.props.children
     return (
-      <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">
-        <p className="font-semibold">No se pudo cargar esta sección.</p>
-        <p className="mt-1">Comprueba tu conexión e inténtalo de nuevo.</p>
-        <button type="button" className="mt-3 rounded bg-red-700 px-4 py-2 font-semibold text-white" onClick={() => window.location.reload()}>Recargar la página</button>
+      <div role="alert" className="card p-6 text-sm">
+        <p className="font-semibold text-ink">No se pudo cargar esta sección</p>
+        <p className="mt-1 text-muted">Comprueba tu conexión e inténtalo de nuevo.</p>
+        <button type="button" className="btn-secondary mt-4" onClick={() => window.location.reload()}>Recargar la página</button>
       </div>
     )
   }
@@ -132,22 +134,16 @@ function App() {
     setSidebarOpen(false)
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-blue-900 text-xl font-semibold">Cargando...</p>
-      </div>
-    )
-  }
+  if (loading) return <FullScreenMessage>Cargando…</FullScreenMessage>
 
   if (!user && profileError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
-        <div role="alert" className="max-w-md rounded-lg bg-white p-6 text-center shadow">
-          <p className="text-sm text-red-800">{profileError}</p>
-          <button type="button" className="mt-4 rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white" onClick={() => setProfileError('')}>Volver al inicio de sesión</button>
+      <FullScreenMessage>
+        <div role="alert" className="card max-w-md p-7 text-center">
+          <p className="text-sm text-ink-soft">{profileError}</p>
+          <button type="button" className="btn-primary mt-5" onClick={() => setProfileError('')}>Volver al inicio de sesión</button>
         </div>
-      </div>
+      </FullScreenMessage>
     )
   }
 
@@ -156,6 +152,7 @@ function App() {
   }
 
   const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
+  const openModule = (moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }
 
   const renderPage = () => {
     switch (currentPage) {
@@ -163,7 +160,7 @@ function App() {
       case 'practices': return <PracticeList user={user} />
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} />
       case 'videos': return <VideoList user={user} />
-      case 'modules': return <ModulesPage user={user} onOpenModule={(moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }} />
+      case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} />
       case 'assignments': return <AssignmentsPage user={user} />
       case 'teachers': return <ProfileManagement user={user} />
@@ -171,36 +168,39 @@ function App() {
       case 'reports': return <ReportsPage />
       case 'settings': return <SettingsPage user={user} />
       case 'mydata': return <ProfileSettings user={user} />
+      case 'progress': return <MyDataPage user={user} />
       case 'schools': return <SchoolManagement user={user} />
-      default: return <DashboardHome user={user} setActivePage={setActivePage} />
+      default: return <DashboardHome user={user} setActivePage={setActivePage} onOpenModule={openModule} />
     }
   }
 
   const pageTitles = {
-    dashboard: 'Dashboard',
+    dashboard: 'Inicio',
     modules: user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66',
-    'module-detail': selectedModuleId ? `Detalle ${selectedModuleId}` : 'Detalle del módulo',
-    students: user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Gestión de alumnos',
+    'module-detail': selectedModuleId ? `Módulo ${selectedModuleId}` : 'Módulo',
+    students: user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos',
     practices: 'Prácticas',
     tlb: user.role === ROLES.STUDENT ? 'Mi Task Log Book' : 'Task Log Book',
     videos: 'Vídeos formativos',
     assignments: 'Asignaciones',
-    teachers: 'Gestión de perfiles',
-    aircraft: 'Tipos de avión',
-    reports: 'Informes globales',
+    teachers: 'Perfiles',
+    aircraft: 'Aviones',
+    reports: 'Informes',
     settings: 'Configuración',
     mydata: 'Mis datos',
-    schools: 'Gestión de Escuelas',
+    progress: 'Mi progreso',
+    schools: 'Escuelas',
   }
 
   return (
     <ThemeProvider user={user}>
-      <div className="min-h-screen bg-[#f4f6f9] text-[#1a1a1a]">
+      <div className="min-h-screen bg-canvas text-ink">
         <Sidebar
           activePage={currentPage}
           setActivePage={(page) => {
             setActivePage(page)
             setSidebarOpen(false)
+            window.scrollTo({ top: 0 })
           }}
           user={user}
           onLogout={handleLogout}
@@ -212,35 +212,24 @@ function App() {
             type="button"
             aria-label="Cerrar menú"
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+            className="fixed inset-0 z-30 bg-black/20 backdrop-blur-[2px] md:hidden"
           />
         )}
-        <main className="min-h-screen md:ml-[280px]">
-          <header className="sticky top-0 z-20 flex min-h-[76px] items-center justify-between gap-4 border-b border-[#e5e7eb] bg-white px-5 shadow-sm md:px-8">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                aria-label="Abrir menú"
-                onClick={() => setSidebarOpen(true)}
-                className="rounded-md border border-[#e5e7eb] px-3 py-2 text-lg text-[#0a2540] md:hidden"
-              >
-                ☰
-              </button>
-              <h1 className="text-lg font-bold text-[#0a2540] md:text-xl">{pageTitles[currentPage] || 'EASA Part-147'}</h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1e88e5] font-semibold text-white">
-                {user.name?.[0]?.toUpperCase() || 'U'}
-              </div>
-              <div className="hidden sm:block">
-                <div className="max-w-[180px] truncate text-sm font-semibold text-[#0a2540]">{user.name}</div>
-                <div className="text-xs capitalize text-[#6b7280]">{user.role}</div>
-              </div>
-            </div>
+        <main className="min-h-screen md:ml-[264px]">
+          <header className="sticky top-0 z-20 flex h-16 items-center gap-3 app-header border-b border-line px-4 backdrop-blur md:px-10">
+            <button
+              type="button"
+              aria-label="Abrir menú"
+              onClick={() => setSidebarOpen(true)}
+              className="-ml-1 rounded-lg p-2 text-ink-soft hover:bg-surface md:hidden"
+            >
+              <Icon name="menu" size={20} />
+            </button>
+            <h1 className="truncate text-base font-semibold text-ink md:text-lg">{pageTitles[currentPage] || 'AviaTrack'}</h1>
           </header>
-          <div className="p-4 md:p-7">
+          <div key={currentPage} className="fade-in mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-8">
             <PageErrorBoundary resetKey={currentPage}>
-              <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-[#6b7280]">Cargando sección…</div>}>
+              <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando…</div>}>
                 {renderPage()}
               </Suspense>
             </PageErrorBoundary>
@@ -248,6 +237,14 @@ function App() {
         </main>
       </div>
     </ThemeProvider>
+  )
+}
+
+function FullScreenMessage({ children }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4 text-sm text-muted">
+      {children}
+    </div>
   )
 }
 
@@ -274,8 +271,21 @@ async function fetchEnrolledStudentIds(moduleIds) {
 
 const STAT_TABLES = ['students', 'practices', 'tlbs', 'videos', 'modules']
 
-function DashboardHome({ user, setActivePage }) {
+const todayISO = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function greeting() {
+  const hour = new Date().getHours()
+  if (hour < 13) return 'Buenos días'
+  if (hour < 21) return 'Buenas tardes'
+  return 'Buenas noches'
+}
+
+function DashboardHome({ user, setActivePage, onOpenModule }) {
   const [stats, setStats] = useState(null)
+  const [upcoming, setUpcoming] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -311,24 +321,44 @@ function DashboardHome({ user, setActivePage }) {
           return query
         }
 
-        const counts = user.role === ROLES.ADMIN
-          ? await Promise.all(STAT_TABLES.map((table) => countTable(table, false)))
-          : await Promise.all([
-            Promise.resolve({ count: studentCount, error: null }),
-            countTable('practices', true),
-            countTable('tlbs', true),
-            countTable('videos', true),
-            Promise.resolve({ count: moduleIds.length, error: null }),
-          ])
+        const upcomingQuery = () => {
+          if (user.role !== ROLES.ADMIN && !moduleIds.length) return Promise.resolve({ data: [], error: null })
+          let query = supabase
+            .from('practices')
+            .select('id,module_id,title,date,start_time,hours')
+            .gte('date', todayISO())
+            .order('date')
+            .order('start_time')
+            .limit(4)
+          if (user.role !== ROLES.ADMIN) query = query.in('module_id', moduleIds)
+          return query
+        }
+
+        const [counts, upcomingResult] = await Promise.all([
+          user.role === ROLES.ADMIN
+            ? Promise.all(STAT_TABLES.map((table) => countTable(table, false)))
+            : Promise.all([
+              Promise.resolve({ count: studentCount, error: null }),
+              countTable('practices', true),
+              countTable('tlbs', true),
+              countTable('videos', true),
+              Promise.resolve({ count: moduleIds.length, error: null }),
+            ]),
+          upcomingQuery(),
+        ])
 
         if (!cancelled) {
           setStats(Object.fromEntries(STAT_TABLES.map((table, index) => [
             table,
             counts[index].error ? '—' : counts[index].count ?? 0,
           ])))
+          setUpcoming(upcomingResult.error ? [] : upcomingResult.data || [])
         }
       } catch {
-        if (!cancelled) setStats(Object.fromEntries(STAT_TABLES.map((table) => [table, '—'])))
+        if (!cancelled) {
+          setStats(Object.fromEntries(STAT_TABLES.map((table) => [table, '—'])))
+          setUpcoming([])
+        }
       }
     }
 
@@ -342,34 +372,70 @@ function DashboardHome({ user, setActivePage }) {
     return () => { cancelled = true; clearTimeout(timer); unsubscribe() }
   }, [user.id, user.role])
 
-  const cards = user.role === ROLES.STUDENT
-    ? [['modules', 'Mis módulos', '📚', 'modules'], ['tlbs', 'Mi Task Log Book', '📋', 'tlb'], ['videos', 'Vídeos', '🎬', 'videos']]
-    : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', '👥', 'students'], ['modules', 'Módulos EASA', '📚', 'modules'], ['tlbs', 'Task Log Books', '📋', 'tlb'], ['videos', 'Vídeos formativos', '🎬', 'videos']]
+  const isStudent = user.role === ROLES.STUDENT
+  const cards = isStudent
+    ? [['modules', 'Mis módulos', 'book', 'modules'], ['practices', 'Mis prácticas', 'chart', 'progress'], ['tlbs', 'Mi Task Log Book', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
+    : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Task Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
+
+  const firstName = (user.name || '').split(' ')[0]
+  const today = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+  const openPractice = (practice) => (isStudent ? onOpenModule(practice.module_id) : setActivePage('practices'))
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-lg bg-[#0a2540] p-6 text-white md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-200">EASA Part-147 · Gestión académica</p>
-        <h2 className="mt-3 text-2xl font-bold md:text-3xl">Bienvenido, {user.name}</h2>
-        <p className="mt-2 text-sm text-blue-100">Resumen de actividad para tu perfil de {user.role}.</p>
+    <div className="space-y-8">
+      <section>
+        <p className="text-sm capitalize text-muted">{today}</p>
+        <h2 className="mt-1 text-2xl font-semibold text-ink md:text-[28px]">{greeting()}, {firstName}</h2>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map(([statKey, label, icon, page], index) => (
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map(([statKey, label, icon, page]) => (
           <button
             type="button"
             key={statKey}
             onClick={() => setActivePage(page)}
-            className="cursor-pointer rounded-lg border border-[#e5e7eb] border-l-4 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-            style={{ borderLeftColor: ['#1e88e5', '#2e7d32', '#ef6c00', '#ffb300'][index] }}
+            className="card group flex flex-col items-start gap-4 p-5 text-left transition-shadow hover:shadow-lift"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase text-[#6b7280]">{label}</h3>
-              <span aria-hidden="true" className="text-lg">{icon}</span>
-            </div>
-            <p className="mt-3 text-3xl font-bold text-[#0a2540]">{stats?.[statKey] ?? '…'}</p>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-soft text-accent">
+              <Icon name={icon} />
+            </span>
+            <span>
+              <span className="block text-2xl font-semibold text-ink">{stats?.[statKey] ?? '–'}</span>
+              <span className="mt-0.5 flex items-center gap-1 text-sm text-muted group-hover:text-ink-soft">
+                {label}
+                <Icon name="next" size={14} className="opacity-0 transition-opacity group-hover:opacity-100" />
+              </span>
+            </span>
           </button>
         ))}
+      </section>
+
+      <section className="card">
+        <div className="flex items-center justify-between px-5 pb-2 pt-5">
+          <h3 className="font-semibold text-ink">Próximas prácticas</h3>
+          {!isStudent && <button type="button" className="link" onClick={() => setActivePage('practices')}>Ver todas</button>}
+        </div>
+        {upcoming === null && <p className="empty">Cargando…</p>}
+        {upcoming?.length === 0 && <p className="empty">No tienes prácticas próximas. Disfruta del día.</p>}
+        {upcoming?.length > 0 && (
+          <ul className="px-2 pb-2">
+            {upcoming.map((practice) => (
+              <li key={practice.id}>
+                <button type="button" onClick={() => openPractice(practice)} className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle">
+                  <span className="flex w-12 shrink-0 flex-col items-center rounded-lg bg-subtle py-1.5">
+                    <span className="text-[11px]  text-muted">{new Date(`${practice.date}T00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span>
+                    <span className="text-lg font-semibold leading-none text-ink">{Number(practice.date.slice(8, 10))}</span>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-ink">{practice.title}</span>
+                    <span className="mt-0.5 block text-xs text-muted">{practice.module_id}{practice.start_time ? ` · ${String(practice.start_time).slice(0, 5)}` : ''}{practice.hours ? ` · ${practice.hours} h` : ''}</span>
+                  </span>
+                  <Icon name="next" size={16} className="text-faint" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   )

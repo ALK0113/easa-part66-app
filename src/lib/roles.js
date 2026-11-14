@@ -21,6 +21,7 @@ export const PAGE_ACCESS = {
   reports: ADMIN_ONLY,
   settings: ADMIN_ONLY,
   mydata: ALL_ROLES,
+  progress: [ROLES.STUDENT],
 }
 
 export const canAccessPage = (page, role) => Boolean(PAGE_ACCESS[page]?.includes(role))

@@ -1,13 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tokens ─────────────────────────────────────────────────────────────
+   Paleta calmada: fondo cálido, tinta pizarra suave y un único acento
+   (el color de la escuela). Los estados usan tonos apagados. */
 :root {
-	font-family: 'DM Sans', sans-serif;
-	color: #1a1a1a;
-	background: #f4f6f9;
+	--brand-primary: #3b6fd4;
+	--canvas: #f6f6f3;
+	--surface: #ffffff;
+	--subtle: #f9f9f7;
+	--ink: #1f2a37;
+	--ink-soft: #3d4754;
+	--muted: #6b7280;
+	--faint: #9aa1ab;
+	--line: #ebebe6;
+	--line-strong: #d9d9d2;
+	--accent: var(--brand-primary);
+	--accent-strong: color-mix(in srgb, var(--brand-primary) 82%, #000);
+	--accent-soft: color-mix(in srgb, var(--brand-primary) 9%, #fff);
+	--success: #2f7a55;
+	--success-soft: #ebf5ef;
+	--warn: #a86a12;
+	--warn-soft: #fbf3e4;
+	--danger: #b83b3b;
+	--danger-soft: #fbeceb;
+
+	font-family: 'DM Sans', system-ui, sans-serif;
+	color: var(--ink);
+	background: var(--canvas);
 	font-synthesis: none;
 	text-rendering: optimizeLegibility;
 	-webkit-font-smoothing: antialiased;
@@ -18,6 +41,8 @@ body {
 	min-width: 320px;
 	min-height: 100vh;
 	margin: 0;
+	background: var(--canvas);
+	color: var(--ink);
 }
 
 button,
@@ -27,161 +52,191 @@ textarea {
 	font: inherit;
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-	outline: 3px solid #ffb300;
+::selection {
+	background: var(--accent-soft);
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
 
-.login-screen {
-	display: flex;
-	min-height: 100vh;
-	align-items: center;
-	justify-content: center;
-	padding: 24px;
-	background:
-		linear-gradient(135deg, rgba(10, 37, 64, 0.97), rgba(30, 136, 229, 0.92)),
-		repeating-linear-gradient(135deg, transparent 0 28px, rgba(255, 255, 255, 0.06) 29px 30px);
-}
-
-.login-panel {
-	width: min(100%, 440px);
-	padding: 34px;
+/* ── Controles base ─────────────────────────────────────────────────────
+   :where() mantiene especificidad 0, así las utilidades de cada pantalla
+   siguen mandando. */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), select, textarea) {
 	border-radius: 10px;
-	background: #fff;
-	box-shadow: 0 22px 60px rgba(0, 0, 0, 0.25);
-	animation: login-enter 420ms ease-out both;
+	border: 1px solid var(--line-strong);
+	background-color: var(--surface);
+	color: var(--ink);
+	transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-.login-brand {
-	margin-bottom: 28px;
-	text-align: center;
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), select, textarea):focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.login-mark {
-	display: inline-flex;
-	width: 58px;
-	height: 58px;
-	align-items: center;
-	justify-content: center;
-	margin-bottom: 14px;
-	border-radius: 50%;
-	background: #e8f2fc;
-	color: #0a2540;
-	font-size: 29px;
+:where(input, select, textarea):disabled {
+	background-color: var(--subtle);
+	color: var(--muted);
+	cursor: not-allowed;
 }
 
-.login-kicker {
-	margin: 0 0 8px;
-	color: #6b7280;
-	font-size: 10px;
-	font-weight: 700;
-	text-transform: uppercase;
+:where(input, textarea)::placeholder {
+	color: var(--faint);
 }
 
-.login-brand h1 {
-	margin: 0;
-	color: #0a2540;
-	font-size: 25px;
+:where(input[type='checkbox'], input[type='radio']) {
+	accent-color: var(--accent);
 }
 
-.login-subtitle {
-	margin: 6px 0 0;
-	color: #6b7280;
-	font-size: 13px;
-}
-
-.login-form {
-	display: grid;
-	gap: 16px;
-}
-
-.login-field {
-	display: grid;
-	gap: 6px;
-	color: #0a2540;
-	font-size: 13px;
-	font-weight: 600;
-}
-
-.login-field input {
-	width: 100%;
-	box-sizing: border-box;
-	padding: 11px 12px;
-	border: 1px solid #d1d5db;
-	border-radius: 5px;
-	color: #1a1a1a;
-}
-
-.login-field input:focus {
-	border-color: #1e88e5;
-}
-
-.login-submit {
-	min-height: 44px;
-	margin-top: 4px;
-	border: 0;
-	border-radius: 5px;
-	background: #1e88e5;
-	color: #fff;
+:where(button) {
 	cursor: pointer;
-	font-weight: 700;
-	transition: background 160ms ease;
+	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
-.login-submit:hover:not(:disabled) {
-	background: #1565c0;
+:where(button:disabled) {
+	cursor: not-allowed;
 }
 
-.login-submit:disabled {
-	cursor: wait;
-	opacity: 0.7;
+:where(table) {
+	border-collapse: collapse;
 }
 
-.login-links {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 8px 18px;
-	margin-top: 20px;
+:where(thead) {
+	background: var(--subtle);
+	color: var(--muted);
 }
 
-.login-links button {
-	padding: 2px;
-	border: 0;
-	background: transparent;
-	color: #1565c0;
-	cursor: pointer;
+:where(th) {
 	font-size: 12px;
 	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: none;
+	white-space: nowrap;
 }
 
-.login-links button:hover {
-	text-decoration: underline;
+:where(tbody tr) {
+	transition: background-color 120ms ease;
 }
 
-.login-message {
-	margin: 0;
-	padding: 10px 12px;
-	border-radius: 5px;
-	font-size: 13px;
+:where(tbody tr:hover) {
+	background: var(--subtle);
 }
 
-.login-error {
-	background: #fce8e8;
-	color: #9b1c1c;
+@layer components {
+	.card {
+		@apply rounded-2xl border border-line bg-surface shadow-soft;
+	}
+
+	.page-intro {
+		@apply flex flex-wrap items-end justify-between gap-3;
+	}
+
+	.page-intro h2 {
+		@apply text-xl font-semibold text-ink;
+	}
+
+	.page-intro p {
+		@apply mt-1 text-sm text-muted;
+	}
+
+	.btn {
+		@apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium disabled:opacity-50;
+	}
+
+	.btn-primary {
+		@apply btn bg-accent text-white hover:bg-accent-strong;
+	}
+
+	.btn-secondary {
+		@apply btn border border-line-strong bg-surface text-ink-soft hover:border-faint hover:bg-subtle;
+	}
+
+	.btn-ghost {
+		@apply btn text-ink-soft hover:bg-subtle;
+	}
+
+	.btn-danger {
+		@apply btn border border-transparent bg-danger-soft text-danger hover:border-danger;
+	}
+
+	.back-link {
+		@apply inline-flex items-center gap-1.5 rounded-lg py-1 text-sm text-muted hover:text-ink;
+	}
+
+	.link {
+		@apply text-sm font-medium text-accent hover:text-accent-strong;
+	}
+
+	.field {
+		@apply grid gap-1.5 text-sm font-medium text-ink-soft;
+	}
+
+	.input {
+		@apply w-full px-3 py-2.5 text-sm;
+	}
+
+	.choice {
+		@apply flex cursor-pointer items-center gap-2.5 rounded-xl border border-line px-3 py-2.5 text-sm text-ink-soft hover:bg-subtle has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:checked]:text-ink;
+	}
+
+	.badge {
+		@apply inline-flex items-center gap-1 rounded-full bg-subtle px-2.5 py-0.5 text-xs font-medium text-ink-soft;
+	}
+
+	.notice {
+		@apply rounded-xl bg-accent-soft px-4 py-3 text-sm text-ink-soft;
+	}
+
+	.notice-success {
+		@apply rounded-xl bg-success-soft px-4 py-3 text-sm text-success;
+	}
+
+	.notice-error {
+		@apply rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger;
+	}
+
+	.tabs {
+		@apply flex gap-1 overflow-x-auto rounded-xl bg-subtle p-1;
+	}
+
+	.tab {
+		@apply whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium text-muted hover:text-ink;
+	}
+
+	.tab[aria-current='page'],
+	.tab[aria-selected='true'] {
+		@apply bg-surface text-ink shadow-soft;
+	}
+
+	.stat {
+		@apply rounded-xl bg-subtle px-4 py-3;
+	}
+
+	.stat dt,
+	.stat-label {
+		@apply text-xs font-medium text-muted;
+	}
+
+	.stat dd,
+	.stat-value {
+		@apply mt-1 text-xl font-semibold text-ink;
+	}
+
+	.empty {
+		@apply px-6 py-12 text-center text-sm text-muted;
+	}
 }
 
-.login-notice {
-	background: #e8f5e9;
-	color: #1b5e20;
+.fade-in {
+	animation: fade-in 260ms ease-out both;
 }
 
-@keyframes login-enter {
-	from { opacity: 0; transform: translateY(10px); }
+@keyframes fade-in {
+	from { opacity: 0; transform: translateY(4px); }
 	to { opacity: 1; transform: translateY(0); }
 }
 
@@ -194,4 +249,8 @@ textarea:focus-visible {
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
 	}
+}
+
+.app-header {
+	background: color-mix(in srgb, var(--canvas) 86%, transparent);
 }

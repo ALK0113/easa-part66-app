@@ -3,12 +3,14 @@ import { supabase } from '../lib/supabase.js'
 import { formatDate } from '../lib/format.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
+import Icon from './Icon.jsx'
+import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 
-const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
+const inputClass = 'input'
+const buttonClass = 'btn-primary'
 
 
-// 🆕 Parsear objectives (puede venir como string o array desde Supabase)
+// Parsear objectives (puede venir como string o array desde Supabase)
 function parseObjectives(value) {
   if (!value) return []
   if (Array.isArray(value)) return value
@@ -209,8 +211,8 @@ export default function PracticeList({ user }) {
     setBusy(false)
   }
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-[#0a2540]">Cargando prácticas…</div>
-  if (error) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-800">Error al cargar prácticas: {error}</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando prácticas…</div>
+  if (error) return <div role="alert" className="notice-error">Error al cargar prácticas: {error}</div>
 
   if (selectedPractice) {
     const enrolled = getEnrolledStudents(selectedPractice)
@@ -221,104 +223,144 @@ export default function PracticeList({ user }) {
       if (record.evaluation === 'Apto') summary.apto += 1
     })
     const objectives = parseObjectives(selectedPractice.objectives)
-    return <div className="space-y-5">
-      <button className="text-sm font-semibold text-[#1565c0]" onClick={() => setSelectedPractice(null)}>← Volver a prácticas</button>
-      <section className="rounded-lg bg-gradient-to-r from-[#0a2540] to-[#1e88e5] p-6 text-white">
-        <p className="text-xs font-semibold uppercase text-blue-100">{selectedPractice.id} · {selectedPractice.module_id} · {selectedPractice.ata}</p>
-        <h2 className="mt-2 text-2xl font-bold">{selectedPractice.title}</h2>
-        <p className="mt-1 text-sm text-blue-100">{selectedPractice.detail}</p>
-        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm"><span>📅 {formatDate(selectedPractice.date)}</span><span>⏰ {selectedPractice.start_time}</span><span>⏱️ {selectedPractice.hours} h</span><span> {enrolled.length} alumnos</span></div>
+    const meta = [selectedPractice.module_id, selectedPractice.ata].filter(Boolean).join(' · ')
+    return <div className="space-y-6">
+      <button type="button" className="back-link" onClick={() => setSelectedPractice(null)}>← Prácticas</button>
+      <section>
+        <p className="text-sm text-muted">{meta}</p>
+        <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
+        {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
+        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+          <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
+          {selectedPractice.start_time && <span className="badge gap-1.5 bg-surface py-1"><Icon name="clock" size={14} className="text-faint" />{String(selectedPractice.start_time).slice(0, 5)} · {selectedPractice.hours} h</span>}
+          <span className="badge gap-1.5 bg-surface py-1"><Icon name="users" size={14} className="text-faint" />{enrolled.length} alumnos</span>
+        </div>
       </section>
 
-      {/* 🆕 Descripción compacta */}
-      {selectedPractice.description && (
-        <section className="rounded-lg border border-[#e5e7eb] bg-white p-5">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6b7280]">Description:</p>
-          <p className="text-sm leading-relaxed text-[#374151]">{selectedPractice.description}</p>
+      {(selectedPractice.description || objectives.length > 0) && (
+        <section className="card grid gap-5 p-6 md:grid-cols-2">
+          {selectedPractice.description && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-ink">Descripción</h3>
+              <p className="text-sm leading-relaxed text-ink-soft">{selectedPractice.description}</p>
+            </div>
+          )}
+          {objectives.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-ink">Objetivos</h3>
+              <ul className="space-y-2 text-sm text-ink-soft">
+                {objectives.map((obj, idx) => (
+                  <li key={idx} className="flex gap-2.5">
+                    <Icon name="check" size={16} className="mt-0.5 text-accent" />
+                    <span>{obj}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
-      {/* 🆕 Objetivos compactos */}
-      {objectives.length > 0 && (
-        <section className="rounded-lg border border-[#e5e7eb] bg-white p-5">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#6b7280]">Objectives:</p>
-          <ul className="space-y-1.5 text-sm text-[#374151]">
-            {objectives.map((obj, idx) => (
-              <li key={idx} className="flex gap-2">
-                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#1e88e5]"></span>
-                <span>{obj}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <RecordSummary items={[['Presentes', summary.P, 'bg-success'], ['Tarde', summary.L, 'bg-warn'], ['Faltas', summary.A, 'bg-danger'], ['Aptos', `${summary.apto}/${enrolled.length}`, 'bg-accent']]} />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">{[['Presentes', summary.P, 'border-l-[#2e7d32]'], ['Tarde', summary.L, 'border-l-[#ef6c00]'], ['Faltas', summary.A, 'border-l-[#c62828]'], ['Aptos', `${summary.apto}/${enrolled.length}`, 'border-l-[#ffb300]']].map(([label, value, color]) => <div key={label} className={`rounded-lg border border-[#e5e7eb] border-l-4 bg-white p-4 ${color}`}><p className="text-xs uppercase text-[#6b7280]">{label}</p><p className="mt-1 text-2xl font-bold text-[#0a2540]">{value}</p></div>)}</section>
-      <section className="overflow-hidden rounded-lg border border-[#e5e7eb] bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5e7eb] p-4"><h3 className="font-bold text-[#0a2540]">Asistencia y evaluación</h3><div className="flex gap-2"><button className="rounded bg-[#2e7d32] px-3 py-2 text-xs font-bold text-white" disabled={busy} onClick={() => markAll('P')}>✓ Todos presentes</button><button className="rounded bg-[#ef6c00] px-3 py-2 text-xs font-bold text-white" disabled={busy} onClick={() => markAll('A')}>✗ Todos falta</button></div></div>
-        {message && <p role="status" className="m-4 rounded bg-blue-50 p-3 text-sm text-blue-900">{message}</p>}
-        <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[#0a2540] text-xs uppercase text-white"><tr>{['Alumno', 'Grupo', 'Promoción', 'Asistencia', 'Evaluación'].map((title) => <th key={title} className="p-3">{title}</th>)}</tr></thead><tbody>{enrolled.map((student) => {
-          const record = getRecord(student.id, selectedPractice.id)
-          return <tr key={student.id} className="border-b border-[#e5e7eb]"><td className="p-3 font-semibold">{student.name}</td><td className="p-3">{student.group_name || '—'}</td><td className="p-3">{student.promo || '—'}</td><td className="p-3"><div className="flex gap-1">{[['P', 'Presente', '#2e7d32'], ['L', 'Tarde', '#ef6c00'], ['A', 'Falta', '#c62828']].map(([value, label, color]) => <button key={value} title={label} aria-pressed={record.attendance === value} className={`h-8 w-9 rounded border text-xs font-bold ${record.attendance === value ? 'text-white' : 'bg-white text-[#374151]'}`} style={record.attendance === value ? { backgroundColor: color, borderColor: color } : undefined} disabled={busy} onClick={() => setRecord(student.id, selectedPractice.id, 'attendance', value)}>{value}</button>)}</div></td><td className="p-3"><select className={`${inputClass} max-w-40`} value={record.evaluation || ''} disabled={busy} onChange={(event) => setRecord(student.id, selectedPractice.id, 'evaluation', event.target.value)}><option value="">Sin evaluar</option><option value="Apto">Apto</option><option value="No Apto">No apto</option></select></td></tr>
-        })}</tbody></table></div>
-        {enrolled.length === 0 && <p className="p-8 text-center text-sm text-[#6b7280]">No hay alumnos matriculados en este módulo.</p>}
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-3 pt-5">
+          <div>
+            <h3 className="font-semibold text-ink">Asistencia y evaluación</h3>
+            <p className="mt-0.5 text-xs text-muted">Se guarda al instante.</p>
+          </div>
+          {enrolled.length > 0 && (
+            <div className="flex gap-2">
+              <button className="btn-secondary min-h-[36px] px-3 text-xs" disabled={busy} onClick={() => markAll('P')}><Icon name="check" size={14} className="text-success" />Todos presentes</button>
+              <button className="btn-ghost min-h-[36px] px-3 text-xs text-muted" disabled={busy} onClick={() => markAll('A')}>Todos falta</button>
+            </div>
+          )}
+        </div>
+        {message && <p role="status" className="notice mx-5 mb-3">{message}</p>}
+        <ul className="divide-y divide-line border-t border-line">
+          {enrolled.map((student) => (
+            <StudentRecordRow
+              key={student.id}
+              student={student}
+              record={getRecord(student.id, selectedPractice.id)}
+              busy={busy}
+              meta={[student.group_name, student.promo].filter(Boolean).join(' · ') || '—'}
+              onAttendance={(value) => setRecord(student.id, selectedPractice.id, 'attendance', value)}
+              onEvaluation={(value) => setRecord(student.id, selectedPractice.id, 'evaluation', value)}
+            />
+          ))}
+        </ul>
+        {enrolled.length === 0 && <p className="empty">No hay alumnos matriculados en este módulo.</p>}
       </section>
     </div>
   }
 
-  return <div className="space-y-4">
-    <section className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold text-[#0a2540]">Prácticas ({filtered.length})</h2><p className="mt-1 text-sm text-[#6b7280]">Consulta y administra prácticas de tus módulos.</p></div>{canCreate && <button className={buttonClass} onClick={() => openForm()}>+ Nueva práctica</button>}</div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3"><input className={inputClass} placeholder="Buscar por ID, título, ATA o descripción…" value={search} onChange={(event) => setSearch(event.target.value)} /><select className={inputClass} value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">Todos los módulos</option>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select><select className={inputClass} value={ataFilter} onChange={(event) => setAtaFilter(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
-      {(setupNotice || message) && <p role="status" className="mt-3 rounded bg-blue-50 p-3 text-sm text-blue-900">{setupNotice || message}</p>}
+  return <div className="space-y-5">
+    <div className="page-intro"><div><h2>Prácticas</h2><p>{filtered.length} {filtered.length === 1 ? 'práctica' : 'prácticas'} de tus módulos</p></div>{canCreate && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nueva práctica</button>}</div>
+    <section>
+      <div className="grid gap-2 sm:grid-cols-[2fr_1fr_1fr]"><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar práctica…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className={inputClass} value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">Todos los módulos</option>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select><select className={inputClass} value={ataFilter} onChange={(event) => setAtaFilter(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
+      {(setupNotice || message) && <p role="status" className="notice mt-3">{setupNotice || message}</p>}
     </section>
-    <div className="space-y-3">{filtered.map((practice) => {
+    <div className="space-y-2">{filtered.map((practice) => {
       const enrolledCount = memberships.filter((entry) => entry.module_id === practice.module_id).length
-      return <article key={practice.id} className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-[#e5e7eb] border-l-4 border-l-[#1e88e5] bg-white p-4 shadow-sm transition hover:border-l-[#ffb300] hover:shadow-md">
-        <button className="min-w-0 flex-1 text-left" onClick={() => setSelectedPractice(practice)}>
-          <div className="mb-2 flex flex-wrap gap-2 text-xs"><code className="rounded bg-[#f0f7ff] px-2 py-1 font-bold text-[#0a2540]">{practice.id}</code><span className="rounded bg-[#d1ecf1] px-2 py-1 text-[#0c5460]">{practice.ata}</span><span className="rounded bg-[#fff3cd] px-2 py-1 text-[#856404]">{formatDate(practice.date)}</span><span className="rounded bg-blue-100 px-2 py-1 text-blue-900">{practice.start_time}</span></div>
-          <h3 className="font-bold text-[#0a2540]">{practice.title}</h3><p className="mt-1 truncate text-sm text-[#6b7280]">{practice.detail}</p>
-          {/*  Mini preview de descripción en la tarjeta */}
-          {practice.description && <p className="mt-1 line-clamp-2 text-xs text-[#9ca3af]">{practice.description}</p>}
-          <p className="mt-2 text-xs text-[#6b7280]">{practice.module_id} · {practice.hours} h · {enrolledCount} alumnos</p>
+      return <article key={practice.id} className="card group flex items-center gap-4 p-2 pr-3 transition-shadow hover:shadow-lift">
+        <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => setSelectedPractice(practice)}>
+          <span className="flex w-14 shrink-0 flex-col items-center rounded-xl bg-subtle py-2">
+            <span className="text-[11px] text-muted">{practice.date ? new Date(`${practice.date}T00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '') : '—'}</span>
+            <span className="text-lg font-semibold leading-none text-ink">{practice.date ? Number(String(practice.date).slice(8, 10)) : ''}</span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-ink">{practice.title}</span>
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span className="badge py-0">{practice.module_id}</span>
+              <span>{practice.ata}</span>
+              {practice.start_time && <span>· {String(practice.start_time).slice(0, 5)}</span>}
+              <span>· {practice.hours} h</span>
+              <span>· {enrolledCount} alumnos</span>
+            </span>
+          </span>
         </button>
-        <div className="flex gap-2">{canEdit(practice) && <><button className="rounded border border-[#d1d5db] px-3 py-2 text-xs font-semibold" onClick={() => openForm(practice)}>Editar</button>{user.role === 'admin' && <button className="rounded border border-red-200 px-3 py-2 text-xs font-semibold text-red-700" onClick={() => deletePractice(practice)}>Eliminar</button>}</>}</div>
+        {canEdit(practice) && <div className="flex gap-1 text-muted">
+          <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Editar ${practice.title}`} onClick={() => openForm(practice)}><Icon name="edit" size={16} /></button>
+          {user.role === 'admin' && <button className="rounded-lg p-2 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${practice.title}`} onClick={() => deletePractice(practice)}><Icon name="trash" size={16} /></button>}
+        </div>}
+        <Icon name="next" size={16} className="hidden text-faint group-hover:text-accent sm:block" />
       </article>
     })}</div>
-    {filtered.length === 0 && <p className="rounded-lg border border-dashed border-[#d1d5db] p-8 text-center text-sm text-[#6b7280]">{visiblePractices.length === 0 ? 'No hay prácticas asignadas. Administración debe cargar los datos iniciales y asignar el módulo al profesor.' : 'No hay prácticas que coincidan con los filtros.'}</p>}
+    {filtered.length === 0 && <p className="card empty">{visiblePractices.length === 0 ? 'No hay prácticas asignadas. Administración debe cargar los datos iniciales y asignar el módulo al profesor.' : 'No hay prácticas que coincidan con los filtros.'}</p>}
 
-    {formOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar práctica' : 'Nueva práctica'} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><h2 className="mb-4 text-lg font-bold text-[#0a2540]">{editing ? 'Editar práctica' : 'Nueva práctica'}</h2><form className="grid gap-4 sm:grid-cols-2" onSubmit={savePractice}>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">ID práctica<input className={inputClass} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} required disabled={Boolean(editing)} /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">ATA<input className={inputClass} value={form.ata} onChange={(event) => setForm({ ...form, ata: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Título<input className={inputClass} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540] sm:col-span-2">Detalle<textarea className={inputClass} rows="2" value={form.detail || ''} onChange={(event) => setForm({ ...form, detail: event.target.value })} /></label>
+    {formOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar práctica' : 'Nueva práctica'} className="fade-in max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl"><h2 className="mb-5 text-lg font-semibold text-ink">{editing ? 'Editar práctica' : 'Nueva práctica'}</h2><form className="grid gap-4 sm:grid-cols-2" onSubmit={savePractice}>
+      <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
+      <label className="field">ID práctica<input className={inputClass} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} required disabled={Boolean(editing)} /></label>
+      <label className="field">ATA<input className={inputClass} value={form.ata} onChange={(event) => setForm({ ...form, ata: event.target.value })} required /></label>
+      <label className="field">Título<input className={inputClass} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
+      <label className="field sm:col-span-2">Detalle<textarea className={inputClass} rows="2" value={form.detail || ''} onChange={(event) => setForm({ ...form, detail: event.target.value })} /></label>
       
       {/*  Descripción completa */}
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540] sm:col-span-2">Descripción de la práctica
+      <label className="field sm:col-span-2">Descripción de la práctica
         <textarea className={inputClass} rows="4" placeholder="Explica en qué consiste la práctica..." value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} />
       </label>
       
       {/*  Objetivos editables */}
       <div className="sm:col-span-2">
-        <label className="mb-2 block text-sm font-semibold text-[#0a2540]">Objetivos de aprendizaje</label>
+        <label className="mb-2 block text-sm font-medium text-ink-soft">Objetivos de aprendizaje</label>
         <div className="space-y-2">
           {objectivesInput.map((obj, idx) => (
             <div key={idx} className="flex gap-2">
-              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded bg-[#f0f7ff] text-xs font-bold text-[#0a2540]">{idx + 1}</span>
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-ink">{idx + 1}</span>
               <input className={inputClass} placeholder={`Objetivo ${idx + 1}`} value={obj} onChange={(event) => updateObjective(idx, event.target.value)} />
-              <button type="button" className="rounded border border-red-200 px-2 text-xs text-red-700 hover:bg-red-50" onClick={() => removeObjective(idx)} title="Eliminar objetivo">✕</button>
+              <button type="button" className="rounded-lg px-2 text-muted hover:bg-danger-soft hover:text-danger" onClick={() => removeObjective(idx)} aria-label="Eliminar objetivo"><Icon name="x" size={16} /></button>
             </div>
           ))}
         </div>
-        <button type="button" className="mt-2 rounded border border-dashed border-[#1e88e5] px-3 py-1.5 text-xs font-semibold text-[#1e88e5] hover:bg-blue-50" onClick={addObjective}>+ Añadir objetivo</button>
+        <button type="button" className="btn-ghost mt-2 min-h-[34px] px-2 text-xs text-accent" onClick={addObjective}><Icon name="plus" size={14} />Añadir objetivo</button>
       </div>
 
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Fecha<input className={inputClass} type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Hora<input className={inputClass} type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} required /></label>
-      <label className="grid gap-1 text-sm font-semibold text-[#0a2540]">Duración (h)<input className={inputClass} type="number" min="1" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} required /></label>
-      {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800 sm:col-span-2">{message}</p>}
-      <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="rounded border border-[#d1d5db] px-4 py-2 text-sm" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
+      <label className="field">Fecha<input className={inputClass} type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label>
+      <label className="field">Hora<input className={inputClass} type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} required /></label>
+      <label className="field">Duración (h)<input className={inputClass} type="number" min="1" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} required /></label>
+      {message && <p role="alert" className="notice-error sm:col-span-2">{message}</p>}
+      <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="btn-secondary" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
     </form></section></div>}
   </div>
 }
