@@ -4,6 +4,22 @@ import { supabase } from '../lib/supabase.js'
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'w-full rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
 
+// Pantalla común para enlaces de invitación/recuperación caducados o ya usados.
+export function InvalidLinkNotice() {
+  return (
+    <div className="mx-auto mt-16 max-w-md rounded-lg border border-[#e5e7eb] bg-white p-6 text-center shadow">
+      <h1 className="mb-2 text-lg font-bold text-[#0a2540]">Enlace no válido</h1>
+      <p className="mb-4 text-sm text-[#6b7280]">
+        El enlace ha caducado o ya se ha usado. Pide una nueva invitación al administrador
+        o usa «¿Olvidaste tu contraseña?» en la pantalla de acceso.
+      </p>
+      <button type="button" className={buttonClass} onClick={() => window.location.replace(window.location.pathname)}>
+        Ir al inicio
+      </button>
+    </div>
+  )
+}
+
 export default function SetPassword({ onDone }) {
   const [checking, setChecking] = useState(true)
   const [hasSession, setHasSession] = useState(false)
@@ -14,10 +30,10 @@ export default function SetPassword({ onDone }) {
 
   // getSession espera a que Supabase termine de procesar el enlace
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setHasSession(Boolean(data.session))
-      setChecking(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data }) => setHasSession(Boolean(data.session)))
+      .catch(() => setHasSession(false))
+      .finally(() => setChecking(false))
   }, [])
 
   async function handleSubmit(event) {
@@ -64,20 +80,7 @@ export default function SetPassword({ onDone }) {
     return <div className="p-8 text-center text-[#0a2540]">Verificando enlace...</div>
   }
 
-  if (!hasSession) {
-    return (
-      <div className="mx-auto mt-16 max-w-md rounded-lg border border-[#e5e7eb] bg-white p-6 text-center shadow">
-        <h1 className="mb-2 text-lg font-bold text-[#0a2540]">Enlace no válido</h1>
-        <p className="mb-4 text-sm text-[#6b7280]">
-          El enlace ha caducado o ya se ha usado. Pide una nueva invitación al administrador
-          o usa «¿Olvidaste tu contraseña?» en la pantalla de acceso.
-        </p>
-        <button className={buttonClass} onClick={() => window.location.replace(window.location.pathname)}>
-          Ir al inicio
-        </button>
-      </div>
-    )
-  }
+  if (!hasSession) return <InvalidLinkNotice />
 
   return (
     <div className="mx-auto mt-16 max-w-md rounded-lg border border-[#e5e7eb] bg-white p-6 shadow">

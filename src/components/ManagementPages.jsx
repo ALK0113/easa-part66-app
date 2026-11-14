@@ -7,12 +7,13 @@ import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
+import { downloadBlob, downloadCsv } from '../lib/download.js'
+import { ROLES } from '../lib/roles.js'
 
 /* ------------------------------------------------------------------ */
 /* Constantes                                                          */
 /* ------------------------------------------------------------------ */
 
-const ROLES = { ADMIN: 'admin', TEACHER: 'profesor', STUDENT: 'alumno' }
 const STARTER_MODULE_ID = 'M11'
 const MAX_COLOR = 18
 const PAGE_SIZE = 1000
@@ -47,24 +48,7 @@ async function fetchAll(table, columns = '*', orderCols = ['id'], applyFilters =
   return all
 }
 
-function errorText(error) {
-  return getSupabaseErrorMessage ? getSupabaseErrorMessage(error) : error?.message || String(error)
-}
-
-function csvCell(value) {
-  const text = String(value ?? '')
-  const safe = /^[=+@\-\t\r]/.test(text) ? `'${text}` : text
-  return `"${safe.replaceAll('"', '""')}"`
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
+const errorText = getSupabaseErrorMessage
 
 function useNotice() {
   const [notice, setNotice] = useState(null)
@@ -103,7 +87,8 @@ function useRows(table, columns = '*') {
 
   useEffect(() => {
     mountedRef.current = true
-    load(true)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
+    load(false)
     const unsubscribe = subscribeToTables([table], () => load(false), `${table}-updates-${channelId}`)
     return () => {
       mountedRef.current = false
@@ -431,79 +416,6 @@ export function AssignmentsPage({ user }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Profesores                                                          */
-/* ------------------------------------------------------------------ */
-
-export function TeachersPage({ user }) {
-  const { rows: profiles, loading, error, reload } = useRows('profiles', 'id,full_name,email,role')
-  const { rows: assignments } = useRows('teacher_modules', 'profile_id,module_id')
-  const { rows: modules } = useRows('modules', 'id,name')
-  const [notice, notify] = useNotice()
-  const [email, setEmail] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [busy, setBusy] = useState(false)
-  const teachers = profiles.filter((profile) => profile.role === ROLES.TEACHER)
-
-  async function promoteProfile(profile) {
-    const nextRole = profile.role === ROLES.TEACHER ? ROLES.STUDENT : ROLES.TEACHER
-    if (!window.confirm(`¿Cambiar el rol de ${profile.full_name || profile.email} a ${nextRole}?`)) return
-    const { error: updateError } = await supabase.rpc('admin_set_profile_role', { p_profile_id: profile.id, p_role: nextRole })
-    if (updateError) notify(errorText(updateError), true)
-    else {
-      notify(`Rol actualizado a ${nextRole}.`)
-      await reload()
-    }
-  }
-
-  async function createTeacher(event) {
-    event.preventDefault()
-    setBusy(true)
-    notify('')
-    try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-create-user', {
-        body: { email: email.trim(), full_name: fullName.trim(), role: ROLES.TEACHER },
-      })
-      if (invokeError || data?.error) notify(invokeError?.message || data.error, true)
-      else { setEmail(''); setFullName(''); notify('Profesor creado; se ha enviado la invitación.'); await reload() }
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (user.role !== ROLES.ADMIN) return <Notice error>Solo administración puede gestionar profesores.</Notice>
-
-  return (
-    <div className="space-y-5">
-      <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-bold text-[#0a2540]">Invitar profesor</h2>
-        <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={createTeacher}>
-          <input className={inputClass} type="text" placeholder="Nombre completo" value={fullName} onChange={(event) => setFullName(event.target.value)} required />
-          <input className={inputClass} type="email" placeholder="Correo electrónico" value={email} onChange={(event) => setEmail(event.target.value)} required />
-          <button className={primaryButton} disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
-        </form>
-        <p className="mt-2 text-xs text-[#6b7280]">Requiere desplegar la función segura `admin-create-user` incluida en `supabase/functions`.</p>
-        {notice && <div className="mt-3"><NoticeBar notice={notice} /></div>}
-      </section>
-      <section className={cardClass}>
-        <h2 className="mb-4 text-lg font-bold text-[#0a2540]">Profesores ({teachers.length})</h2>
-        <ErrorOrLoading loading={loading} error={error} />
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[#0a2540] text-xs uppercase text-white"><tr><th className="p-3">Nombre</th><th className="p-3">Correo</th><th className="p-3">Módulos</th><th className="p-3">Acción</th></tr></thead>
-            <tbody>{teachers.map((teacher) => <tr key={teacher.id} className="border-b border-[#e5e7eb]">
-              <td className="p-3 font-semibold">{teacher.full_name || 'Sin nombre'}</td>
-              <td className="p-3">{teacher.email}</td>
-              <td className="p-3">{assignments.filter((entry) => entry.profile_id === teacher.id).map((entry) => modules.find((mod) => mod.id === entry.module_id)?.id || entry.module_id).join(', ') || 'Sin asignar'}</td>
-              <td className="p-3"><button className="text-sm font-semibold text-red-700" onClick={() => promoteProfile(teacher)}>Retirar rol</button></td>
-            </tr>)}</tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
 /* Aviones                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -662,9 +574,7 @@ export function ReportsPage() {
   function exportCsv() {
     const header = ['Nombre', 'Grupo', 'Promoción', 'Prácticas', 'Presente', 'Tarde', 'Falta', 'Aptos', '% Asistencia', '% Aptos']
     const rows = [header, ...report.map((student) => [student.name, student.group_name, student.promo, student.relevantCount, student.present, student.late, student.absent, student.apto, `${student.attendanceRate}%`, `${student.aptitudeRate}%`])]
-    const content = rows.map((row) => row.map(csvCell).join(',')).join('\r\n')
-    // El BOM (\uFEFF) hace que Excel muestre bien tildes y eñes.
-    downloadBlob(new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' }), 'informe_easa.csv')
+    downloadCsv(rows, 'informe_easa.csv')
   }
 
   const loading = studentsLoading || practicesLoading || membershipsLoading || recordsLoading
@@ -831,7 +741,7 @@ async function buildBackup() {
     try {
       backup.tables[table] = await fetchAll(table, '*', order.split(','))
     } catch (tableError) {
-      throw new Error(`${table}: ${tableError.message}`)
+      throw new Error(`${table}: ${tableError.message}`, { cause: tableError })
     }
   }
   return backup
@@ -881,7 +791,7 @@ export function SettingsPage({ user }) {
         }
       } catch (membershipsError) {
         if (isMissingTable(membershipsError)) assignmentsNotice = ' Para matrículas y asistencia, aplica primero la migración de Supabase.'
-        else throw new Error(membershipsError.message?.startsWith('student_modules') ? membershipsError.message : `student_modules: ${membershipsError.message}`)
+        else throw new Error(membershipsError.message?.startsWith('student_modules') ? membershipsError.message : `student_modules: ${membershipsError.message}`, { cause: membershipsError })
       }
 
       const practiceRows = starterPractices.map((practice) => ({

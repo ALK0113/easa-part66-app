@@ -1,13 +1,12 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase.js'
 import Login from './components/Login.jsx'
-import UpdatePassword from './components/UpdatePassword.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { subscribeToTables } from './lib/supabaseRealtime.js'
-
-// 1. IMPORTAR ThemeProvider
+import { ROLES, canAccessPage } from './lib/roles.js'
 import { ThemeProvider } from './contexts/ThemeContext.jsx'
-import SchoolManagement from './components/SchoolManagement.jsx'
+
+const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
 const StudentList = lazy(() => import('./components/StudentList.jsx'))
 const PracticeList = lazy(() => import('./components/PracticeList.jsx'))
@@ -23,28 +22,6 @@ const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: 
 
 const ProfileManagement = lazy(() => import('./components/ProfileManagement.jsx'))
 const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
-
-const ROLES = { ADMIN: 'admin', TEACHER: 'profesor', STUDENT: 'alumno' }
-const ALL_ROLES = Object.values(ROLES)
-
-const PAGE_ACCESS = {
-  dashboard: ALL_ROLES,
-  modules: ALL_ROLES,
-  'module-detail': ALL_ROLES,
-  students: [ROLES.ADMIN, ROLES.TEACHER],
-  practices: ALL_ROLES,
-  tlb: ALL_ROLES,
-  videos: ALL_ROLES,
-  assignments: [ROLES.ADMIN],
-  teachers: [ROLES.ADMIN],
-  aircraft: ALL_ROLES,
-  reports: [ROLES.ADMIN, ROLES.TEACHER],
-  settings: [ROLES.ADMIN],
-  mydata: ALL_ROLES,
-  schools: [ROLES.ADMIN],
-}
-
-const isRecoveryUrl = () => typeof window !== 'undefined' && window.location.hash.includes('type=recovery')
 
 class PageErrorBoundary extends Component {
   state = { failed: false }
@@ -68,7 +45,6 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [profileError, setProfileError] = useState('')
-  const [recovering, setRecovering] = useState(isRecoveryUrl)
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedModuleId, setSelectedModuleId] = useState(null)
@@ -76,10 +52,10 @@ function App() {
 
   const userIdRef = useRef(null)
   const inFlightRef = useRef(null)
-  const recoveringRef = useRef(isRecoveryUrl())
 
+  // La recuperación/invitación (elegir contraseña) la gestiona PasswordGate antes de montar App.
   const loadUserProfile = useCallback(async (authUser) => {
-    if (recoveringRef.current || inFlightRef.current === authUser.id) return
+    if (inFlightRef.current === authUser.id) return
     inFlightRef.current = authUser.id
     try {
       const { data: profile, error } = await supabase
@@ -120,13 +96,7 @@ function App() {
     let active = true
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        recoveringRef.current = true
-        setRecovering(true)
-        setLoading(false)
-        return
-      }
-      if (event === 'TOKEN_REFRESHED') return
+      if (event === 'TOKEN_REFRESHED' || event === 'PASSWORD_RECOVERY') return
       if (!session?.user) {
         userIdRef.current = null
         setUser(null)
@@ -140,7 +110,7 @@ function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return
       if (session?.user) loadUserProfile(session.user)
-      else if (!recoveringRef.current) setLoading(false)
+      else setLoading(false)
     }).catch(() => { if (active) setLoading(false) })
 
     return () => { active = false; subscription.unsubscribe() }
@@ -152,14 +122,6 @@ function App() {
     setUser(loggedUser)
   }
 
-  function handlePasswordUpdated() {
-    recoveringRef.current = false
-    setRecovering(false)
-    userIdRef.current = null
-    setUser(null)
-    window.history.replaceState(null, '', window.location.pathname)
-  }
-
   async function handleLogout() {
     try { await supabase.auth.signOut() } catch { /* se cierra la sesión local igualmente */ }
     userIdRef.current = null
@@ -169,8 +131,6 @@ function App() {
     setSelectedTlbId(null)
     setSidebarOpen(false)
   }
-
-  if (recovering) return <UpdatePassword onDone={handlePasswordUpdated} />
 
   if (loading) {
     return (
@@ -195,11 +155,11 @@ function App() {
     return <Login onLoginSuccess={handleLoginSuccess} />
   }
 
-  const currentPage = PAGE_ACCESS[activePage]?.includes(user.role) ? activePage : 'dashboard'
+  const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'students': return <StudentList user={user} />
+      case 'students': return <StudentList />
       case 'practices': return <PracticeList user={user} />
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} />
       case 'videos': return <VideoList user={user} />
@@ -233,7 +193,6 @@ function App() {
     schools: 'Gestión de Escuelas',
   }
 
-  // 2. ENVOLVER TODO EL RETORNO CON ThemeProvider
   return (
     <ThemeProvider user={user}>
       <div className="min-h-screen bg-[#f4f6f9] text-[#1a1a1a]">
@@ -292,7 +251,6 @@ function App() {
   )
 }
 
-// ... (El resto del código de DashboardHome se mantiene igual que en tu archivo anterior) ...
 const PAGE_SIZE = 1000
 
 async function fetchEnrolledStudentIds(moduleIds) {
@@ -385,7 +343,7 @@ function DashboardHome({ user, setActivePage }) {
   }, [user.id, user.role])
 
   const cards = user.role === ROLES.STUDENT
-    ? [['modules', 'Mis módulos', '📚', 'modules'], ['tlbs', 'Mi Task Log Book', '📋', 'tlb'], ['videos', 'Vídeos', '🎬', 'videos'], ['practices', 'Prácticas', '🔧', 'practices']]
+    ? [['modules', 'Mis módulos', '📚', 'modules'], ['tlbs', 'Mi Task Log Book', '📋', 'tlb'], ['videos', 'Vídeos', '🎬', 'videos']]
     : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', '👥', 'students'], ['modules', 'Módulos EASA', '📚', 'modules'], ['tlbs', 'Task Log Books', '📋', 'tlb'], ['videos', 'Vídeos formativos', '🎬', 'videos']]
 
   return (

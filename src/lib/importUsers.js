@@ -1,5 +1,6 @@
 // Plantilla y lectura de Excel (.xlsx) para la importación masiva de usuarios.
 // ExcelJS se carga con import dinámico, solo cuando se usa.
+import { downloadBlob } from './download.js'
 
 export const MAX_ROWS = 500
 export const MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -59,7 +60,7 @@ function parseBirthDate(cell) {
   } else {
     const text = cellText(cell)
     if (!text) return { value: null }
-    let match = text.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/)
+    let match = text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
     if (match) {
       d = Number(match[1])
       m = Number(match[2])
@@ -259,12 +260,5 @@ export async function downloadTemplate() {
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'plantilla_usuarios.xlsx'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, 'plantilla_usuarios.xlsx')
 }

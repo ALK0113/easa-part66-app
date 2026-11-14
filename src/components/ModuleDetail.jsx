@@ -2,14 +2,9 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
+import { formatDate } from '../lib/format.js'
 
 const inputClass = 'rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
-
-function formatDate(value) {
-  if (!value) return '—'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
-}
 
 export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   const [module, setModule] = useState(null)

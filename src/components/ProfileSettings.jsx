@@ -12,29 +12,29 @@ export default function ProfileSettings({ user }) {
   const [formData, setFormData] = useState({ full_name: '', phone: '', bio: '', role: '' })
 
   useEffect(() => {
-    loadProfile()
-  }, [user.id])
-
-  async function loadProfile() {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('full_name, email, phone, bio, role')
-      .eq('id', user.id)
-      .single()
-
-    if (error) setMessage('Error al cargar perfil: ' + error.message)
-    else {
-      setProfile(data)
-      setFormData({
-        full_name: data?.full_name || '',
-        phone: data?.phone || '',
-        bio: data?.bio || '',
-        role: data?.role || 'alumno'
-      })
+    let cancelled = false
+    async function loadProfile() {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name, email, phone, bio, role')
+        .eq('id', user.id)
+        .single()
+      if (cancelled) return
+      if (error) setMessage('Error al cargar perfil: ' + error.message)
+      else {
+        setProfile(data)
+        setFormData({
+          full_name: data?.full_name || '',
+          phone: data?.phone || '',
+          bio: data?.bio || '',
+          role: data?.role || 'alumno'
+        })
+      }
+      setLoading(false)
     }
-    setLoading(false)
-  }
+    loadProfile()
+    return () => { cancelled = true }
+  }, [user.id])
 
   async function handleSave(event) {
     event.preventDefault()

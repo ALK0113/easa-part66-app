@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { formatDate } from '../lib/format.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
 
-function formatDate(value) {
-  if (!value) return '—'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
-}
 
 // 🆕 Parsear objectives (puede venir como string o array desde Supabase)
 function parseObjectives(value) {

@@ -1,21 +1,25 @@
+import { ROLES, canAccessPage } from '../lib/roles.js'
+
+// Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
 const navigation = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'schools', label: 'Escuelas', icon: '🏫', roles: ['admin'] }, 
-  { id: 'modules', label: 'Módulos', icon: '📚', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'students', label: 'Alumnos', icon: '👥', roles: ['admin', 'profesor'] },
-  { id: 'practices', label: 'Prácticas', icon: '🔧', roles: ['admin', 'profesor'] },
-  { id: 'tlb', label: 'Task Log Book', icon: '📋', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'videos', label: 'Vídeos', icon: '🎬', roles: ['admin', 'profesor', 'alumno'] },
-  { id: 'assignments', label: 'Asignaciones', icon: '🔗', roles: ['admin'] },
-  { id: 'teachers', label: 'Gestión de perfiles', icon: '👥', roles: ['admin'] },  
-  { id: 'aircraft', label: 'Aviones', icon: '✈️', roles: ['admin'] },
-  { id: 'reports', label: 'Informes', icon: '📈', roles: ['admin'] },
-  { id: 'settings', label: 'Configuración', icon: '⚙️', roles: ['admin'] },
-  { id: 'mydata', label: 'Mis datos', icon: '👤', roles: ['admin', 'profesor', 'alumno'] },
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  { id: 'schools', label: 'Escuelas', icon: '🏫' },
+  { id: 'modules', label: 'Módulos', icon: '📚' },
+  { id: 'students', label: 'Alumnos', icon: '👥' },
+  { id: 'practices', label: 'Prácticas', icon: '🔧' },
+  { id: 'tlb', label: 'Task Log Book', icon: '📋' },
+  { id: 'videos', label: 'Vídeos', icon: '🎬' },
+  { id: 'assignments', label: 'Asignaciones', icon: '🔗' },
+  { id: 'teachers', label: 'Gestión de perfiles', icon: '🪪' },
+  { id: 'aircraft', label: 'Aviones', icon: '✈️' },
+  { id: 'reports', label: 'Informes', icon: '📈' },
+  { id: 'settings', label: 'Configuración', icon: '⚙️' },
+  { id: 'mydata', label: 'Mis datos', icon: '👤' },
 ]
 
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
-  const visibleItems = navigation.filter((item) => item.roles.includes(user.role))
+  const visibleItems = navigation.filter((item) => canAccessPage(item.id, user.role))
+  const isActive = (id) => activePage === id || (activePage === 'module-detail' && id === 'modules')
 
   return (
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col bg-[#0a2540] text-white shadow-xl transition-transform duration-200 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -44,7 +48,7 @@ export default function Sidebar({ activePage, setActivePage, user, onLogout, isO
 
       <nav aria-label="Navegación principal" className="flex-1 overflow-y-auto px-3 py-4">
         <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
-          {user.role === 'alumno' ? 'Mi formación' : 'Gestión académica'}
+          {user.role === ROLES.STUDENT ? 'Mi formación' : 'Gestión académica'}
         </p>
         <div className="space-y-1">
           {visibleItems.map((item) => (
@@ -52,9 +56,9 @@ export default function Sidebar({ activePage, setActivePage, user, onLogout, isO
               key={item.id}
               type="button"
               onClick={() => setActivePage(item.id)}
-              aria-current={activePage === item.id || (activePage === 'module-detail' && item.id === 'modules') ? 'page' : undefined}
+              aria-current={isActive(item.id) ? 'page' : undefined}
               className={`flex w-full items-center gap-3 border-l-[3px] px-3 py-2.5 text-left text-sm transition-colors ${
-                activePage === item.id || (activePage === 'module-detail' && item.id === 'modules')
+                isActive(item.id)
                   ? 'border-[#ffb300] bg-white/10 font-semibold text-white'
                   : 'border-transparent text-blue-100/85 hover:bg-white/[0.07] hover:text-white'
               }`}

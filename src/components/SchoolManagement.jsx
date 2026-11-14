@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
-import { useTheme, COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../contexts/ThemeContext.jsx'
+import { useTheme } from '../contexts/useTheme.js'
+import { COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../lib/theme.js'
+import { downloadCsv } from '../lib/download.js'
+import { ROLES } from '../lib/roles.js'
 
 const ITEMS_PER_PAGE = 6
 const DEBOUNCE_DELAY = 300
@@ -26,14 +29,6 @@ function generateId() {
   return Math.random().toString(36).substring(2, 11)
 }
 
-function escapeCSV(value) {
-  const str = String(value ?? '')
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`
-  }
-  return str
-}
-
 function exportToCSV(schools, filename = 'escuelas') {
   const headers = ['ID', 'Nombre', 'Dirección', 'Ciudad', 'Teléfono', 'Email', 'Color', 'Alumnos', 'Profesores', 'Supervisores']
   const rows = schools.map(s => [
@@ -41,13 +36,18 @@ function exportToCSV(schools, filename = 'escuelas') {
     s.school_phone || '', s.school_email || '', s.brand_color || '',
     s.total_students, s.total_teachers, s.total_supervisors,
   ])
-  const csv = [headers.join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n')
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`
-  link.click()
-  URL.revokeObjectURL(link.href)
+  downloadCsv([headers, ...rows], `${filename}_${new Date().toISOString().split('T')[0]}.csv`)
+}
+
+const ACTIVE_SCHOOL_KEY = 'activeSchoolId'
+function readActiveSchool() {
+  try { return localStorage.getItem(ACTIVE_SCHOOL_KEY) } catch { return null }
+}
+function writeActiveSchool(id) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_SCHOOL_KEY, id)
+    else localStorage.removeItem(ACTIVE_SCHOOL_KEY)
+  } catch { /* almacenamiento no disponible */ }
 }
 
 function isValidHexColor(color) {
@@ -56,7 +56,7 @@ function isValidHexColor(color) {
 
 export default function SchoolManagement({ user }) {
   const { setPrimaryColor } = useTheme()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.role === ROLES.ADMIN
 
   const [schools, setSchools] = useState([])
   const [unassignedSupervisors, setUnassignedSupervisors] = useState([])
@@ -65,7 +65,7 @@ export default function SchoolManagement({ user }) {
   const [loading, setLoading] = useState(true)
   const [toasts, setToasts] = useState([])
 
-  const [activeSchoolId, setActiveSchoolId] = useState(() => localStorage.getItem('activeSchoolId'))
+  const [activeSchoolId, setActiveSchoolId] = useState(readActiveSchool)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -97,7 +97,7 @@ export default function SchoolManagement({ user }) {
   const [removing, setRemoving] = useState(null)
   const [savingColor, setSavingColor] = useState(false)
 
-  const loadAbortRef = useRef(null)
+  const loadRequestRef = useRef(0)
   const debounceRef = useRef(null)
 
   const addToast = useCallback((type, message) => {
@@ -111,15 +111,17 @@ export default function SchoolManagement({ user }) {
     return schools.find(s => s.school_id === activeSchoolId)?.brand_color || null
   }, [activeSchoolId, schools])
 
+  // Solo se aplica cuando hay un color concreto: así no se pisa el tema de la escuela
+  // del usuario mientras la lista aún se está cargando.
   useEffect(() => {
-    setPrimaryColor(activeSchoolColor || DEFAULT_BRAND_COLOR)
+    if (activeSchoolColor) setPrimaryColor(activeSchoolColor)
   }, [activeSchoolColor, setPrimaryColor])
 
   const handleSetActiveSchool = useCallback((id) => {
     setActiveSchoolId(id)
-    if (id) localStorage.setItem('activeSchoolId', id)
-    else localStorage.removeItem('activeSchoolId')
-  }, [])
+    writeActiveSchool(id)
+    if (!id) setPrimaryColor(DEFAULT_BRAND_COLOR)
+  }, [setPrimaryColor])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -153,21 +155,21 @@ export default function SchoolManagement({ user }) {
   const totalPages = Math.ceil(filteredAndSortedSchools.length / ITEMS_PER_PAGE)
   const paginatedSchools = filteredAndSortedSchools.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
+  // Las recargas tras guardar se hacen en segundo plano (sin ocultar la lista).
+  // Un contador descarta respuestas de peticiones ya superadas.
   const loadSchools = useCallback(async () => {
-    if (loadAbortRef.current) loadAbortRef.current.abort()
-    loadAbortRef.current = new AbortController()
-    setLoading(true)
+    const requestId = ++loadRequestRef.current
     try {
       const { data, error } = await supabase.rpc('admin_list_schools_with_stats_v2')
-      if (loadAbortRef.current?.signal.aborted) return
+      if (requestId !== loadRequestRef.current) return
       if (error) throw error
       setSchools(data || [])
     } catch (err) {
-      if (err?.name === 'AbortError') return
+      if (requestId !== loadRequestRef.current) return
       const { message } = parseSupabaseError(err)
       addToast('error', `Error: ${message}`)
     } finally {
-      if (!loadAbortRef.current?.signal.aborted) setLoading(false)
+      if (requestId === loadRequestRef.current) setLoading(false)
     }
   }, [addToast])
 
@@ -192,9 +194,10 @@ export default function SchoolManagement({ user }) {
   }, [addToast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
     loadSchools()
     loadUnassignedSupervisors()
-    return () => { loadAbortRef.current?.abort() }
+    return () => { loadRequestRef.current += 1 }
   }, [loadSchools, loadUnassignedSupervisors])
 
   function validateForm(form) {
@@ -388,7 +391,7 @@ export default function SchoolManagement({ user }) {
     }
   }
 
-  if (user?.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center">
         <div className="text-5xl mb-4">🔒</div>

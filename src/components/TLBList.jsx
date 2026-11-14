@@ -5,23 +5,19 @@ import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import emailjs from '@emailjs/browser'
+import { formatDate } from '../lib/format.js'
 
-// ⚙️ CONFIGURACIÓN DE EMAILJS CON TUS CLAVES REALES
+// Configuración de EmailJS desde variables de entorno (ver README)
 const EMAILJS_CONFIG = {
-  serviceId: 'service_x223chc',
-  templateId: 'template_bsfqabf',
-  publicKey: 'L1mQ2kzKhmBsUZ5bq',
-  teacherEmail: 'arafatlaarajb1@gmail.com' // Correo de respaldo por si no encuentra el del profesor
-};
+  serviceId: import.meta.env.VITE_EMAILJS_SERVICE_ID,
+  templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+  publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
+  teacherEmail: import.meta.env.VITE_EMAILJS_FALLBACK_EMAIL || '', // respaldo si no se encuentra el del profesor
+}
+const EMAILJS_READY = Boolean(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templateId && EMAILJS_CONFIG.publicKey)
 
 const inputClass = 'w-full rounded border border-[#d1d5db] px-3 py-2 text-sm focus:border-[#1e88e5]'
 const buttonClass = 'rounded bg-[#1e88e5] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1565c0] disabled:opacity-50'
-
-function formatDate(value) {
-  if (!value) return '—'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
-}
 
 export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }) {
   const [tlbs, setTlbs] = useState([])
@@ -98,7 +94,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   useEffect(() => {
     async function loadStudentData() {
       if (userRole !== 'alumno' || !selectedTLBId) return
-      const { data: submission, error } = await supabase
+      const { data: submission } = await supabase
         .from('tlb_submissions')
         .select('*')
         .eq('student_id', user.id)
@@ -373,7 +369,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       // Usamos el correo encontrado, o el de respaldo si no se encontró ninguno
       const targetEmail = assignedTeacherEmails || EMAILJS_CONFIG.teacherEmail
 
-      if (!targetEmail || targetEmail === 'respaldo@escuela.com') {
+      if (!targetEmail || !EMAILJS_READY) {
         setMessage('⚠️ No se encontró el correo del profesor en el sistema. El PDF se descargará para que lo envíes manualmente.')
         const doc = buildTlbPdf(tlbDefects, studentResponses, true)
         doc.save(`TLB_${selectedTLB.id}_${user.name.replace(/\s+/g, '_')}.pdf`)
