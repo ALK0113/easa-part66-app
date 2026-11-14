@@ -1,6 +1,6 @@
-# AviaTrack · EASA Part 66
+# AviaTrack · EASA Part 147
 
-Aplicación React/Vite para la gestión académica EASA Part 66. Supabase proporciona autenticación y persistencia; los roles se leen de `profiles` (`admin`, `profesor`, `alumno`).
+Aplicación React/Vite para la gestión académica EASA Part 147. Supabase proporciona autenticación y persistencia; los roles se leen de `profiles` (`admin`, `profesor`, `alumno`).
 
 ## Desarrollo
 

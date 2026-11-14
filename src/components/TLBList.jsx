@@ -253,7 +253,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
     doc.setTextColor(10, 37, 64)
-    doc.text('EASA PART 66 · TASK LOG BOOK', margin, 17)
+    doc.text('EASA PART 147 · TASK LOG BOOK', margin, 17)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(100, 110, 120)
@@ -327,7 +327,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(120, 120, 120)
-      doc.text(`EASA Part 66 · TLB ${selectedTLB.id} · ${page}/${pageCount}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
+      doc.text(`EASA Part 147 · TLB ${selectedTLB.id} · ${page}/${pageCount}`, pageWidth - margin, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
     }
 
     return doc
