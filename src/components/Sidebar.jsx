@@ -16,6 +16,7 @@ const sections = [
       { id: 'tlb', label: 'Task Log Book', icon: 'clipboard' },
       { id: 'videos', label: 'Vídeos', icon: 'play' },
       { id: 'students', label: 'Alumnos', icon: 'users' },
+      { id: 'mygroups', label: 'Mis grupos', icon: 'link' },
       { id: 'aircraft', label: 'Aviones', icon: 'plane' },
     ],
   },

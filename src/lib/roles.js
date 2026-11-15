@@ -32,6 +32,7 @@ export const PAGE_ACCESS = {
   tlb: ALL_ROLES,
   videos: ALL_ROLES,
   assignments: MANAGERS,
+  mygroups: [ROLES.TEACHER],
   teachers: MANAGERS,
   aircraft: STAFF,
   reports: MANAGERS,
