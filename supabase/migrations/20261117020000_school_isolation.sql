@@ -2,26 +2,6 @@
 -- y ningún dato de una escuela se ve ni se modifica desde otra (salvo el admin global).
 
 -- ---------------------------------------------------------------
--- Helpers
--- ---------------------------------------------------------------
-create or replace function private.in_my_school(p_school_id uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select private.is_global_admin() or (p_school_id is not null and p_school_id = private.current_school_id());
-$$;
-
-create or replace function private.tlb_in_my_school(p_tlb_id uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.tlbs t where t.id = p_tlb_id and private.in_my_school(t.school_id));
-$$;
-
-create or replace function private.defect_in_my_school(p_defect_id uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.defects d where d.id = p_defect_id and private.tlb_in_my_school(d.tlb_id));
-$$;
-
-grant execute on function private.in_my_school(uuid), private.tlb_in_my_school(uuid), private.defect_in_my_school(uuid) to authenticated;
-
--- ---------------------------------------------------------------
 -- Columna school_id en TLB, vídeos y aviones
 -- Lo que ya existía pasa a la escuela más antigua (la única que tenía datos);
 -- un TLB va a la escuela de su práctica.
@@ -44,6 +24,26 @@ alter table public.aircraft alter column school_id set not null;
 create index if not exists tlbs_school_id_idx on public.tlbs(school_id);
 create index if not exists videos_school_id_idx on public.videos(school_id);
 create index if not exists aircraft_school_id_idx on public.aircraft(school_id);
+
+-- ---------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------
+create or replace function private.in_my_school(p_school_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select private.is_global_admin() or (p_school_id is not null and p_school_id = private.current_school_id());
+$$;
+
+create or replace function private.tlb_in_my_school(p_tlb_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.tlbs t where t.id = p_tlb_id and private.in_my_school(t.school_id));
+$$;
+
+create or replace function private.defect_in_my_school(p_defect_id uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.defects d where d.id = p_defect_id and private.tlb_in_my_school(d.tlb_id));
+$$;
+
+grant execute on function private.in_my_school(uuid), private.tlb_in_my_school(uuid), private.defect_in_my_school(uuid) to authenticated;
 
 -- Si no se indica, la escuela es la de quien crea (como ya pasa con alumnos y prácticas)
 drop trigger if exists fill_school_id on public.tlbs;
