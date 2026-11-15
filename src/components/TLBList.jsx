@@ -61,10 +61,14 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [tlbResult, practiceResult, defectResult, moduleResult, aircraftResult, teacherResult, profilesResult] = await Promise.all([
+      const [tlbResult, practiceResult, defectResult, answerResult, moduleResult, aircraftResult, teacherResult, profilesResult] = await Promise.all([
         supabase.from('tlbs').select('*').order('date', { ascending: false }),
         supabase.from('practices').select('id,title,module_id,ata'),
         supabase.from('defects').select('*').order('defect_number', { ascending: true }),
+        // Las respuestas oficiales solo las devuelve la RLS al admin y a los profesores del módulo
+        userRole === 'alumno'
+          ? Promise.resolve({ data: [], error: null })
+          : supabase.from('defect_answers').select('defect_id,correct_action'),
         supabase.from('modules').select('id,name'),
         supabase.from('aircraft').select('id,type,registration,msn'),
         userRole === 'profesor'
@@ -73,12 +77,13 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
         supabase.from('profiles').select('id,full_name,email').eq('role', 'profesor').order('full_name', { ascending: true }),
       ])
       if (cancelled) return
-      const failure = tlbResult.error || practiceResult.error || defectResult.error || moduleResult.error || aircraftResult.error || teacherResult.error || profilesResult.error
+      const failure = tlbResult.error || practiceResult.error || defectResult.error || answerResult.error || moduleResult.error || aircraftResult.error || teacherResult.error || profilesResult.error
       if (failure) setError(failure.message)
       else {
         setTlbs(tlbResult.data || [])
         setPractices(practiceResult.data || [])
-        setDefects(defectResult.data || [])
+        const answers = new Map((answerResult.data || []).map((row) => [row.defect_id, row.correct_action]))
+        setDefects((defectResult.data || []).map((defect) => ({ ...defect, correct_action: answers.get(defect.id) || '' })))
         setModules(moduleResult.data || [])
         setAircraft(aircraftResult.data || [])
         setTeacherModules((teacherResult.data || []).map((item) => item.module_id))
@@ -92,7 +97,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       setLoading(false)
     }
     load()
-    const unsubscribe = subscribeToTables(['tlbs', 'practices', 'defects', 'modules', 'aircraft', 'teacher_modules', 'profiles'], load, 'tlb-list')
+    const unsubscribe = subscribeToTables(['tlbs', 'practices', 'defects', 'defect_answers', 'modules', 'aircraft', 'teacher_modules', 'profiles'], load, 'tlb-list')
     return () => { cancelled = true; unsubscribe() }
   }, [user.id, userRole])
 
@@ -509,13 +514,16 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       ata: defectForm.ata.trim(),
       pirep: defectForm.pirep.trim(),
       defect_description: defectForm.defect_description.trim(),
-      correct_action: defectForm.correct_action.trim(),
     }
+    const correctAction = defectForm.correct_action.trim()
     if (editingDefect) {
       const { data, error: updateError } = await supabase.from('defects').update(content).eq('id', editingDefect.id).select().single()
+      if (updateError) { setBusy(false); setMessage(getSupabaseErrorMessage(updateError)); return }
+      const { error: answerError } = await supabase.from('defect_answers')
+        .upsert({ defect_id: data.id, correct_action: correctAction, updated_at: new Date().toISOString() })
       setBusy(false)
-      if (updateError) { setMessage(getSupabaseErrorMessage(updateError)); return }
-      setDefects((current) => current.map((item) => item.id === data.id ? data : item))
+      if (answerError) { setMessage(getSupabaseErrorMessage(answerError)); return }
+      setDefects((current) => current.map((item) => item.id === data.id ? { ...data, correct_action: correctAction } : item))
     } else {
       const { data: defectId, error: insertError } = await supabase.rpc('add_defect_to_tlb', {
         p_tlb_id: selectedTLB.id,
@@ -523,13 +531,13 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
         p_ata: content.ata,
         p_pirep: content.pirep,
         p_defect_description: content.defect_description,
-        p_correct_action: content.correct_action,
+        p_correct_action: correctAction,
       })
       if (insertError) { setBusy(false); setMessage(getSupabaseErrorMessage(insertError)); return }
       const { data, error: fetchError } = await supabase.from('defects').select('*').eq('id', defectId).single()
       setBusy(false)
       if (fetchError) { setMessage(getSupabaseErrorMessage(fetchError)); return }
-      setDefects((current) => [...current, data])
+      setDefects((current) => [...current, { ...data, correct_action: correctAction }])
     }
     setDefectFormOpen(false)
     setMessage(editingDefect ? 'Defecto actualizado.' : 'Defecto añadido.')
@@ -546,7 +554,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
       else {
         const { data, error: updateError } = await supabase.from('defects').update({ defect_number: index + 1 }).eq('id', item.id).select().single()
         if (updateError) { setMessage(updateError.message); return }
-        next.push(data)
+        next.push({ ...data, correct_action: item.correct_action })
       }
     }
     setDefects((current) => [...current.filter((item) => item.tlb_id !== selectedTLB.id), ...next])

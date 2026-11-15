@@ -631,6 +631,7 @@ const backupTables = {
   videos: 'id',
   tlbs: 'id',
   defects: 'id',
+  defect_answers: 'defect_id',
   practice_records: 'student_id,practice_id',
   // Estructura académica: se exporta para archivo (la importación aún no la restaura)
   degrees: 'id',

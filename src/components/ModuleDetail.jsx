@@ -56,7 +56,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
           ? supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation').in('practice_id', practiceIds)
           : Promise.resolve({ data: [], error: null }),
         tlbIds.length
-          ? supabase.from('defects').select('id,tlb_id,defect_number,ata,pirep,defect_description,correct_action').in('tlb_id', tlbIds).order('defect_number')
+          ? supabase.from('defects').select('id,tlb_id,defect_number,ata,pirep,defect_description').in('tlb_id', tlbIds).order('defect_number')
           : Promise.resolve({ data: [], error: null }),
       ])
       if (cancelled) return
