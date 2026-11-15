@@ -33,6 +33,9 @@ export default function ProfileManagement({ user }) {
   })
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserRole, setNewUserRole] = useState('alumno')
+  // El admin elige la escuela del usuario nuevo; el supervisor siempre crea en la suya
+  const [schools, setSchools] = useState([])
+  const [newUserSchool, setNewUserSchool] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState('list')
   
@@ -44,11 +47,16 @@ export default function ProfileManagement({ user }) {
     loadProfiles()
   }, [])
 
+  useEffect(() => {
+    if (!isAdmin) return
+    supabase.from('schools').select('id,name').order('name').then(({ data }) => setSchools(data || []))
+  }, [isAdmin])
+
   async function loadProfiles() {
     setLoading(true)
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, email, phone, bio, role, created_at')
+      .select('id, full_name, email, phone, bio, role, status, created_at')
       .order('full_name', { ascending: true })
 
     if (error) setMessage('Error al cargar perfiles: ' + error.message)
@@ -65,7 +73,7 @@ export default function ProfileManagement({ user }) {
         (p.email && p.email.toLowerCase().includes(searchLower)) ||
         (p.role && p.role.toLowerCase().includes(searchLower))
       
-      const matchRole = !filterRole || p.role === filterRole
+      const matchRole = !filterRole || (filterRole === 'pendiente' ? p.status === 'pendiente' : p.role === filterRole)
       
       return matchSearch && matchRole
     })
@@ -88,6 +96,7 @@ export default function ProfileManagement({ user }) {
     setFormData({ full_name: '', email: '', phone: '', bio: '', role: 'alumno' })
     setNewUserEmail('')
     setNewUserRole('alumno')
+    setNewUserSchool(schools.length === 1 ? schools[0].id : '')
     setAddModalOpen(true)
     setMessage('')
   }
@@ -133,7 +142,8 @@ export default function ProfileManagement({ user }) {
         body: {
           email: newUserEmail.trim().toLowerCase(),
           full_name: formData.full_name.trim(),
-          role: newUserRole
+          role: newUserRole,
+          school_id: isAdmin ? newUserSchool : undefined,
         }
       }
     )
@@ -188,7 +198,7 @@ export default function ProfileManagement({ user }) {
   }
 
   if (view === 'import') {
-    return <ImportUsers onBack={() => setView('list')} onImported={loadProfiles} />
+    return <ImportUsers schools={isAdmin ? schools : null} onBack={() => setView('list')} onImported={loadProfiles} />
   }
 
   if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando perfiles…</div>
@@ -232,6 +242,7 @@ export default function ProfileManagement({ user }) {
             <option value="supervisor">Supervisor</option>
             <option value="profesor">Profesor</option>
             <option value="alumno">Alumno</option>
+            <option value="pendiente">Pendientes de aprobar</option>
           </select>
         </div>
         {(search || filterRole) && (
@@ -267,6 +278,9 @@ export default function ProfileManagement({ user }) {
                   <span className={`badge ${profile.role === 'admin' || profile.role === 'supervisor' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
                     {ROLE_LABELS[profile.role] || profile.role}
                   </span>
+                  {profile.status !== 'activo' && (
+                    <span className="badge ml-1">{profile.status === 'pendiente' ? 'Pendiente' : 'Rechazado'}</span>
+                  )}
                 </td>
                 <td className="px-5 py-3 text-muted">{profile.phone || '—'}</td>
                 <td className="px-5 py-3">
@@ -403,6 +417,16 @@ export default function ProfileManagement({ user }) {
                   <option value="profesor">Profesor</option>
                 </select>
               </div>
+
+              {isAdmin && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-soft">Escuela</label>
+                  <select className={inputClass} value={newUserSchool} onChange={(e) => setNewUserSchool(e.target.value)} required>
+                    <option value="">Elige una escuela…</option>
+                    {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-soft">Teléfono</label>

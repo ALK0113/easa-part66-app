@@ -1,7 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 
-export const ROLES = ['alumno', 'profesor', 'admin']
-
 const DEBUG = Deno.env.get('DEBUG') === 'true'
 const debug = (...args: unknown[]) => {
   if (DEBUG) console.log('[debug]', ...args)
@@ -99,7 +97,7 @@ async function getCaller(req: Request): Promise<Caller> {
   debug('token verificado')
 
   const [{ data: profile, error: profileError }, { data: membership }] = await Promise.all([
-    adminClient.from('profiles').select('role').eq('id', authData.user.id).single(),
+    adminClient.from('profiles').select('role,status').eq('id', authData.user.id).single(),
     adminClient.from('school_profiles').select('school_id').eq('profile_id', authData.user.id).maybeSingle(),
   ])
 
@@ -111,7 +109,8 @@ async function getCaller(req: Request): Promise<Caller> {
   return {
     adminClient,
     callerId: authData.user.id,
-    callerRole: profile?.role ?? '',
+    // Una cuenta pendiente o rechazada no tiene rol efectivo
+    callerRole: profile?.status === 'activo' ? profile.role : '',
     schoolId: membership?.school_id ?? null,
   }
 }
@@ -146,12 +145,24 @@ export async function assertCanManageProfile(caller: Caller, profileId: string) 
   }
 }
 
-// Tras crear un usuario: si lo crea un supervisor, pertenece a su escuela
-export async function attachToCallerSchool(caller: Caller, profileId: string) {
-  if (caller.callerRole !== 'supervisor') return
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Escuela del usuario que se va a crear: la del supervisor, o la que elige el admin
+export async function resolveTargetSchool(caller: Caller, requested: unknown): Promise<string> {
+  if (caller.callerRole === 'supervisor') return caller.schoolId as string
+  if (typeof requested !== 'string' || !UUID_RE.test(requested)) {
+    throw new HttpError(400, 'Elige la escuela del usuario.')
+  }
+  const { data, error } = await caller.adminClient.from('schools').select('id').eq('id', requested).maybeSingle()
+  if (error || !data) throw new HttpError(400, 'La escuela elegida no existe.')
+  return requested
+}
+
+// Todo usuario pertenece a una escuela
+export async function attachToSchool(caller: Caller, profileId: string, schoolId: string) {
   const { error } = await caller.adminClient
     .from('school_profiles')
-    .upsert({ profile_id: profileId, school_id: caller.schoolId }, { onConflict: 'profile_id' })
+    .upsert({ profile_id: profileId, school_id: schoolId }, { onConflict: 'profile_id' })
   if (error) {
     console.error('No se pudo asignar la escuela:', error.message)
     throw new HttpError(500, 'No se pudo asignar la escuela al usuario.')

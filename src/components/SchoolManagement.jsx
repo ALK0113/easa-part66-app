@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Icon from './Icon.jsx'
+import JoinCode from './JoinCode.jsx'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { useTheme } from '../contexts/useTheme.js'
 import { COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../lib/theme.js'
@@ -84,6 +85,8 @@ export default function SchoolManagement({ user }) {
   // Nota: brand_color se gestiona en su propio modal, no en el formulario de edición general
   const [editForm, setEditForm] = useState({ id: '', name: '', address: '', city: '', phone: '', email: '' })
   const [assignForm, setAssignForm] = useState({ profileId: '' })
+  const [newSupervisor, setNewSupervisor] = useState({ full_name: '', email: '' })
+  const [creatingSupervisor, setCreatingSupervisor] = useState(false)
   
   const [selectedColor, setSelectedColor] = useState(DEFAULT_BRAND_COLOR)
   const [customColor, setCustomColor] = useState('')
@@ -370,6 +373,35 @@ export default function SchoolManagement({ user }) {
       addToast('error', parseSupabaseError(err).message)
     } finally {
       setAssigning(false)
+    }
+  }
+
+  // Escuela nueva sin profesores: el admin crea directamente su supervisor (recibe una invitación)
+  async function handleCreateSupervisor(e) {
+    e.preventDefault()
+    if (!selectedSchool) return
+    setCreatingSupervisor(true)
+    try {
+      const { error } = await supabase.functions.invoke('admin-create-user', {
+        body: {
+          email: newSupervisor.email.trim().toLowerCase(),
+          full_name: newSupervisor.full_name.trim(),
+          role: 'supervisor',
+          school_id: selectedSchool.school_id,
+        },
+      })
+      if (error) {
+        let message = 'No se pudo crear el supervisor.'
+        try { message = (await error.context.json())?.error || message } catch { /* sin cuerpo */ }
+        throw new Error(message)
+      }
+      addToast('success', `Invitación enviada a ${newSupervisor.email.trim()}`)
+      setNewSupervisor({ full_name: '', email: '' })
+      await Promise.all([loadSchoolSupervisors(selectedSchool.school_id), loadSchools()])
+    } catch (err) {
+      addToast('error', err.message)
+    } finally {
+      setCreatingSupervisor(false)
     }
   }
 
@@ -703,7 +735,8 @@ export default function SchoolManagement({ user }) {
       {assignModalOpen && selectedSchool && (
         <Modal onClose={() => setAssignModalOpen(false)} title={`Supervisores: ${selectedSchool.school_name}`} size="lg">
           <div className="space-y-4">
-            <div>
+            <JoinCode schoolId={selectedSchool.school_id} />
+            <div className="border-t border-line pt-4">
               <h4 className="mb-2 text-sm font-semibold text-ink-soft">Asignados ({schoolSupervisors.length})</h4>
               {schoolSupervisors.length === 0 ? (
                 <p className="text-sm text-muted bg-subtle p-3 rounded-lg">Sin supervisores asignados</p>
@@ -745,6 +778,17 @@ export default function SchoolManagement({ user }) {
                   </button>
                 </form>
               )}
+            </div>
+            <div className="border-t border-line pt-4">
+              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Crear supervisor nuevo</h4>
+              <p className="mb-2 text-xs text-muted">Para una escuela que empieza: recibirá una invitación por correo para elegir su contraseña.</p>
+              <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleCreateSupervisor}>
+                <input className={inputClass} placeholder="Nombre completo" value={newSupervisor.full_name} onChange={e => setNewSupervisor({ ...newSupervisor, full_name: e.target.value })} required maxLength={100} />
+                <input className={inputClass} type="email" placeholder="correo@escuela.com" value={newSupervisor.email} onChange={e => setNewSupervisor({ ...newSupervisor, email: e.target.value })} required />
+                <button type="submit" className={`${buttonPrimary} bg-accent hover:bg-accent-strong whitespace-nowrap`} disabled={creatingSupervisor}>
+                  {creatingSupervisor ? 'Enviando…' : 'Crear e invitar'}
+                </button>
+              </form>
             </div>
           </div>
         </Modal>

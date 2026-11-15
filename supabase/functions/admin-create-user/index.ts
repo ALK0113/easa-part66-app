@@ -1,6 +1,8 @@
-import { handler, requireManager, attachToCallerSchool, readJson, HttpError } from '../_shared/utils.ts'
+import { handler, requireManager, resolveTargetSchool, attachToSchool, readJson, HttpError } from '../_shared/utils.ts'
 
 const ALLOWED_ROLES = ['alumno', 'profesor']
+// El admin además puede crear el supervisor de una escuela nueva
+const ADMIN_ROLES = [...ALLOWED_ROLES, 'supervisor']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 Deno.serve(handler(async (req) => {
@@ -16,9 +18,11 @@ Deno.serve(handler(async (req) => {
   if (!EMAIL_RE.test(email) || email.length > 254 || !fullName || fullName.length > 100) {
     throw new HttpError(400, 'Correo y nombre válidos son obligatorios.')
   }
-  if (typeof role !== 'string' || !ALLOWED_ROLES.includes(role)) {
+  const allowedRoles = caller.callerRole === 'admin' ? ADMIN_ROLES : ALLOWED_ROLES
+  if (typeof role !== 'string' || !allowedRoles.includes(role)) {
     throw new HttpError(400, 'Rol no válido.')
   }
+  const schoolId = await resolveTargetSchool(caller, body.school_id)
 
   let userId: string
 
@@ -50,10 +54,10 @@ Deno.serve(handler(async (req) => {
     userId = userData.user.id
   }
 
-  // Actualizar el perfil con el rol correcto
+  // Perfil con su rol; lo crea alguien de confianza, así que nace activo
   const { error: profileError } = await adminClient
     .from('profiles')
-    .upsert({ id: userId, full_name: fullName, email, role })
+    .upsert({ id: userId, full_name: fullName, email, role, status: 'activo' })
 
   if (profileError) {
     console.error(profileError)
@@ -62,7 +66,7 @@ Deno.serve(handler(async (req) => {
   }
 
   try {
-    await attachToCallerSchool(caller, userId)
+    await attachToSchool(caller, userId, schoolId)
   } catch (e) {
     await adminClient.auth.admin.deleteUser(userId)
     throw e

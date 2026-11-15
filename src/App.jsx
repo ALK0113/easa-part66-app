@@ -7,6 +7,8 @@ import { ROLES, canAccessPage, isManager } from './lib/roles.js'
 import { ThemeProvider } from './contexts/ThemeContext.jsx'
 import Icon from './components/Icon.jsx'
 import TodayClasses from './components/TodayClasses.jsx'
+import PendingApproval from './components/PendingApproval.jsx'
+import PendingRequests from './components/PendingRequests.jsx'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
@@ -66,7 +68,7 @@ function App() {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('role,full_name')
+        .select('role,full_name,status')
         .eq('id', authUser.id)
         .maybeSingle()
 
@@ -86,6 +88,7 @@ function App() {
         id: authUser.id,
         email: authUser.email,
         role: profile.role,
+        status: profile.status,
         name: profile.full_name || authUser.user_metadata?.full_name || 'Usuario',
       })
     } catch {
@@ -153,6 +156,11 @@ function App() {
 
   if (!user) {
     return <Login onLoginSuccess={handleLoginSuccess} />
+  }
+
+  // Cuenta registrada que la escuela aún no ha aprobado (o ha rechazado)
+  if (user.status !== 'activo') {
+    return <PendingApproval user={user} onLogout={handleLogout} />
   }
 
   const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
@@ -420,6 +428,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
           </button>
         ))}
       </section>
+
+      {!isStudent && <PendingRequests user={user} />}
 
       {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
 
