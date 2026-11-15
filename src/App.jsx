@@ -62,6 +62,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedModuleId, setSelectedModuleId] = useState(null)
   const [selectedTlbId, setSelectedTlbId] = useState(null)
+  // Lo que una página pide a otra al navegar (p. ej. «Crear TLB» desde una práctica): { page, ...datos }
+  const [pageIntent, setPageIntent] = useState(null)
 
   const userIdRef = useRef(null)
   const inFlightRef = useRef(null)
@@ -170,15 +172,18 @@ function App() {
 
   const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
   const openModule = (moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }
+  const goWith = (page, data) => { setPageIntent({ page, ...data }); setActivePage(page) }
+  const intentFor = (page) => (pageIntent?.page === page ? pageIntent : null)
+  const clearIntent = () => setPageIntent(null)
 
   const renderPage = () => {
     switch (currentPage) {
       case 'students': return <StudentList />
-      case 'practices': return <PracticeList user={user} />
-      case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} />
-      case 'videos': return <VideoList user={user} />
+      case 'practices': return <PracticeList user={user} initialModuleId={intentFor('practices')?.module_id} onClearInitial={clearIntent} onCreateTLB={(prefill) => goWith('tlb', prefill)} />
+      case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} initialCreate={intentFor('tlb')} onClearInitialCreate={clearIntent} />
+      case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
-      case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} />
+      case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} onCreateTLB={(prefill) => goWith('tlb', prefill)} onNewPractice={() => goWith('practices', { module_id: selectedModuleId })} onNewVideo={() => goWith('videos', { module_id: selectedModuleId })} />
       case 'assignments': return <AssignmentsPage user={user} />
       case 'mygroups': return <TeacherGroups user={user} />
       case 'teachers': return <ProfileManagement user={user} />

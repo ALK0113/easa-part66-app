@@ -9,7 +9,7 @@ import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { youtubeId } from '../lib/youtube.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 
-export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
+export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCreateTLB, onNewPractice, onNewVideo }) {
   const [module, setModule] = useState(null)
   const [practices, setPractices] = useState([])
   const [students, setStudents] = useState([])
@@ -186,7 +186,10 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
         {students.length === 0 && <p className="empty">No hay alumnos matriculados en este módulo.</p>}
       </section>
       <section className="card p-3">
-        <h3 className="px-3 pb-1 pt-2 font-semibold text-ink">Task Log Book de la práctica</h3>
+        <div className="flex items-center justify-between px-3 pb-1 pt-2">
+          <h3 className="font-semibold text-ink">Task Log Book de la práctica</h3>
+          {canEdit && onCreateTLB && <button type="button" className="btn-secondary h-9" onClick={() => onCreateTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
+        </div>
         {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
       </section>
     </div>
@@ -228,6 +231,8 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
     </div>}
 
+    {canEdit && section === 'practicas' && onNewPractice && <div className="flex justify-end"><button type="button" className="btn-primary" onClick={onNewPractice}><Icon name="plus" size={16} />Nueva práctica en {module.id}</button></div>}
+    {canEdit && section === 'videos' && onNewVideo && <div className="flex justify-end"><button type="button" className="btn-primary" onClick={onNewVideo}><Icon name="plus" size={16} />Añadir vídeo a {module.id}</button></div>}
     {section === 'practicas' && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
 
     {section === 'tlb' && <section className="card p-3">{tlbs.length ? <ul>{tlbs.map((tlb) => tlbRow(tlb, `${getPractice(tlb.practice_id)?.title || tlb.practice_id} · ${tlb.aircraft} (${tlb.registration})`))}</ul> : <p className="empty">No hay TLB asociados.</p>}</section>}

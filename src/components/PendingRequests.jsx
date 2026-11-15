@@ -38,11 +38,19 @@ export default function PendingRequests({ user, schoolId = null }) {
     return () => clearInterval(timer)
   }, [load])
 
+  // Grupos donde puede ir cada solicitud; si solo hay uno, viene propuesto (se puede cambiar a «Sin grupo»)
+  const groupsFor = (request) => groups.filter((group) => group.academic_years?.school_id === request.school_id)
+  const chosenGroup = (request) => {
+    if (request.id in groupFor) return groupFor[request.id]
+    const options = groupsFor(request)
+    return options.length === 1 ? options[0].id : ''
+  }
+
   async function review(request, approve) {
     setBusyId(request.id)
     setError('')
     const { error: reviewError } = approve
-      ? await supabase.rpc('approve_profile', { p_profile_id: request.id, p_group_id: groupFor[request.id] || null })
+      ? await supabase.rpc('approve_profile', { p_profile_id: request.id, p_group_id: chosenGroup(request) || null })
       : await supabase.rpc('reject_profile', { p_profile_id: request.id })
     setBusyId(null)
     if (reviewError) { setError(reviewError.message || 'No se pudo guardar. Inténtalo de nuevo.'); return }
@@ -67,15 +75,15 @@ export default function PendingRequests({ user, schoolId = null }) {
                 {[ROLE_LABELS[request.role], request.email, user.role === ROLES.ADMIN && !schoolId && request.school_name].filter(Boolean).join(' · ')}
               </span>
             </span>
-            {request.role === ROLES.STUDENT && groups.some((group) => group.academic_years?.school_id === request.school_id) && (
+            {request.role === ROLES.STUDENT && groupsFor(request).length > 0 && (
               <select
                 className="input h-9 w-auto py-0 text-sm"
                 aria-label={`Grupo de ${request.full_name || request.email}`}
-                value={groupFor[request.id] || ''}
+                value={chosenGroup(request)}
                 onChange={(event) => setGroupFor((current) => ({ ...current, [request.id]: event.target.value }))}
               >
                 <option value="">Sin grupo</option>
-                {groups.filter((group) => group.academic_years?.school_id === request.school_id).map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
+                {groupsFor(request).map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
               </select>
             )}
             <span className="flex gap-2">
