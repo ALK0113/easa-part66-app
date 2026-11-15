@@ -7,7 +7,7 @@ import Icon from './Icon.jsx'
 
 // «Mis grupos» del profesor: alumnos de cada grupo donde imparte y en qué módulos suyos están.
 // Puede añadir alumnos de su escuela que aún no tienen grupo y matricularlos en sus módulos.
-export default function TeacherGroups({ user }) {
+export default function TeacherGroups({ user, onOpenGrades }) {
   const [assignments, setAssignments] = useState(null)
   const [groupId, setGroupId] = useState('')
   const [roster, setRoster] = useState([])
@@ -124,7 +124,11 @@ export default function TeacherGroups({ user }) {
                 <thead>
                   <tr>
                     <th className="px-5 py-3">Alumno</th>
-                    {myModules.map((mod) => <th key={mod.id} className="px-3 py-3 text-center">{mod.module_id}<span className="block text-xs font-normal text-muted">{KIND_LABEL[mod.kind]}</span></th>)}
+                    {myModules.map((mod) => (
+                      <th key={mod.id} className="px-3 py-3 text-center">{mod.module_id}<span className="block text-xs font-normal text-muted">{KIND_LABEL[mod.kind]}</span>
+                        {onOpenGrades && <button type="button" className="link mt-1 text-xs font-normal" onClick={() => onOpenGrades(activeGroup, mod.id)}>Notas</button>}
+                      </th>
+                    ))}
                     <th className="px-5 py-3"><span className="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
