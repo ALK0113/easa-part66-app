@@ -5,8 +5,8 @@ import { ROLES, ROLE_LABELS, isManager } from '../lib/roles.js'
 
 // Solicitudes de alta pendientes que puede revisar el usuario:
 // supervisión y admin → alumnos y profesores; profesor → alumnos de su escuela.
-// Si no hay ninguna, no se muestra nada.
-export default function PendingRequests({ user }) {
+// Si no hay ninguna, no se muestra nada. `schoolId` (admin) limita la lista a esa escuela.
+export default function PendingRequests({ user, schoolId = null }) {
   const [requests, setRequests] = useState([])
   const [groups, setGroups] = useState([])
   const [groupFor, setGroupFor] = useState({})
@@ -16,18 +16,19 @@ export default function PendingRequests({ user }) {
   const load = useCallback(async () => {
     const { data, error: loadError } = await supabase.rpc('list_pending_profiles')
     if (loadError) return
-    setRequests(data || [])
-    if (!data?.some((request) => request.role === ROLES.STUDENT)) return
+    const list = (data || []).filter((request) => !schoolId || request.school_id === schoolId)
+    setRequests(list)
+    if (!list.some((request) => request.role === ROLES.STUDENT)) return
 
     // Grupos del curso actual donde se puede matricular al aprobar
-    let query = supabase.from('class_groups').select('id,level,name,degrees(code),academic_years!inner(is_current)').eq('academic_years.is_current', true)
+    let query = supabase.from('class_groups').select('id,level,name,degrees(code),academic_years!inner(is_current,school_id)').eq('academic_years.is_current', true)
     if (!isManager(user.role)) {
       const { data: own } = await supabase.from('teaching_assignments').select('group_id').eq('profile_id', user.id)
       query = query.in('id', [...new Set((own || []).map((item) => item.group_id))])
     }
     const { data: groupRows } = await query.order('level').order('name')
     setGroups(groupRows || [])
-  }, [user.id, user.role])
+  }, [user.id, user.role, schoolId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
@@ -63,10 +64,10 @@ export default function PendingRequests({ user }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium text-ink">{request.full_name || request.email}</span>
               <span className="block truncate text-xs text-muted">
-                {[ROLE_LABELS[request.role], request.email, user.role === ROLES.ADMIN && request.school_name].filter(Boolean).join(' · ')}
+                {[ROLE_LABELS[request.role], request.email, user.role === ROLES.ADMIN && !schoolId && request.school_name].filter(Boolean).join(' · ')}
               </span>
             </span>
-            {request.role === ROLES.STUDENT && groups.length > 0 && (
+            {request.role === ROLES.STUDENT && groups.some((group) => group.academic_years?.school_id === request.school_id) && (
               <select
                 className="input h-9 w-auto py-0 text-sm"
                 aria-label={`Grupo de ${request.full_name || request.email}`}
@@ -74,7 +75,7 @@ export default function PendingRequests({ user }) {
                 onChange={(event) => setGroupFor((current) => ({ ...current, [request.id]: event.target.value }))}
               >
                 <option value="">Sin grupo</option>
-                {groups.map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
+                {groups.filter((group) => group.academic_years?.school_id === request.school_id).map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
               </select>
             )}
             <span className="flex gap-2">

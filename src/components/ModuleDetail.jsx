@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { formatDate } from '../lib/format.js'
@@ -24,12 +25,16 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
+  // Admin con una escuela elegida: solo prácticas, alumnos y profesores de esa escuela
+  const { filterId } = useSchool()
+  const bySchool = useCallback((query, column = 'school_id') => (filterId ? query.eq(column, filterId) : query), [filterId])
+
   useEffect(() => {
     let cancelled = false
     async function load() {
       const [moduleResult, practiceResult, studentModuleResult, teacherModuleResult, tlbResult, videoResult] = await Promise.all([
         supabase.from('modules').select('id,name,description,color').eq('id', moduleId).maybeSingle(),
-        supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours').eq('module_id', moduleId).order('date'),
+        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours').eq('module_id', moduleId).order('date')),
         supabase.from('student_modules').select('student_id').eq('module_id', moduleId),
         supabase.from('teacher_modules').select('profile_id').eq('module_id', moduleId),
         supabase.from('tlbs').select('id,practice_id,module_id,aircraft,registration,msn,date,teacher_name,published,crs').eq('module_id', moduleId).order('date', { ascending: false }),
@@ -48,10 +53,10 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
       const tlbIds = (tlbResult.data || []).map((tlb) => tlb.id)
       const [studentResult, teacherResult, recordResult, defectResult] = await Promise.all([
         studentIds.length
-          ? supabase.from('students').select('id,student_number,name,group_name,promo').in('id', studentIds).order('student_number')
+          ? bySchool(supabase.from('students').select('id,student_number,name,group_name,promo').in('id', studentIds).order('student_number'))
           : Promise.resolve({ data: [], error: null }),
         teacherIds.length
-          ? supabase.from('profiles').select('id,full_name,email').in('id', teacherIds).order('full_name')
+          ? bySchool(supabase.from('profiles').select(filterId ? 'id,full_name,email,school_profiles!inner(school_id)' : 'id,full_name,email').in('id', teacherIds).order('full_name'), 'school_profiles.school_id')
           : Promise.resolve({ data: [], error: null }),
         practiceIds.length
           ? supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation').in('practice_id', practiceIds)
@@ -80,7 +85,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
       `module-detail-${moduleId}`,
     )
     return () => { cancelled = true; unsubscribe() }
-  }, [moduleId, user.id])
+  }, [moduleId, user.id, bySchool, filterId])
 
   const canEdit = isManager(user.role) || teachesLikeProfessor(user.role)
   const recordsForPractice = (practiceId) => records.filter((record) => record.practice_id === practiceId)

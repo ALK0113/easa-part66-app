@@ -1,5 +1,6 @@
 import { ROLE_LABELS, canAccessPage } from '../lib/roles.js'
 import Icon from './Icon.jsx'
+import { useSchool } from '../contexts/useSchool.js'
 
 // Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
 // Agrupado por uso: lo diario arriba, la administración abajo.
@@ -36,6 +37,7 @@ const sections = [
 
 
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
+  const { isAdmin, schools, schoolId, setSchoolId } = useSchool()
   const isActive = (id) => activePage === id || (activePage === 'module-detail' && id === 'modules')
 
   const navButton = (item) => (
@@ -69,6 +71,17 @@ export default function Sidebar({ activePage, setActivePage, user, onLogout, isO
           <Icon name="x" />
         </button>
       </div>
+
+      {isAdmin && schools.length > 0 && (
+        <div className="px-4 pb-1">
+          <label className="block text-xs font-medium text-faint">Escuela
+            <select className="input mt-1 h-9 w-full text-sm" value={schoolId} onChange={(event) => setSchoolId(event.target.value)}>
+              <option value="">Todas las escuelas</option>
+              {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
 
       <nav aria-label="Navegación principal" className="flex-1 space-y-6 overflow-y-auto px-3 py-3">
         {sections.map((section) => {

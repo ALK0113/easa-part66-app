@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { fetchSchoolModuleIds, useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { youtubeId } from '../lib/youtube.js'
 import Icon from './Icon.jsx'
@@ -9,6 +10,7 @@ const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
 export default function VideoList({ user }) {
+  const { filterId } = useSchool()
   const [videos, setVideos] = useState([])
   const [modules, setModules] = useState([])
   const [teacherModules, setTeacherModules] = useState([])
@@ -25,9 +27,13 @@ export default function VideoList({ user }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
+      // Con una escuela elegida por el admin: solo los vídeos de los módulos que usa esa escuela
+      let scopeIds = null
+      try { scopeIds = filterId ? await fetchSchoolModuleIds(filterId) : null } catch (err) { setError(err.message); setLoading(false); return }
+      const inScope = (query, column = 'module_id') => (scopeIds ? query.in(column, scopeIds) : query)
       const [videoResult, moduleResult, assignmentResult] = await Promise.all([
-        supabase.from('videos').select('*').order('id', { ascending: true }),
-        supabase.from('modules').select('id,name'),
+        inScope(supabase.from('videos').select('*').order('id', { ascending: true })),
+        inScope(supabase.from('modules').select('id,name'), 'id'),
         teachesLikeProfessor(user.role)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
@@ -45,7 +51,7 @@ export default function VideoList({ user }) {
     load()
     const unsubscribe = subscribeToTables(['videos', 'modules', 'teacher_modules'], load, 'video-list')
     return () => { cancelled = true; unsubscribe() }
-  }, [user.id, user.role])
+  }, [user.id, user.role, filterId])
 
   const canEditVideo = (video) => user.role === 'admin' || (teachesLikeProfessor(user.role) && teacherModules.includes(video.module_id))
   const visibleVideos = videos.filter((video) => !teachesLikeProfessor(user.role) || teacherModules.includes(video.module_id))

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { formatDate } from '../lib/format.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
@@ -18,7 +19,11 @@ function parseObjectives(value) {
   try { return JSON.parse(value) } catch { return [] }
 }
 
+// Con una escuela elegida por el admin, solo sus prácticas y alumnos
+const bySchool = (query, filterId) => (filterId ? query.eq('school_id', filterId) : query)
+
 export default function PracticeList({ user }) {
+  const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
   const [students, setStudents] = useState([])
@@ -50,9 +55,9 @@ export default function PracticeList({ user }) {
     let cancelled = false
     async function load() {
       const [practiceResult, moduleResult, studentResult, membershipResult, recordResult, teacherResult] = await Promise.all([
-        supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), // 🆕 añadido description,objectives
+        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId),
         supabase.from('modules').select('id,name'),
-        supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }),
+        bySchool(supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }), filterId),
         supabase.from('student_modules').select('student_id,module_id'),
         supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation'),
         teachesLikeProfessor(user?.role) ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id) : Promise.resolve({ data: [], error: null }),
@@ -77,7 +82,7 @@ export default function PracticeList({ user }) {
     load()
     const unsubscribe = subscribeToTables(['practices', 'modules', 'students', 'student_modules', 'practice_records', 'teacher_modules'], load, 'practice-list')
     return () => { cancelled = true; unsubscribe() }
-  }, [user?.id, user?.role])
+  }, [user?.id, user?.role, filterId])
 
   const visibleModules = isManager(user?.role) ? modules : modules.filter((module) => teacherModules.includes(module.id))
   const visiblePractices = practices.filter((practice) => isManager(user?.role) || teacherModules.includes(practice.module_id))
@@ -132,12 +137,12 @@ export default function PracticeList({ user }) {
     }
     const result = editing
       ? await supabase.from('practices').update(payload).eq('id', editing.id)
-      : await supabase.from('practices').insert(payload)
+      : await supabase.from('practices').insert(filterId ? { ...payload, school_id: filterId } : payload)
     setBusy(false)
     if (result.error) { setMessage(result.error.message); return }
     setFormOpen(false)
     setMessage('Práctica guardada.')
-    const { data } = await supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }) // 🆕
+    const { data } = await bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId)
     setPractices(data || [])
   }
 

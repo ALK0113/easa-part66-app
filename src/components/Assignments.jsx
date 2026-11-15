@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
@@ -84,19 +85,10 @@ function useAssignmentData(schoolId) {
 }
 
 export default function Assignments({ user }) {
-  const [schools, setSchools] = useState([])
-  const [schoolId, setSchoolId] = useState('')
+  const { schoolId } = useSchool()
   const [tab, setTab] = useState('groups')
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    supabase.from('schools').select('id,name').order('name').then(({ data, error }) => {
-      if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return }
-      setSchools(data || [])
-      setSchoolId((current) => current || data?.[0]?.id || '')
-    })
-  }, [])
 
   const { data, error, reload } = useAssignmentData(schoolId)
 
@@ -123,11 +115,6 @@ export default function Assignments({ user }) {
           <h2>Asignaciones</h2>
           <p>{data?.year ? `Curso ${data.year.name}: qué cursa cada alumno y qué imparte cada profesor.` : 'Qué cursa cada alumno y qué imparte cada profesor.'}</p>
         </div>
-        {schools.length > 1 && (
-          <select className="input w-auto min-w-48" value={schoolId} onChange={(event) => setSchoolId(event.target.value)} aria-label="Escuela">
-            {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
-          </select>
-        )}
       </div>
 
       <div className="tabs" role="tablist">

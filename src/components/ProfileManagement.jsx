@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportUsers from './ImportUsers.jsx'
@@ -20,6 +21,8 @@ async function getFunctionErrorMessage(error, fallback) {
 
 export default function ProfileManagement({ user }) {
   const isAdmin = user.role === ROLES.ADMIN
+  // Admin con una escuela elegida: solo los perfiles de esa escuela
+  const { filterId } = useSchool()
   // El supervisor solo gestiona alumnos y profesores; admin y supervisores se gestionan en Escuelas
   const canManage = (profile) => isAdmin || profile.role === ROLES.STUDENT || profile.role === ROLES.TEACHER
   const [profiles, setProfiles] = useState([])
@@ -45,7 +48,8 @@ export default function ProfileManagement({ user }) {
 
   useEffect(() => {
     loadProfiles()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- se carga al montar; al cambiar de escuela la página se vuelve a montar
+  }, [filterId])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -54,10 +58,12 @@ export default function ProfileManagement({ user }) {
 
   async function loadProfiles() {
     setLoading(true)
-    const { data, error } = await supabase
+    let query = supabase
       .from('profiles')
-      .select('id, full_name, email, phone, bio, role, status, created_at')
+      .select(filterId ? 'id, full_name, email, phone, bio, role, status, created_at, school_profiles!inner(school_id)' : 'id, full_name, email, phone, bio, role, status, created_at')
       .order('full_name', { ascending: true })
+    if (filterId) query = query.eq('school_profiles.school_id', filterId)
+    const { data, error } = await query
 
     if (error) setMessage('Error al cargar perfiles: ' + error.message)
     else setProfiles(data || [])
@@ -96,7 +102,7 @@ export default function ProfileManagement({ user }) {
     setFormData({ full_name: '', email: '', phone: '', bio: '', role: 'alumno' })
     setNewUserEmail('')
     setNewUserRole('alumno')
-    setNewUserSchool(schools.length === 1 ? schools[0].id : '')
+    setNewUserSchool(filterId || (schools.length === 1 ? schools[0].id : ''))
     setAddModalOpen(true)
     setMessage('')
   }
@@ -198,7 +204,7 @@ export default function ProfileManagement({ user }) {
   }
 
   if (view === 'import') {
-    return <ImportUsers schools={isAdmin ? schools : null} onBack={() => setView('list')} onImported={loadProfiles} />
+    return <ImportUsers schools={isAdmin ? schools.filter((school) => !filterId || school.id === filterId) : null} onBack={() => setView('list')} onImported={loadProfiles} />
   }
 
   if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando perfiles…</div>

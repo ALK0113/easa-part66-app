@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
@@ -46,16 +47,21 @@ export default function Timetable({ user }) {
 /* ------------------------------------------------------------------ */
 
 function useCurrentAssignments(enabled, profileId) {
+  const { filterId } = useSchool()
   const [state, setState] = useState({ groups: [], teachers: [], assignments: [] })
   useEffect(() => {
     if (!enabled) return undefined
     let active = true
     async function load() {
       const [groups, assignments] = await Promise.all([
-        supabase.from('class_groups').select('id,level,name,academic_years!inner(is_current,name)').eq('academic_years.is_current', true).order('level').order('name'),
         (() => {
-          let query = supabase.from('teaching_assignments').select('id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups!inner(level,name,academic_years!inner(is_current)),degree_modules(module_id,kind)').eq('class_groups.academic_years.is_current', true)
+          const query = supabase.from('class_groups').select('id,level,name,academic_years!inner(is_current,name,school_id)').eq('academic_years.is_current', true).order('level').order('name')
+          return filterId ? query.eq('academic_years.school_id', filterId) : query
+        })(),
+        (() => {
+          let query = supabase.from('teaching_assignments').select('id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups!inner(level,name,academic_years!inner(is_current,school_id)),degree_modules(module_id,kind)').eq('class_groups.academic_years.is_current', true)
           if (profileId) query = query.eq('profile_id', profileId)
+          if (filterId) query = query.eq('class_groups.academic_years.school_id', filterId)
           return query
         })(),
       ])
@@ -72,7 +78,7 @@ function useCurrentAssignments(enabled, profileId) {
     load()
     const unsubscribe = subscribeToTables(['teaching_assignments', 'class_groups'], load, `timetable-assignments-${profileId || 'all'}`)
     return () => { active = false; unsubscribe() }
-  }, [enabled, profileId])
+  }, [enabled, profileId, filterId])
   return state
 }
 
