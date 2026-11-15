@@ -22,6 +22,7 @@ const ADMIN_ONLY = [ROLES.ADMIN]
 export const PAGE_ACCESS = {
   dashboard: ALL_ROLES,
   schools: ADMIN_ONLY,
+  setup: MANAGERS,
   structure: MANAGERS,
   modules: ALL_ROLES,
   'module-detail': ALL_ROLES,

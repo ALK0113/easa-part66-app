@@ -26,8 +26,7 @@ const sections = [
     label: 'Administración',
     items: [
       { id: 'schools', label: 'Escuelas', icon: 'school' },
-      { id: 'structure', label: 'Estructura académica', icon: 'layers' },
-      { id: 'assignments', label: 'Asignaciones', icon: 'link' },
+      { id: 'setup', label: 'Escuela', icon: 'layers' },
       { id: 'teachers', label: 'Perfiles', icon: 'idcard' },
       { id: 'reports', label: 'Informes', icon: 'chart' },
       { id: 'settings', label: 'Configuración', icon: 'settings' },

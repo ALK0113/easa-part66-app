@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Icon from './Icon.jsx'
 import JoinCode from './JoinCode.jsx'
+import { useSchool } from '../contexts/useSchool.js'
 
 // Primeros pasos de una escuela (panel del supervisor). Cada paso se marca solo
 // según los datos, y la tarjeta desaparece cuando la escuela ya está en marcha.
 // `schoolId`: la escuela elegida por el admin; el supervisor usa la suya.
-export default function GettingStarted({ user, schoolId: chosenSchool, setActivePage }) {
+export default function GettingStarted({ schoolId: chosenSchool, setActivePage, openSetup }) {
   const [state, setState] = useState(null)
+  const { schoolId: contextSchool } = useSchool()
 
   useEffect(() => {
     let active = true
     async function load() {
-      const schoolId = chosenSchool
-        || (await supabase.from('school_profiles').select('school_id').eq('profile_id', user.id).maybeSingle()).data?.school_id
+      // La escuela ya la conoce el contexto: no hace falta volver a consultarla
+      const schoolId = chosenSchool || contextSchool
       if (!schoolId) return
       const [degrees, year, members] = await Promise.all([
         supabase.from('degrees').select('id,degree_modules(id)').eq('school_id', schoolId),
@@ -39,15 +41,15 @@ export default function GettingStarted({ user, schoolId: chosenSchool, setActive
     }
     load()
     return () => { active = false }
-  }, [user.id, chosenSchool])
+  }, [contextSchool, chosenSchool])
 
   if (!state) return null
   const steps = [
-    { done: state.modules, title: 'Crea el grado y sus módulos', text: 'Elige módulos del catálogo EASA o crea los propios de tu escuela en Módulos.', page: 'structure', action: 'Estructura académica' },
-    { done: state.groups, title: 'Abre el curso escolar y sus grupos', text: 'Por ejemplo 1ºA y 2ºA del curso actual.', page: 'structure', action: 'Estructura académica' },
-    { done: state.teachers, title: 'Añade a los profesores', text: 'Créalos en Perfiles o comparte el código de la escuela y aprueba sus solicitudes.', page: 'teachers', action: 'Perfiles', code: true },
-    { done: state.timetable, title: 'Asigna módulos y horario a cada profesor', text: 'En Asignaciones → Profesores, y después la plantilla semanal en Horario.', page: 'assignments', action: 'Asignaciones' },
-    { done: state.students, title: 'Matricula a los alumnos', text: 'Créalos o impórtalos, o deja que se registren con el código y apruébalos.', page: 'assignments', action: 'Asignaciones', code: true },
+    { done: state.modules, title: 'Crea el grado y sus módulos', text: 'Elige módulos del catálogo EASA o crea los propios de tu escuela.', step: 'degrees', action: 'Escuela → Grado y módulos' },
+    { done: state.groups, title: 'Abre el curso escolar y sus grupos', text: 'Por ejemplo 1ºA y 2ºA del curso actual. Puedes crearlos todos de una vez.', step: 'groups', action: 'Escuela → Grupos' },
+    { done: state.teachers, title: 'Añade a los profesores', text: 'Créalos en Perfiles → Añadir personas o comparte el código de la escuela y aprueba sus solicitudes.', page: 'teachers', action: 'Perfiles', code: true },
+    { done: state.timetable, title: 'Asigna módulos y horario a cada profesor', text: 'Al asignar un grupo puedes poner ya el día, la hora y el aula.', step: 'teachers', action: 'Escuela → Profesores' },
+    { done: state.students, title: 'Matricula a los alumnos', text: 'Créalos o impórtalos, o deja que se registren con el código y apruébalos.', step: 'students', action: 'Escuela → Alumnos', code: true },
   ]
   if (steps.every((step) => step.done)) return null
   const next = steps.findIndex((step) => !step.done)
@@ -68,7 +70,7 @@ export default function GettingStarted({ user, schoolId: chosenSchool, setActive
                 <div className="mt-1 space-y-3">
                   <p className="text-sm text-muted">{step.text}</p>
                   {step.code && <JoinCode schoolId={state.schoolId} />}
-                  <button type="button" className="btn-secondary h-9" onClick={() => setActivePage(step.page)}>Ir a {step.action}</button>
+                  <button type="button" className="btn-secondary h-9" onClick={() => (step.step && openSetup ? openSetup(step.step) : setActivePage(step.page || 'setup'))}>Ir a {step.action}</button>
                 </div>
               )}
             </div>

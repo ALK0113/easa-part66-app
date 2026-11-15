@@ -75,9 +75,11 @@ function useSchoolStructure(schoolId) {
   return { data: data?.schoolId === schoolId ? data : null, error, reload }
 }
 
-export default function AcademicStructure() {
+// tab + embedded: la página «Escuela» elige la sección y pone sus propios pasos
+export default function AcademicStructure({ tab: fixedTab = null, embedded = false } = {}) {
   const { schoolId } = useSchool()
-  const [tab, setTab] = useState('degrees')
+  const [ownTab, setTab] = useState('degrees')
+  const tab = fixedTab || ownTab
   const [notice, setNotice] = useState(null)
 
   const { data, error, reload } = useSchoolStructure(schoolId)
@@ -93,18 +95,22 @@ export default function AcademicStructure() {
 
   return (
     <div className="space-y-5">
-      <div className="page-intro">
-        <div>
-          <h2>Estructura académica</h2>
-          <p>Grados, módulos, grupos y promociones de la escuela.</p>
-        </div>
-      </div>
+      {!embedded && (
+        <>
+          <div className="page-intro">
+            <div>
+              <h2>Estructura académica</h2>
+              <p>Grados, módulos, grupos y promociones de la escuela.</p>
+            </div>
+          </div>
 
-      <div className="tabs" role="tablist">
-        {TABS.map((item) => (
-          <button key={item.id} type="button" role="tab" className="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>
-        ))}
-      </div>
+          <div className="tabs" role="tablist">
+            {TABS.map((item) => (
+              <button key={item.id} type="button" role="tab" className="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>
+            ))}
+          </div>
+        </>
+      )}
 
       {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
       {error && <p role="alert" className="notice-error">{error}</p>}
@@ -311,6 +317,7 @@ function GroupsTab({ data, run }) {
   const currentYear = data.years.find((year) => year.is_current) || data.years[0]
   const [yearId, setYearId] = useState(currentYear?.id || '')
   const [editing, setEditing] = useState(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const groups = data.groups.filter((group) => group.academic_year_id === yearId)
 
   async function save(form) {
@@ -359,12 +366,64 @@ function GroupsTab({ data, run }) {
         )
       })}
 
-      <button type="button" className="btn-secondary" onClick={() => setEditing({ degree_id: data.degrees[0].id, level: 1, name: '' })}><Icon name="plus" size={16} />Nuevo grupo</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-primary" onClick={() => setBulkOpen(true)}><Icon name="plus" size={16} />Crear grupos de una vez</button>
+        <button type="button" className="btn-secondary" onClick={() => setEditing({ degree_id: data.degrees[0].id, level: 1, name: '' })}><Icon name="plus" size={16} />Nuevo grupo</button>
+      </div>
+
+      {bulkOpen && <BulkGroupsForm degrees={data.degrees} existing={groups} onClose={() => setBulkOpen(false)} onSave={async (rows) => {
+        if (await run(supabase.from('class_groups').insert(rows.map((row) => ({ ...row, academic_year_id: yearId }))), `${rows.length} ${rows.length === 1 ? 'grupo creado' : 'grupos creados'}.`)) setBulkOpen(false)
+      }} />}
 
       {editing && (
         <GroupForm group={editing} degrees={data.degrees} onSave={save} onDelete={editing.id ? () => remove(editing) : null} onClose={() => setEditing(null)} />
       )}
     </div>
+  )
+}
+
+// Varios grupos en un paso: los cursos del grado (según sus módulos) × las letras elegidas. Los que ya existen se saltan.
+function BulkGroupsForm({ degrees, existing, onSave, onClose }) {
+  const [degreeId, setDegreeId] = useState(degrees[0]?.id || '')
+  const degree = degrees.find((item) => item.id === degreeId)
+  const degreeLevels = [...new Set((degree?.degree_modules || []).map((item) => item.level).filter(Boolean))].sort()
+  const [levels, setLevels] = useState(() => (degreeLevels.length ? degreeLevels : [1, 2]))
+  const [perLevel, setPerLevel] = useState(1)
+  const [saving, setSaving] = useState(false)
+  const letters = 'ABCDEFGH'.slice(0, perLevel).split('')
+  const rows = levels.flatMap((level) => letters.map((name) => ({ degree_id: degreeId, level, name })))
+    .filter((row) => !existing.some((group) => group.degree_id === row.degree_id && group.level === row.level && group.name === row.name))
+  const toggleLevel = (level) => setLevels((current) => (current.includes(level) ? current.filter((item) => item !== level) : [...current, level].sort()))
+  return (
+    <Modal title="Crear grupos de una vez" onClose={onClose}>
+      <form className="space-y-4" onSubmit={async (event) => { event.preventDefault(); setSaving(true); await onSave(rows); setSaving(false) }}>
+        {degrees.length > 1 && (
+          <label className="field">Grado
+            <select className="input" value={degreeId} onChange={(event) => setDegreeId(event.target.value)}>
+              {degrees.map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}
+            </select>
+          </label>
+        )}
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-ink-soft">Cursos</legend>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4].map((level) => (
+              <label key={level} className="choice"><input type="checkbox" checked={levels.includes(level)} onChange={() => toggleLevel(level)} />{level}º</label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="field max-w-40">Grupos por curso
+          <select className="input" value={perLevel} onChange={(event) => setPerLevel(Number(event.target.value))}>
+            {[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count} ({'ABCD'.slice(0, count).split('').join(', ')})</option>)}
+          </select>
+        </label>
+        <p className="text-sm text-muted">{rows.length ? `Se crearán: ${rows.map((row) => `${row.level}º${row.name}`).join(', ')}.` : 'Ya existen todos esos grupos.'}</p>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn-primary" disabled={saving || !rows.length}>{saving ? 'Creando…' : 'Crear grupos'}</button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

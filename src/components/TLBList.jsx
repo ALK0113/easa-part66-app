@@ -71,7 +71,10 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
       const [tlbResult, practiceResult, defectResult, answerResult, moduleResult, aircraftResult, teacherResult, profilesResult] = await Promise.all([
         filterId ? supabase.from('tlbs').select('*').eq('school_id', filterId).order('date', { ascending: false }) : supabase.from('tlbs').select('*').order('date', { ascending: false }),
         filterId ? supabase.from('practices').select('id,title,module_id,ata').eq('school_id', filterId) : supabase.from('practices').select('id,title,module_id,ata'),
-        supabase.from('defects').select('*').order('defect_number', { ascending: true }),
+        // Solo los defectos de los TLB de la escuela elegida (el resto ya los filtra la RLS)
+        filterId
+          ? supabase.from('defects').select('*,tlbs!defects_tlb_id_fkey!inner(school_id)').eq('tlbs.school_id', filterId).order('defect_number', { ascending: true })
+          : supabase.from('defects').select('*').order('defect_number', { ascending: true }),
         // Las respuestas oficiales solo las devuelve la RLS al admin y a los profesores del módulo
         userRole === 'alumno'
           ? Promise.resolve({ data: [], error: null })
@@ -92,7 +95,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
         setTlbs(tlbResult.data || [])
         setPractices(practiceResult.data || [])
         const answers = new Map((answerResult.data || []).map((row) => [row.defect_id, row.correct_action]))
-        setDefects((defectResult.data || []).map((defect) => ({ ...defect, correct_action: answers.get(defect.id) || '' })))
+        setDefects((defectResult.data || []).map((defect) => ({ ...defect, tlbs: undefined, correct_action: answers.get(defect.id) || '' })))
         setModules(moduleResult.data || [])
         setAircraft(aircraftResult.data || [])
         setTeacherModules((teacherResult.data || []).map((item) => item.module_id))

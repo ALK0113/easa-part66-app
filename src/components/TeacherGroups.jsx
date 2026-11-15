@@ -7,7 +7,7 @@ import Icon from './Icon.jsx'
 
 // «Mis grupos» del profesor: alumnos de cada grupo donde imparte y en qué módulos suyos están.
 // Puede añadir alumnos de su escuela que aún no tienen grupo y matricularlos en sus módulos.
-export default function TeacherGroups({ user }) {
+export default function TeacherGroups({ user, onOpenGrades }) {
   const [assignments, setAssignments] = useState(null)
   const [groupId, setGroupId] = useState('')
   const [roster, setRoster] = useState([])
@@ -71,6 +71,17 @@ export default function TeacherGroups({ user }) {
     return true
   }, [])
 
+  // Casilla de módulo: se marca al momento y se confirma después (si falla, vuelve atrás); no recarga toda la lista
+  async function toggleModule(student, mod, enrolled) {
+    const flip = (on) => setRoster((current) => current.map((item) => (item.student_id !== student.student_id ? item : {
+      ...item,
+      my_modules: on ? [...item.my_modules, mod.id] : item.my_modules.filter((id) => id !== mod.id),
+    })))
+    flip(!enrolled)
+    const { error } = await supabase.rpc('teacher_set_module_enrollment', { p_student_id: student.student_id, p_group_id: activeGroup, p_degree_module_id: mod.id, p_enrolled: !enrolled })
+    if (error) { flip(enrolled); setNotice({ error: true, text: getSupabaseErrorMessage(error) }) }
+  }
+
   async function addStudent(event) {
     event.preventDefault()
     const student = enrollable.find((item) => item.student_id === toAdd)
@@ -113,7 +124,11 @@ export default function TeacherGroups({ user }) {
                 <thead>
                   <tr>
                     <th className="px-5 py-3">Alumno</th>
-                    {myModules.map((mod) => <th key={mod.id} className="px-3 py-3 text-center">{mod.module_id}<span className="block text-xs font-normal text-muted">{KIND_LABEL[mod.kind]}</span></th>)}
+                    {myModules.map((mod) => (
+                      <th key={mod.id} className="px-3 py-3 text-center">{mod.module_id}<span className="block text-xs font-normal text-muted">{KIND_LABEL[mod.kind]}</span>
+                        {onOpenGrades && <button type="button" className="link mt-1 text-xs font-normal" onClick={() => onOpenGrades(activeGroup, mod.id)}>Notas</button>}
+                      </th>
+                    ))}
                     <th className="px-5 py-3"><span className="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
@@ -129,7 +144,7 @@ export default function TeacherGroups({ user }) {
                         return (
                           <td key={mod.id} className="px-3 py-3 text-center">
                             <input type="checkbox" checked={enrolled} disabled={busy} aria-label={`${student.name} en ${mod.module_id} ${KIND_LABEL[mod.kind]}`}
-                              onChange={() => run(() => supabase.rpc('teacher_set_module_enrollment', { p_student_id: student.student_id, p_group_id: activeGroup, p_degree_module_id: mod.id, p_enrolled: !enrolled }))} />
+                              onChange={() => toggleModule(student, mod, enrolled)} />
                           </td>
                         )
                       })}
