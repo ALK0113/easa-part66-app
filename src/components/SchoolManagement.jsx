@@ -60,7 +60,7 @@ export default function SchoolManagement({ user }) {
   const isAdmin = user?.role === ROLES.ADMIN
 
   const [schools, setSchools] = useState([])
-  const [unassignedSupervisors, setUnassignedSupervisors] = useState([])
+  const [supervisorCandidates, setSupervisorCandidates] = useState([])
   const [selectedSchool, setSelectedSchool] = useState(null)
   const [schoolSupervisors, setSchoolSupervisors] = useState([])
   const [loading, setLoading] = useState(true)
@@ -174,14 +174,17 @@ export default function SchoolManagement({ user }) {
     }
   }, [addToast])
 
-  const loadUnassignedSupervisors = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.rpc('admin_list_unassigned_supervisors')
-      if (error) throw error
-      setUnassignedSupervisors(data || [])
-    } catch (err) {
-      console.error('Error cargando supervisores:', err)
-    }
+  // Candidatos a supervisor: los profesores de esa escuela
+  const loadSupervisorCandidates = useCallback(async (schoolId) => {
+    const { data, error } = await supabase
+      .from('school_profiles')
+      .select('profile_id,profiles!inner(full_name,email,role)')
+      .eq('school_id', schoolId)
+      .eq('profiles.role', 'profesor')
+    if (error) { console.error('Error cargando profesores:', error); return }
+    setSupervisorCandidates((data || [])
+      .map((row) => ({ profile_id: row.profile_id, full_name: row.profiles.full_name || row.profiles.email, email: row.profiles.email }))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name)))
   }, [])
 
   const loadSchoolSupervisors = useCallback(async (schoolId) => {
@@ -197,9 +200,8 @@ export default function SchoolManagement({ user }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
     loadSchools()
-    loadUnassignedSupervisors()
     return () => { loadRequestRef.current += 1 }
-  }, [loadSchools, loadUnassignedSupervisors])
+  }, [loadSchools])
 
   function validateForm(form) {
     const errors = {}
@@ -231,7 +233,7 @@ export default function SchoolManagement({ user }) {
   function openAssignModal(school) {
     setSelectedSchool(school)
     loadSchoolSupervisors(school.school_id)
-    loadUnassignedSupervisors()
+    loadSupervisorCandidates(school.school_id)
     setAssignForm({ profileId: '' })
     setAssignModalOpen(true)
   }
@@ -352,15 +354,16 @@ export default function SchoolManagement({ user }) {
     if (!assignForm.profileId || !selectedSchool) return
     setAssigning(true)
     try {
-      await supabase.rpc('admin_assign_supervisor', {
-        p_school_id: selectedSchool.school_id,
+      const { error } = await supabase.rpc('admin_make_supervisor', {
         p_profile_id: assignForm.profileId,
+        p_school_id: selectedSchool.school_id,
       })
-      addToast('success', 'Supervisor asignado correctamente')
+      if (error) throw error
+      addToast('success', 'Supervisor nombrado correctamente')
       setAssignForm({ profileId: '' })
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
-        loadUnassignedSupervisors(),
+        loadSupervisorCandidates(selectedSchool.school_id),
         loadSchools(),
       ])
     } catch (err) {
@@ -375,14 +378,15 @@ export default function SchoolManagement({ user }) {
     if (!window.confirm(`¿Quitar a ${supervisor.full_name} como supervisor? Su rol cambiará a profesor.`)) return
     setRemoving(supervisor.profile_id)
     try {
-      await supabase.rpc('admin_remove_supervisor', {
+      const { error } = await supabase.rpc('admin_remove_supervisor', {
         p_school_id: selectedSchool.school_id,
         p_profile_id: supervisor.profile_id,
       })
+      if (error) throw error
       addToast('success', 'Supervisor retirado correctamente')
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
-        loadUnassignedSupervisors(),
+        loadSupervisorCandidates(selectedSchool.school_id),
         loadSchools(),
       ])
     } catch (err) {
@@ -724,19 +728,20 @@ export default function SchoolManagement({ user }) {
               )}
             </div>
             <div className="border-t border-line pt-4">
-              <h4 className="mb-2 text-sm font-semibold text-ink-soft">Asignar nuevo</h4>
-              {unassignedSupervisors.length === 0 ? (
-                <p className="text-sm text-muted">No hay supervisores disponibles sin asignar</p>
+              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Nombrar supervisor</h4>
+              <p className="mb-2 text-xs text-muted">Elige un profesor de esta escuela. Podrá gestionar sus usuarios, estructura, asignaciones y notas.</p>
+              {supervisorCandidates.length === 0 ? (
+                <p className="text-sm text-muted">No hay profesores en esta escuela</p>
               ) : (
                 <form className="flex gap-2" onSubmit={handleAssign}>
                   <select className={inputClass} value={assignForm.profileId} onChange={e => setAssignForm({ profileId: e.target.value })} required>
                     <option value="">Seleccionar...</option>
-                    {unassignedSupervisors.map(s => (
+                    {supervisorCandidates.map(s => (
                       <option key={s.profile_id} value={s.profile_id}>{s.full_name} ({s.email})</option>
                     ))}
                   </select>
                   <button type="submit" className={`${buttonPrimary} bg-accent hover:bg-accent-strong whitespace-nowrap`} disabled={assigning || !assignForm.profileId}>
-                    {assigning ? '...' : 'Asignar'}
+                    {assigning ? '...' : 'Nombrar'}
                   </button>
                 </form>
               )}

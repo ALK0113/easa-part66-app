@@ -66,7 +66,15 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
   throw new HttpError(400, 'Cuerpo de la petición no válido')
 }
 
-export async function requireAdmin(req: Request) {
+type Caller = {
+  adminClient: ReturnType<typeof createClient>
+  callerId: string
+  callerRole: string
+  schoolId: string | null
+}
+
+// Verifica el token y devuelve quién llama, con su rol y su escuela
+async function getCaller(req: Request): Promise<Caller> {
   const url = Deno.env.get('SUPABASE_URL') ?? ''
   const serviceKey = getServiceRoleKey()
   debug('SUPABASE_URL', url ? 'ok' : 'falta', '| clave', serviceKey ? 'ok' : 'falta')
@@ -90,24 +98,64 @@ export async function requireAdmin(req: Request) {
   }
   debug('token verificado')
 
-  const { data: profile, error: profileError } = await adminClient
-    .from('profiles')
-    .select('role')
-    .eq('id', authData.user.id)
-    .single()
+  const [{ data: profile, error: profileError }, { data: membership }] = await Promise.all([
+    adminClient.from('profiles').select('role').eq('id', authData.user.id).single(),
+    adminClient.from('school_profiles').select('school_id').eq('profile_id', authData.user.id).maybeSingle(),
+  ])
 
   if (profileError) {
     console.error('Fallo al consultar profiles:', profileError.message)
     throw new HttpError(403, 'No tienes permisos para esta acción')
   }
 
-  if (profile?.role !== 'admin') {
-    console.warn('Acceso denegado: el usuario no es admin (rol:', profile?.role ?? 'ninguno', ')')
+  return {
+    adminClient,
+    callerId: authData.user.id,
+    callerRole: profile?.role ?? '',
+    schoolId: membership?.school_id ?? null,
+  }
+}
+
+export async function requireAdmin(req: Request) {
+  const caller = await getCaller(req)
+  if (caller.callerRole !== 'admin') {
+    console.warn('Acceso denegado: el usuario no es admin (rol:', caller.callerRole || 'ninguno', ')')
     throw new HttpError(403, 'Se requiere rol de administración')
   }
-  debug('rol admin verificado')
+  return caller
+}
 
-  return { adminClient, callerId: authData.user.id }
+// Admin (todas las escuelas) o supervisor (solo la suya)
+export async function requireManager(req: Request) {
+  const caller = await getCaller(req)
+  if (caller.callerRole === 'admin') return caller
+  if (caller.callerRole === 'supervisor' && caller.schoolId) return caller
+  console.warn('Acceso denegado: ni admin ni supervisor con escuela (rol:', caller.callerRole || 'ninguno', ')')
+  throw new HttpError(403, 'Se requiere rol de administración o supervisión')
+}
+
+// Un supervisor solo gestiona alumnos y profesores de su escuela
+export async function assertCanManageProfile(caller: Caller, profileId: string) {
+  if (caller.callerRole === 'admin') return
+  const [{ data: target }, { data: membership }] = await Promise.all([
+    caller.adminClient.from('profiles').select('role').eq('id', profileId).maybeSingle(),
+    caller.adminClient.from('school_profiles').select('school_id').eq('profile_id', profileId).maybeSingle(),
+  ])
+  if (!target || !['alumno', 'profesor'].includes(target.role) || membership?.school_id !== caller.schoolId) {
+    throw new HttpError(403, 'Solo puedes gestionar alumnos y profesores de tu escuela.')
+  }
+}
+
+// Tras crear un usuario: si lo crea un supervisor, pertenece a su escuela
+export async function attachToCallerSchool(caller: Caller, profileId: string) {
+  if (caller.callerRole !== 'supervisor') return
+  const { error } = await caller.adminClient
+    .from('school_profiles')
+    .upsert({ profile_id: profileId, school_id: caller.schoolId }, { onConflict: 'profile_id' })
+  if (error) {
+    console.error('No se pudo asignar la escuela:', error.message)
+    throw new HttpError(500, 'No se pudo asignar la escuela al usuario.')
+  }
 }
 
 export function handler(fn: (req: Request) => Promise<unknown>) {

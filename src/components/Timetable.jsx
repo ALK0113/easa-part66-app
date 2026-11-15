@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
-import { ROLES } from '../lib/roles.js'
+import { ROLES, isManager } from '../lib/roles.js'
 import { WEEKDAYS, addDays, fetchSessions, parseISODate, startOfWeek, time, toISODate } from '../lib/schedule.js'
 import { AttendanceControl } from './RecordControls.jsx'
 import Icon from './Icon.jsx'
@@ -17,7 +17,7 @@ const assignmentLabel = (assignment) => assignment
   : ''
 
 export default function Timetable({ user }) {
-  const isAdmin = user.role === ROLES.ADMIN
+  const isAdmin = isManager(user.role)
   const [tab, setTab] = useState('week')
 
   return (
@@ -79,7 +79,7 @@ function useCurrentAssignments(enabled, profileId) {
 /* ------------------------------------------------------------------ */
 
 function WeekView({ user }) {
-  const isAdmin = user.role === ROLES.ADMIN
+  const isAdmin = isManager(user.role)
   const canManageSessions = user.role !== ROLES.STUDENT
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const [filter, setFilter] = useState({ kind: 'group', id: '' })
@@ -193,7 +193,7 @@ function WeekView({ user }) {
 
 function SessionDetail({ session, user, onClose, onChanged }) {
   const assignment = session.teaching_assignments
-  const canEdit = user.role === ROLES.ADMIN || assignment.profile_id === user.id
+  const canEdit = isManager(user.role) || assignment.profile_id === user.id
   const [roster, setRoster] = useState(null)
   const [ownStatus, setOwnStatus] = useState(undefined)
   const [practices, setPractices] = useState([])

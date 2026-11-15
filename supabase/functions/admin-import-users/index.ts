@@ -1,7 +1,7 @@
-import { handler, requireAdmin, readJson, HttpError } from '../_shared/utils.ts'
+import { handler, requireManager, attachToCallerSchool, readJson, HttpError } from '../_shared/utils.ts'
 
 const MAX_ROWS_PER_REQUEST = 25
-const ALLOWED_ROLES = ['alumno', 'profesor', 'supervisor'] // nunca admin
+const ALLOWED_ROLES = ['alumno', 'profesor'] // supervisor y admin solo se nombran desde Escuelas
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_RE = /^[+0-9 ()\-.]{6,20}$/
 const ID_RE = /^[A-Za-z0-9 .\-/]{3,30}$/
@@ -90,7 +90,8 @@ function cleanRow(r: Record<string, unknown>, role: string) {
 
 Deno.serve(handler(async (req) => {
   // 1. Autorización primero
-  const { adminClient } = await requireAdmin(req)
+  const caller = await requireManager(req)
+  const { adminClient } = caller
   const body = await readJson(req)
 
   // 2. Validación de la petición
@@ -178,6 +179,8 @@ Deno.serve(handler(async (req) => {
         console.error(profileError)
         throw new RowError('No se pudo guardar el perfil.')
       }
+      // Creado por un supervisor: pertenece a su escuela (admin_import_student la lee de aquí)
+      await attachToCallerSchool(caller, uid)
 
       if (role === 'alumno') {
         // Ficha, datos privados, vínculo y módulos, todo en una sola transacción

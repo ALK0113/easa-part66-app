@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
-import { ROLES } from '../lib/roles.js'
+import { ROLES, teachesLikeProfessor } from '../lib/roles.js'
 import { fetchSessions, time, toISODate } from '../lib/schedule.js'
 import Icon from './Icon.jsx'
 
@@ -14,7 +14,8 @@ export default function TodayClasses({ user, onOpen }) {
     const today = toISODate(new Date())
     async function load() {
       try {
-        const result = await fetchSessions(user, today, today)
+        // El supervisor ve en el inicio sus propias clases
+        const result = await fetchSessions(user, today, today, user.role === ROLES.SUPERVISOR ? { profileId: user.id } : {})
         if (active) setSessions(result.sessions)
       } catch {
         if (active) setSessions([])
@@ -41,7 +42,7 @@ export default function TodayClasses({ user, onOpen }) {
             const assignment = session.teaching_assignments
             const cancelled = session.status === 'cancelada'
             const live = !cancelled && time(session.start_time) <= now && now < time(session.end_time)
-            const detail = user.role === ROLES.TEACHER ? groupLabel(assignment.class_groups) : assignment.profiles?.full_name
+            const detail = teachesLikeProfessor(user.role) ? groupLabel(assignment.class_groups) : assignment.profiles?.full_name
             return (
               <li key={session.id}>
                 <button type="button" onClick={onOpen} className={`flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>

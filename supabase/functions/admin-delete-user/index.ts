@@ -1,9 +1,10 @@
-import { handler, requireAdmin, readJson, HttpError } from '../_shared/utils.ts'
+import { handler, requireManager, assertCanManageProfile, readJson, HttpError } from '../_shared/utils.ts'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 Deno.serve(handler(async (req) => {
-  const { adminClient, callerId } = await requireAdmin(req)
+  const caller = await requireManager(req)
+  const { adminClient, callerId } = caller
   const { user_id } = await readJson(req)
 
   if (typeof user_id !== 'string' || !UUID_RE.test(user_id)) {
@@ -12,6 +13,7 @@ Deno.serve(handler(async (req) => {
   if (user_id === callerId) {
     throw new HttpError(400, 'No puedes eliminar tu propia cuenta.')
   }
+  await assertCanManageProfile(caller, user_id)
 
   // Borra el usuario de Auth; su fila en profiles se elimina en cascada (FK on delete cascade)
   const { error } = await adminClient.auth.admin.deleteUser(user_id)

@@ -5,6 +5,7 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import { ROLES } from '../lib/roles.js'
 import Icon from './Icon.jsx'
+import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 
 // Asignaciones del curso escolar actual:
 //  - Grupos: matricular a todo un grupo en módulos del grado.
@@ -61,7 +62,7 @@ function useAssignmentData(schoolId) {
           degrees: degrees.data || [],
           moduleNames: Object.fromEntries((modules.data || []).map((mod) => [mod.id, mod.name])),
           students: students.data || [],
-          teachers: profiles.filter((profile) => profile.role === ROLES.TEACHER).sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email)),
+          teachers: profiles.filter((profile) => teachesLikeProfessor(profile.role)).sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email)),
           studentAccounts: profiles.filter((profile) => profile.role === ROLES.STUDENT),
           links: links.data || [],
           groups,
@@ -113,7 +114,7 @@ export default function Assignments({ user }) {
     }
   }, [reload])
 
-  if (user.role !== ROLES.ADMIN) return <p role="alert" className="notice-error">Solo administración puede gestionar asignaciones.</p>
+  if (!isManager(user.role)) return <p role="alert" className="notice-error">Solo administración puede gestionar asignaciones.</p>
 
   return (
     <div className="space-y-5">

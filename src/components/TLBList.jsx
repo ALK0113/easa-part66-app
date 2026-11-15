@@ -8,6 +8,7 @@ import emailjs from '@emailjs/browser'
 import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
+import { teachesLikeProfessor } from '../lib/roles.js'
 
 // Configuración de EmailJS desde variables de entorno (ver README)
 const EMAILJS_CONFIG = {
@@ -71,10 +72,10 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
           : supabase.from('defect_answers').select('defect_id,correct_action'),
         supabase.from('modules').select('id,name'),
         supabase.from('aircraft').select('id,type,registration,msn'),
-        userRole === 'profesor'
+        teachesLikeProfessor(userRole)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
-        supabase.from('profiles').select('id,full_name,email').eq('role', 'profesor').order('full_name', { ascending: true }),
+        supabase.from('profiles').select('id,full_name,email').in('role', ['profesor', 'supervisor']).order('full_name', { ascending: true }),
       ])
       if (cancelled) return
       const failure = tlbResult.error || practiceResult.error || defectResult.error || answerResult.error || moduleResult.error || aircraftResult.error || teacherResult.error || profilesResult.error
@@ -158,7 +159,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
 
   useEffect(() => {
     async function loadSubmissions() {
-      if (userRole !== 'profesor' && userRole !== 'admin') return
+      if (userRole === 'alumno') return
       // tlb_submissions.student_id es el id de usuario (profiles.id), no el de la
       // ficha del alumno: se resuelve con student_profiles → students.
       const { data, error } = await supabase
@@ -184,7 +185,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     || tlbs.find((item) => item.id === initialTlbId)
     || null
   const editableModules = userRole === 'admin' ? modules.map((module) => module.id) : teacherModules
-  const editableTLB = (tlb) => userRole === 'admin' || (userRole === 'profesor' && teacherModules.includes(tlb.module_id))
+  const editableTLB = (tlb) => userRole === 'admin' || (teachesLikeProfessor(userRole) && teacherModules.includes(tlb.module_id))
   const getPractice = (id) => practices.find((practice) => practice.id === id)
   const getModule = (id) => modules.find((module) => module.id === id)
   const getDefects = (id) => defects.filter((defect) => defect.tlb_id === id).sort((a, b) => a.defect_number - b.defect_number)

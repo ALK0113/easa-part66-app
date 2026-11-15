@@ -5,6 +5,7 @@ import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.j
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import Icon from './Icon.jsx'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
+import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -54,7 +55,7 @@ export default function PracticeList({ user }) {
         supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }),
         supabase.from('student_modules').select('student_id,module_id'),
         supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation'),
-        user?.role === 'profesor' ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id) : Promise.resolve({ data: [], error: null }),
+        teachesLikeProfessor(user?.role) ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id) : Promise.resolve({ data: [], error: null }),
       ])
       if (cancelled) return
       const requiredError = practiceResult.error || moduleResult.error || studentResult.error
@@ -78,16 +79,16 @@ export default function PracticeList({ user }) {
     return () => { cancelled = true; unsubscribe() }
   }, [user?.id, user?.role])
 
-  const visibleModules = user?.role === 'admin' ? modules : modules.filter((module) => teacherModules.includes(module.id))
-  const visiblePractices = practices.filter((practice) => user?.role === 'admin' || teacherModules.includes(practice.module_id))
+  const visibleModules = isManager(user?.role) ? modules : modules.filter((module) => teacherModules.includes(module.id))
+  const visiblePractices = practices.filter((practice) => isManager(user?.role) || teacherModules.includes(practice.module_id))
   const filtered = visiblePractices.filter((practice) => {
     const query = search.trim().toLowerCase()
     const matchesSearch = !query || [practice.id, practice.title, practice.detail, practice.ata, practice.description].some((value) => String(value || '').toLowerCase().includes(query))
     return matchesSearch && (!moduleFilter || practice.module_id === moduleFilter) && (!ataFilter || practice.ata === ataFilter)
   })
   const atas = [...new Set(visiblePractices.map((practice) => practice.ata).filter(Boolean))].sort()
-  const canCreate = user?.role === 'admin' || visibleModules.length > 0
-  const canEdit = (practice) => user?.role === 'admin' || teacherModules.includes(practice.module_id) // 🆕 helper
+  const canCreate = isManager(user?.role) || visibleModules.length > 0
+  const canEdit = (practice) => isManager(user?.role) || teacherModules.includes(practice.module_id) // 🆕 helper
 
   function openForm(practice = null) {
     setEditing(practice)
@@ -322,7 +323,7 @@ export default function PracticeList({ user }) {
         </button>
         {canEdit(practice) && <div className="flex gap-1 text-muted">
           <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Editar ${practice.title}`} onClick={() => openForm(practice)}><Icon name="edit" size={16} /></button>
-          {user.role === 'admin' && <button className="rounded-lg p-2 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${practice.title}`} onClick={() => deletePractice(practice)}><Icon name="trash" size={16} /></button>}
+          {isManager(user.role) && <button className="rounded-lg p-2 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${practice.title}`} onClick={() => deletePractice(practice)}><Icon name="trash" size={16} /></button>}
         </div>}
         <Icon name="next" size={16} className="hidden text-faint group-hover:text-accent sm:block" />
       </article>

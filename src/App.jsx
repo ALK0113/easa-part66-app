@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase.js'
 import Login from './components/Login.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { subscribeToTables } from './lib/supabaseRealtime.js'
-import { ROLES, canAccessPage } from './lib/roles.js'
+import { ROLES, canAccessPage, isManager } from './lib/roles.js'
 import { ThemeProvider } from './contexts/ThemeContext.jsx'
 import Icon from './components/Icon.jsx'
 import TodayClasses from './components/TodayClasses.jsx'
@@ -332,7 +332,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
         }
 
         const upcomingQuery = () => {
-          if (user.role !== ROLES.ADMIN && !moduleIds.length) return Promise.resolve({ data: [], error: null })
+          if (!isManager(user.role) && !moduleIds.length) return Promise.resolve({ data: [], error: null })
           let query = supabase
             .from('practices')
             .select('id,module_id,title,date,start_time,hours')
@@ -340,12 +340,12 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
             .order('date')
             .order('start_time')
             .limit(4)
-          if (user.role !== ROLES.ADMIN) query = query.in('module_id', moduleIds)
+          if (!isManager(user.role)) query = query.in('module_id', moduleIds)
           return query
         }
 
         const [counts, upcomingResult] = await Promise.all([
-          user.role === ROLES.ADMIN
+          isManager(user.role)
             ? Promise.all(STAT_TABLES.map((table) => countTable(table, false)))
             : Promise.all([
               Promise.resolve({ count: studentCount, error: null }),
