@@ -14,11 +14,12 @@ const classKey = (groupId, degreeModuleId) => `${groupId}|${degreeModuleId}`
 const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg-danger-soft text-danger' }
 const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente' }
 
-export default function Grades({ user }) {
+// initialClass: { group_id, degree_module_id } al llegar desde «Mis grupos» (se abre esa hoja directamente)
+export default function Grades({ user, initialClass = null }) {
   const { filterId } = useSchool()
   const isAdmin = isManager(user.role)
   const [classes, setClasses] = useState(null)
-  const [selected, setSelected] = useState('')
+  const [selected, setSelected] = useState(() => (initialClass ? classKey(initialClass.group_id, initialClass.degree_module_id) : ''))
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState({})
@@ -124,7 +125,7 @@ export default function Grades({ user }) {
       {classes?.length === 0 ? (
         <div className="card empty">
           <p className="font-medium text-ink-soft">{isAdmin ? 'Aún no hay alumnos matriculados en módulos' : 'No tienes clases asignadas este curso'}</p>
-          <p className="mt-1">{isAdmin ? 'Matricula los grupos en Asignaciones.' : 'Administración te asigna módulos y grupos.'}</p>
+          <p className="mt-1">{isAdmin ? 'Matricula los grupos en Escuela → Alumnos.' : 'Administración te asigna módulos y grupos.'}</p>
         </div>
       ) : (
         <>

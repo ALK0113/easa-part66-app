@@ -7,7 +7,7 @@ import { modules as starterModules } from '../data/modules.js'
 import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
-import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
+import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { downloadBlob, downloadCsv } from '../lib/download.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
@@ -62,7 +62,10 @@ function useNotice() {
 /* Hook de datos                                                       */
 /* ------------------------------------------------------------------ */
 
-function useRows(table, columns = '*') {
+// scope: { column, value } filtra en la base de datos (p. ej. la escuela elegida por el admin); null = todo lo que permite la RLS
+function useRows(table, columns = '*', scope = null) {
+  const scopeColumn = scope?.value ? scope.column : null
+  const scopeValue = scope?.value || null
   const channelId = useId()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -73,9 +76,10 @@ function useRows(table, columns = '*') {
   const load = useCallback(async (showLoading = false) => {
     const requestId = ++requestRef.current
     if (showLoading) setLoading(true)
-    const orderCols = columns === '*' ? ['id'] : columns.split(',').map((column) => column.trim())
+    // Se ordena solo por columnas propias (no por las de tablas relacionadas como «practices!inner(school_id)»)
+    const orderCols = columns === '*' ? ['id'] : columns.split(',').map((column) => column.trim()).filter((column) => /^\w+$/.test(column))
     try {
-      const data = await fetchAll(table, columns, orderCols)
+      const data = await fetchAll(table, columns, orderCols, (query) => (scopeColumn ? query.eq(scopeColumn, scopeValue) : query))
       if (!mountedRef.current || requestId !== requestRef.current) return
       setRows(data)
       setError('')
@@ -85,7 +89,7 @@ function useRows(table, columns = '*') {
     } finally {
       if (mountedRef.current && requestId === requestRef.current) setLoading(false)
     }
-  }, [table, columns])
+  }, [table, columns, scopeColumn, scopeValue])
 
   useEffect(() => {
     mountedRef.current = true
@@ -159,7 +163,6 @@ function ErrorOrLoading({ loading, error }) {
 
 export function ModulesPage({ user, onOpenModule }) {
   const { rows: modules, loading, error, reload } = useRows('modules', 'id,name,description,color,school_id')
-  const { rows: allPractices } = useRows('practices', 'id,module_id,hours,school_id')
   const { rows: teacherAssignments } = useRows('teacher_modules', 'profile_id,module_id')
   const { rows: studentAssignments } = useRows('student_modules', 'student_id,module_id')
   const { rows: studentProfiles } = useRows('student_profiles', 'student_id,profile_id')
@@ -176,7 +179,7 @@ export function ModulesPage({ user, onOpenModule }) {
   const schoolId = isSupervisor ? ownSchoolId : filterId
   const [schoolModuleIds, setSchoolModuleIds] = useState(null)
   const closeForm = useCallback(() => setFormOpen(false), [])
-  const practices = filterId ? allPractices.filter((practice) => practice.school_id === filterId) : allPractices
+  const { rows: practices } = useRows('practices', 'id,module_id,hours,school_id', { column: 'school_id', value: filterId })
 
   // Admin con una escuela elegida: solo los módulos que usa esa escuela
   useEffect(() => {
@@ -309,9 +312,8 @@ const EMPTY_AIRCRAFT = { type: '', registration: '', msn: '', engines: '', seats
 
 export function AircraftPage({ user }) {
   const { filterId } = useSchool()
-  const { rows: allAircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category,school_id')
-  // Cada escuela tiene sus aviones; el admin ve los de la escuela elegida
-  const aircraft = filterId ? allAircraft.filter((item) => item.school_id === filterId) : allAircraft
+  // Cada escuela tiene sus aviones; el admin ve los de la escuela elegida (filtrado en la base de datos)
+  const { rows: aircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category,school_id', { column: 'school_id', value: filterId })
   const [editing, setEditing] = useState(null)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_AIRCRAFT)
@@ -392,13 +394,11 @@ const percent = (part, total) => (total ? Math.round((part / total) * 100) : 0)
 
 export function ReportsPage() {
   const { filterId } = useSchool()
-  const { rows: allStudents, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,group_name,promo,school_id')
-  const { rows: allPractices, loading: practicesLoading } = useRows('practices', 'id,module_id,title,school_id')
-  // Admin con una escuela elegida: solo sus alumnos y prácticas
-  const students = useMemo(() => (filterId ? allStudents.filter((item) => item.school_id === filterId) : allStudents), [allStudents, filterId])
-  const practices = useMemo(() => (filterId ? allPractices.filter((item) => item.school_id === filterId) : allPractices), [allPractices, filterId])
-  const { rows: memberships, loading: membershipsLoading } = useRows('student_modules', 'student_id,module_id')
-  const { rows: records, loading: recordsLoading, error: recordsError } = useRows('practice_records', 'student_id,practice_id,attendance,evaluation')
+  // Admin con una escuela elegida: solo sus alumnos, prácticas y registros (filtrado en la base de datos)
+  const { rows: students, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,group_name,promo,school_id', { column: 'school_id', value: filterId })
+  const { rows: practices, loading: practicesLoading } = useRows('practices', 'id,module_id,title,school_id', { column: 'school_id', value: filterId })
+  const { rows: memberships, loading: membershipsLoading } = useRows('student_modules', filterId ? 'student_id,module_id,students!inner(school_id)' : 'student_id,module_id', { column: 'students.school_id', value: filterId })
+  const { rows: records, loading: recordsLoading, error: recordsError } = useRows('practice_records', filterId ? 'student_id,practice_id,attendance,evaluation,practices!inner(school_id)' : 'student_id,practice_id,attendance,evaluation', { column: 'practices.school_id', value: filterId })
   const [promo, setPromo] = useState('')
   const [group, setGroup] = useState('')
   const promos = useMemo(() => [...new Set(students.map((student) => String(student.promo || '')).filter(Boolean))].sort(), [students])
@@ -723,31 +723,17 @@ export function SettingsPage({ user }) {
       }
 
       const modulesInserted = await insertMissingRows('modules', 'id', starterModules)
-      const studentRows = starterStudents.map((student) => ({
-        student_number: student.id,
-        name: student.name,
-        group_name: student.group,
-        promo: student.promo,
-      }))
+      // Alumnos de ejemplo: ficha y, después, su grupo, promoción y módulo en la estructura académica
+      const studentRows = starterStudents.map((student) => ({ student_number: student.id, name: student.name }))
       const studentsInserted = await insertMissingRows('students', 'student_number', studentRows)
-      const allStudents = await fetchAll('students', 'id,student_number', ['id'])
-
-      const studentIds = new Map(allStudents.map((student) => [String(student.student_number), String(student.id)]))
-      let membershipsToInsert = []
       let assignmentsNotice = ''
-      try {
-        const currentMemberships = await fetchAll('student_modules', 'student_id,module_id', ['student_id', 'module_id'])
-        const existingMemberships = new Set(currentMemberships.map((row) => `${row.student_id}:${row.module_id}`))
-        membershipsToInsert = starterStudents
-          .map((student) => ({ student_id: studentIds.get(String(student.id)), module_id: STARTER_MODULE_ID }))
-          .filter((row) => row.student_id && !existingMemberships.has(`${row.student_id}:${row.module_id}`))
-        if (membershipsToInsert.length) {
-          const { error } = await supabase.from('student_modules').insert(membershipsToInsert)
-          if (error) throw new Error(`student_modules: ${error.message}`)
-        }
-      } catch (membershipsError) {
-        if (isMissingTable(membershipsError)) assignmentsNotice = ' Para matrículas y asistencia, aplica primero la migración de Supabase.'
-        else throw new Error(membershipsError.message?.startsWith('student_modules') ? membershipsError.message : `student_modules: ${membershipsError.message}`, { cause: membershipsError })
+      const newNumbers = new Set(studentsInserted.map((row) => String(row.student_number)))
+      for (const student of starterStudents.filter((item) => newNumbers.has(String(item.id)))) {
+        const row = studentsInserted.find((item) => String(item.student_number) === String(student.id))
+        const { error } = await supabase.rpc('admin_place_student', {
+          p_student_id: row.id, p_class: null, p_group: student.group, p_promo: student.promo, p_module_ids: [STARTER_MODULE_ID],
+        })
+        if (error) { assignmentsNotice = ` Algún alumno no se pudo matricular: ${errorText(error)}`; break }
       }
 
       const practiceRows = starterPractices.map((practice) => ({
@@ -770,7 +756,7 @@ export function SettingsPage({ user }) {
       }))
       const videosInserted = await insertMissingRows('videos', 'youtube_url', videoRows)
 
-      notify(`Datos cargados: ${modulesInserted.length} módulos, ${studentsInserted.length} alumnos, ${membershipsToInsert.length} matrículas, ${practicesInserted.length} prácticas, ${aircraftInserted.length} aviones y ${videosInserted.length} vídeos nuevos. No se modificaron filas existentes ni se crearon cuentas.${assignmentsNotice}`)
+      notify(`Datos cargados: ${modulesInserted.length} módulos, ${studentsInserted.length} alumnos (con su grupo y módulo), ${practicesInserted.length} prácticas, ${aircraftInserted.length} aviones y ${videosInserted.length} vídeos nuevos. No se modificaron filas existentes ni se crearon cuentas.${assignmentsNotice}`)
     } catch (seedError) {
       notify(seedError.message || 'No se pudieron cargar los datos iniciales.', true)
     } finally {

@@ -7,6 +7,7 @@ import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import { ROLES } from '../lib/roles.js'
 import Icon from './Icon.jsx'
 import { isManager, teachesLikeProfessor } from '../lib/roles.js'
+import { WEEKDAYS } from '../lib/schedule.js'
 
 // Asignaciones del curso escolar actual:
 //  - Grupos: matricular a todo un grupo en módulos del grado.
@@ -84,9 +85,11 @@ function useAssignmentData(schoolId) {
   return { data: data?.schoolId === schoolId ? data : null, error, reload }
 }
 
-export default function Assignments({ user }) {
+// tab + embedded: la página «Escuela» elige la sección y pone sus propios pasos
+export default function Assignments({ user, tab: fixedTab = null, embedded = false }) {
   const { schoolId } = useSchool()
-  const [tab, setTab] = useState('groups')
+  const [ownTab, setTab] = useState('groups')
+  const tab = fixedTab || ownTab
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -110,22 +113,26 @@ export default function Assignments({ user }) {
 
   return (
     <div className="space-y-5">
-      <div className="page-intro">
-        <div>
-          <h2>Asignaciones</h2>
-          <p>{data?.year ? `Curso ${data.year.name}: qué cursa cada alumno y qué imparte cada profesor.` : 'Qué cursa cada alumno y qué imparte cada profesor.'}</p>
-        </div>
-      </div>
+      {!embedded && (
+        <>
+          <div className="page-intro">
+            <div>
+              <h2>Asignaciones</h2>
+              <p>{data?.year ? `Curso ${data.year.name}: qué cursa cada alumno y qué imparte cada profesor.` : 'Qué cursa cada alumno y qué imparte cada profesor.'}</p>
+            </div>
+          </div>
 
-      <div className="tabs" role="tablist">
-        {TABS.map((item) => <button key={item.id} type="button" role="tab" className="tab" aria-selected={tab === item.id} onClick={() => { setTab(item.id); setNotice(null) }}>{item.label}</button>)}
-      </div>
+          <div className="tabs" role="tablist">
+            {TABS.map((item) => <button key={item.id} type="button" role="tab" className="tab" aria-selected={tab === item.id} onClick={() => { setTab(item.id); setNotice(null) }}>{item.label}</button>)}
+          </div>
+        </>
+      )}
 
       {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
       {error && <p role="alert" className="notice-error">{error}</p>}
       {!data && !error && <p className="text-sm text-muted">Cargando…</p>}
       {data && !data.year && (
-        <div className="card empty"><p className="font-medium text-ink-soft">No hay curso escolar actual</p><p className="mt-1">Créalo en Estructura académica → Cursos escolares.</p></div>
+        <div className="card empty"><p className="font-medium text-ink-soft">No hay curso escolar actual</p><p className="mt-1">Créalo en Escuela → Curso escolar.</p></div>
       )}
 
       {data?.year && tab === 'groups' && <GroupsTab data={data} run={run} busy={busy} />}
@@ -162,7 +169,7 @@ function GroupsTab({ data, run, busy }) {
     if (ok) setSelected([])
   }
 
-  if (!data.groups.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p><p className="mt-1">Créalos en Estructura académica → Grupos.</p></div>
+  if (!data.groups.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p><p className="mt-1">Créalos en Escuela → Grupos.</p></div>
 
   return (
     <form className="card space-y-5 p-5 md:p-6" onSubmit={enroll}>
@@ -180,7 +187,7 @@ function GroupsTab({ data, run, busy }) {
       </div>
       <p className="text-sm text-muted">{members.length} {members.length === 1 ? 'alumno' : 'alumnos'} en {groupLabel(group)}</p>
 
-      {modules.length === 0 ? <p className="text-sm text-muted">El grado {degree?.code} aún no tiene módulos. Añádelos en Estructura académica.</p> : (
+      {modules.length === 0 ? <p className="text-sm text-muted">El grado {degree?.code} aún no tiene módulos. Añádelos en Escuela → Grado y módulos.</p> : (
         <fieldset className="grid gap-2 sm:grid-cols-2" disabled={busy}>
           <legend className="sr-only">Módulos</legend>
           {modules.map((item) => {
@@ -228,11 +235,11 @@ function StudentsTab({ data, run, busy }) {
   const mine = data.moduleEnrollments.filter((item) => item.student_id === studentId)
   const linkedProfile = data.links.find((link) => link.student_id === studentId)?.profile_id || ''
 
-  // Cambiar de grupo: se escribe el curso/grupo del alumno y la matrícula se recalcula sola.
+  // Cambiar de grupo: se cambia la matrícula del curso actual (sus módulos le siguen al grupo nuevo)
   function changeGroup(newGroupId) {
     const target = groupById[newGroupId]
     if (!target) return
-    run(() => supabase.from('students').update({ class_name: `${target.level}º`, group_name: groupLabel(target) }).eq('id', studentId), `${student.name} pasa a ${groupLabel(target)}.`)
+    run(() => supabase.rpc('manager_move_student', { p_student_id: studentId, p_group_id: newGroupId }), `${student.name} pasa a ${groupLabel(target)}.`)
   }
 
   function toggleModule(item, checked) {
@@ -331,11 +338,15 @@ function TeachersTab({ data, run, busy }) {
   const assignments = data.teaching.filter((item) => item.profile_id === teacherId)
   const assigned = (degreeModuleId, groupId) => assignments.find((item) => item.degree_module_id === degreeModuleId && item.group_id === groupId)
 
-  function toggle(item, group) {
+  // Tras asignar se ofrece poner ya su horario semanal (día, hora y aula) sin ir a Horario
+  const [scheduleFor, setScheduleFor] = useState(null)
+
+  async function toggle(item, group) {
     const current = assigned(item.id, group.id)
     const label = `${item.module_id} ${KIND_LABEL[item.kind].toLowerCase()} · ${groupLabel(group)}`
-    if (current) run(() => supabase.from('teaching_assignments').delete().eq('id', current.id), `Quitado: ${label}.`)
-    else run(() => supabase.from('teaching_assignments').insert({ profile_id: teacherId, degree_module_id: item.id, group_id: group.id }), `Asignado: ${label}.`)
+    if (current) { run(() => supabase.from('teaching_assignments').delete().eq('id', current.id), `Quitado: ${label}.`); return }
+    const created = await run(() => supabase.from('teaching_assignments').insert({ profile_id: teacherId, degree_module_id: item.id, group_id: group.id }).select('id').single(), `Asignado: ${label}.`)
+    if (created?.id) setScheduleFor({ id: created.id, label })
   }
 
   if (!data.teachers.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay profesores en esta escuela</p><p className="mt-1">Crea sus cuentas en Perfiles.</p></div>
@@ -349,6 +360,7 @@ function TeachersTab({ data, run, busy }) {
           {data.teachers.map((item) => <option key={item.id} value={item.id}>{item.full_name || item.email}</option>)}
         </select>
       </label>
+      {scheduleFor && <QuickSlotForm key={scheduleFor.id} assignment={scheduleFor} run={run} busy={busy} onDone={() => setScheduleFor(null)} />}
       <p className="text-sm text-muted">
         {total ? `${teacher?.full_name || 'Este profesor'} imparte ${total} ${total === 1 ? 'clase' : 'clases'}. Solo verá a los alumnos de esos grupos.` : 'Toca un grupo para asignarle el módulo.'}
       </p>
@@ -390,5 +402,36 @@ function TeachersTab({ data, run, busy }) {
         )
       })}
     </div>
+  )
+}
+
+// Horario semanal de una clase recién asignada. Se puede saltar y ponerlo luego en Horario → Plantilla semanal.
+function QuickSlotForm({ assignment, run, busy, onDone }) {
+  const [form, setForm] = useState({ weekday: '1', start_time: '09:00', end_time: '10:00', room: '' })
+  async function save(event) {
+    event.preventDefault()
+    const ok = await run(() => supabase.from('schedule_slots').insert({
+      teaching_assignment_id: assignment.id, weekday: Number(form.weekday), start_time: form.start_time, end_time: form.end_time, room: form.room || null,
+    }), `Horario guardado: ${assignment.label}, ${WEEKDAYS[Number(form.weekday) - 1].toLowerCase()} ${form.start_time}. Ya está en el calendario.`)
+    if (ok) onDone()
+  }
+  return (
+    <form className="card space-y-3 border-accent p-4" onSubmit={save}>
+      <p className="text-sm font-medium text-ink">¿Cuándo es la clase de {assignment.label}?</p>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <label className="field">Día
+          <select className="input" value={form.weekday} onChange={(event) => setForm({ ...form, weekday: event.target.value })}>
+            {WEEKDAYS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
+          </select>
+        </label>
+        <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
+        <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
+        <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button type="button" className="btn-ghost" onClick={onDone}>Ahora no</button>
+        <button type="submit" className="btn-primary" disabled={busy}>Guardar horario</button>
+      </div>
+    </form>
   )
 }

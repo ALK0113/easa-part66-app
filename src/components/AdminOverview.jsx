@@ -5,23 +5,10 @@ import { useSchool } from '../contexts/useSchool.js'
 import Icon from './Icon.jsx'
 import PendingRequests from './PendingRequests.jsx'
 
-const count = (query) => query.then(({ count: total, error }) => (error ? null : total ?? 0))
-
-async function schoolStats(schoolId) {
-  const [students, teachers, groups] = await Promise.all([
-    count(supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)),
-    count(supabase.from('school_profiles').select('profile_id,profiles!inner(role,status)', { count: 'exact', head: true })
-      .eq('school_id', schoolId).eq('profiles.role', 'profesor').eq('profiles.status', 'activo')),
-    count(supabase.from('class_groups').select('id,academic_years!inner(school_id,is_current)', { count: 'exact', head: true })
-      .eq('academic_years.school_id', schoolId).eq('academic_years.is_current', true)),
-  ])
-  return { students, teachers, groups }
-}
-
 const show = (value) => (value == null ? '—' : value)
 
 // Inicio del admin sin escuela elegida: resumen de todas las escuelas y acceso a cada una.
-export default function AdminOverview({ user, setActivePage }) {
+export default function AdminOverview({ user, setActivePage, openSetup }) {
   const { schools, setSchoolId } = useSchool()
   const [stats, setStats] = useState({})
   const [pending, setPending] = useState({})
@@ -31,14 +18,16 @@ export default function AdminOverview({ user, setActivePage }) {
     let active = true
     let timer = null
     async function load() {
-      const [perSchool, pendingResult] = await Promise.all([
-        Promise.all(schools.map(async (school) => [school.id, await schoolStats(school.id)])),
-        supabase.rpc('list_pending_profiles'),
-      ])
-      if (!active) return
-      setStats(Object.fromEntries(perSchool))
+      // Una sola llamada con las cifras de todas las escuelas
+      const { data, error } = await supabase.rpc('admin_school_overview')
+      if (!active || error) return
+      const perSchool = {}
       const bySchool = {}
-      ;(pendingResult.data || []).forEach((item) => { bySchool[item.school_id] = (bySchool[item.school_id] || 0) + 1 })
+      ;(data || []).forEach((row) => {
+        perSchool[row.school_id] = { students: row.students, teachers: row.teachers, groups: row.groups }
+        bySchool[row.school_id] = row.pending
+      })
+      setStats(perSchool)
       setPending(bySchool)
     }
     load()
@@ -90,26 +79,31 @@ export default function AdminOverview({ user, setActivePage }) {
         <div className="grid gap-3 md:grid-cols-2">
           {schools.map((school) => {
             const item = stats[school.id]
+            // Cada cifra entra en la escuela y abre directamente lo que muestra
+            const go = (page, step) => { setSchoolId(school.id); if (step && openSetup) openSetup(step); else if (page) setActivePage(page) }
             return (
-              <button key={school.id} type="button" onClick={() => setSchoolId(school.id)}
-                className="card group flex flex-col gap-4 p-5 text-left transition-shadow hover:shadow-lift">
+              <div key={school.id} className="card flex flex-col gap-4 p-5 transition-shadow hover:shadow-lift">
                 <span className="flex items-center gap-3">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: school.brand_color || 'var(--color-accent, currentColor)' }} aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate font-semibold text-ink">{school.name}</span>
-                  {pending[school.id] > 0 && <span className="badge">{pending[school.id]} pendiente{pending[school.id] === 1 ? '' : 's'}</span>}
+                  {pending[school.id] > 0 && (
+                    <button type="button" className="badge hover:opacity-80" onClick={() => go('dashboard')} title="Ver las solicitudes en el inicio de la escuela">
+                      {pending[school.id]} pendiente{pending[school.id] === 1 ? '' : 's'}
+                    </button>
+                  )}
                 </span>
                 <span className="grid grid-cols-3 gap-2 text-sm">
-                  {[['Alumnos', item?.students], ['Profesores', item?.teachers], ['Grupos', item?.groups]].map(([label, value]) => (
-                    <span key={label}>
+                  {[['Alumnos', item?.students, 'students'], ['Profesores', item?.teachers, 'teachers'], ['Grupos', item?.groups, null, 'groups']].map(([label, value, page, step]) => (
+                    <button key={label} type="button" onClick={() => go(page, step)} className="rounded-lg p-1 text-left hover:bg-subtle">
                       <span className="block text-lg font-semibold text-ink">{item ? show(value) : '–'}</span>
                       <span className="text-muted">{label}</span>
-                    </span>
+                    </button>
                   ))}
                 </span>
-                <span className="flex items-center gap-1 text-sm font-medium text-accent">
+                <button type="button" onClick={() => go('dashboard')} className="group flex items-center gap-1 self-start text-sm font-medium text-accent">
                   Entrar en la escuela <Icon name="next" size={14} />
-                </span>
-              </button>
+                </button>
+              </div>
             )
           })}
         </div>

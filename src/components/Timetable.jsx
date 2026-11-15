@@ -6,7 +6,7 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { WEEKDAYS, addDays, fetchSessions, parseISODate, startOfWeek, time, toISODate } from '../lib/schedule.js'
-import { AttendanceControl } from './RecordControls.jsx'
+import { AttendanceControl, EvaluationControl } from './RecordControls.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 
@@ -205,6 +205,8 @@ function SessionDetail({ session, user, onClose, onChanged }) {
   const [roster, setRoster] = useState(null)
   const [ownStatus, setOwnStatus] = useState(undefined)
   const [practices, setPractices] = useState([])
+  // Evaluación de la práctica unida a la clase (Apto / No apto), en la misma pantalla que la lista
+  const [evaluations, setEvaluations] = useState({})
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ date: session.date, start_time: time(session.start_time), end_time: time(session.end_time), room: session.room || '', note: session.note || '', practice_id: session.practice_id || '' })
   const [busy, setBusy] = useState(false)
@@ -231,6 +233,22 @@ function SessionDetail({ session, user, onClose, onChanged }) {
     }
     return () => { active = false }
   }, [canEdit, session.id, assignment.degree_modules?.module_id])
+
+  useEffect(() => {
+    if (!canEdit || !session.practice_id || !roster?.length) return undefined
+    let active = true
+    supabase.from('practice_records').select('student_id,evaluation').eq('practice_id', session.practice_id)
+      .in('student_id', roster.map((row) => row.student_id))
+      .then(({ data }) => { if (active) setEvaluations(Object.fromEntries((data || []).map((row) => [row.student_id, row.evaluation]))) })
+    return () => { active = false }
+  }, [canEdit, session.practice_id, roster])
+
+  async function evaluate(studentId, evaluation) {
+    const previous = evaluations[studentId]
+    setEvaluations((current) => ({ ...current, [studentId]: evaluation || null }))
+    const { error: saveError } = await supabase.rpc('set_evaluation', { p_student_id: studentId, p_practice_id: session.practice_id, p_evaluation: evaluation || null })
+    if (saveError) { setError(getSupabaseErrorMessage(saveError)); setEvaluations((current) => ({ ...current, [studentId]: previous })) }
+  }
 
   async function mark(studentIds, status) {
     setBusy(true)
@@ -270,7 +288,7 @@ function SessionDetail({ session, user, onClose, onChanged }) {
       </p>
       {cancelled && <p className="notice mt-3">Esta clase está cancelada.</p>}
       {session.note && !editing && <p className="mt-3 text-sm text-ink-soft">{session.note}</p>}
-      {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}</p>}
+      {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}{canEdit ? ' · la lista y la evaluación se guardan también en la práctica' : ''}</p>}
       {error && <p role="alert" className="notice-error mt-3">{error}</p>}
 
       {!canEdit && ownStatus !== undefined && (
@@ -295,7 +313,10 @@ function SessionDetail({ session, user, onClose, onChanged }) {
                 {roster.map((row) => (
                   <li key={row.student_id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <span className="min-w-0 truncate text-sm text-ink">{row.name}</span>
-                    <AttendanceControl value={row.status} disabled={busy || cancelled} onChange={(status) => mark([row.student_id], status === row.status ? null : status)} />
+                    <span className="flex flex-wrap items-center justify-end gap-2">
+                      <AttendanceControl value={row.status} disabled={busy || cancelled} onChange={(status) => mark([row.student_id], status === row.status ? null : status)} />
+                      {session.practice_id && <EvaluationControl value={evaluations[row.student_id]} disabled={cancelled} onChange={(value) => evaluate(row.student_id, value)} />}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -377,7 +398,7 @@ function OneOffForm({ assignments, onClose, onSaved }) {
 /* Plantilla semanal (administración: todo; profesor: sus clases)      */
 /* ------------------------------------------------------------------ */
 
-function TemplateEditor({ user }) {
+export function TemplateEditor({ user }) {
   const ownOnly = !isManager(user.role)
   const { groups: allGroups, assignments } = useCurrentAssignments(true, ownOnly ? user.id : null)
   // El profesor solo ve los grupos donde imparte
@@ -449,7 +470,7 @@ function TemplateEditor({ user }) {
       {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
 
       {groupAssignments.length === 0 ? (
-        <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Asignaciones → Profesores.</p></div>
+        <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Escuela → Profesores.</p></div>
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-5">

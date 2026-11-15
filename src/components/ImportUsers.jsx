@@ -280,6 +280,12 @@ export default function ImportUsers({ schools, onBack, onImported }) {
             {failed.length > 0 && <span className="text-danger"> · {failed.length} con errores</span>}
           </p>
 
+          {results.some((r) => r.ok && r.note) && (
+            <ul className="notice space-y-1 text-xs">
+              {results.filter((r) => r.ok && r.note).map((r) => <li key={r.row}>Fila {r.row} ({r.email}): {r.note}</li>)}
+            </ul>
+          )}
+
           {failed.length > 0 && (
             <div className="max-h-80 overflow-auto rounded-xl border border-line">
               <table className="w-full text-left text-xs">

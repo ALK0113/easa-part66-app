@@ -8,7 +8,7 @@ const ID_RE = /^[A-Za-z0-9 .\-/]{3,30}$/
 
 class RowError extends Error {}
 
-type RowResult = { row: number; ok: boolean; user_id?: string; error?: string }
+type RowResult = { row: number; ok: boolean; user_id?: string; error?: string; note?: string }
 
 const str = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -212,13 +212,15 @@ Deno.serve(handler(async (req) => {
           throw new RowError('No se pudo crear la ficha del alumno.')
         }
       } else if (moduleIds.length > 0) {
-        // Profesor: sus módulos van a teacher_modules
-        const { error: tmError } = await adminClient
-          .from('teacher_modules')
-          .insert(moduleIds.map((module_id) => ({ profile_id: uid, module_id })))
+        // Profesor: cada módulo se le asigna en los grupos del curso actual donde se imparte
+        const { data: assigned, error: tmError } = await adminClient
+          .rpc('service_assign_teacher_modules', { p_profile_id: uid, p_module_ids: moduleIds })
         if (tmError) {
           console.error(tmError)
           throw new RowError('No se pudieron asignar los módulos.')
+        }
+        if (!assigned) {
+          return { row: rowNumber, ok: true, user_id: uid, note: 'Sus módulos aún no tienen grupos este curso: asígnalos en Escuela → Profesores.' }
         }
       }
 

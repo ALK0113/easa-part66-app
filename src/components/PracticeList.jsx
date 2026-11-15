@@ -22,7 +22,7 @@ function parseObjectives(value) {
 // Con una escuela elegida por el admin, solo sus prácticas y alumnos
 const bySchool = (query, filterId) => (filterId ? query.eq('school_id', filterId) : query)
 
-export default function PracticeList({ user, initialModuleId = null, onClearInitial, onCreateTLB }) {
+export default function PracticeList({ user, initialModuleId = null, initialPracticeId = null, onClearInitial, onCreateTLB }) {
   const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
@@ -110,6 +110,16 @@ export default function PracticeList({ user, initialModuleId = null, onClearInit
     setFormOpen(true)
     setMessage('')
   }
+
+  // Llegada desde «Hoy» en el inicio: se abre directamente la práctica para pasar lista y evaluar
+  useEffect(() => {
+    if (loading || !initialPracticeId) return
+    const practice = practices.find((item) => item.id === initialPracticeId)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- se aplica una sola vez al llegar
+    if (practice) setSelectedPractice(practice)
+    onClearInitial?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al terminar de cargar
+  }, [loading, initialPracticeId])
 
   // Llegada desde un módulo («Nueva práctica en M7»): filtro y formulario con ese módulo
   useEffect(() => {
