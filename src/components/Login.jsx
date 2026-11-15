@@ -16,6 +16,9 @@ function friendlyAuthError(error) {
 export default function Login({ onLoginSuccess }) {
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'reset'
   const [name, setName] = useState('')
+  const [joinCode, setJoinCode] = useState('')
+  const [schoolName, setSchoolName] = useState('')
+  const [requestedRole, setRequestedRole] = useState('alumno')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -34,23 +37,34 @@ export default function Login({ onLoginSuccess }) {
     setConfirmPassword('')
   }
 
+  // Comprueba el código de escuela y muestra su nombre
+  async function checkJoinCode(code = joinCode) {
+    setSchoolName('')
+    if (code.replace(/[^A-Za-z0-9]/g, '').length < 8) return ''
+    const { data } = await supabase.rpc('check_join_code', { p_code: code })
+    setSchoolName(data || '')
+    return data || ''
+  }
+
   async function register() {
     if (!name.trim()) { setError('Introduce tu nombre completo.'); return }
+    if (!(await checkJoinCode())) { setError('El código de escuela no es válido. Pídeselo a tu escuela.'); return }
     const passwordError = await validateNewPassword(password, confirmPassword)
     if (passwordError) { setError(passwordError); return }
 
-    // Solo se envía el nombre. El rol NUNCA se pide desde el cliente.
+    // La cuenta queda pendiente hasta que la escuela la aprueba; el rol pedido
+    // solo puede ser alumno o profesor (lo garantiza la base de datos).
     const { error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        data: { full_name: name.trim() },
+        data: { full_name: name.trim(), join_code: joinCode, requested_role: requestedRole },
         emailRedirectTo: window.location.origin,
       },
     })
     if (signUpError) { setError(friendlyAuthError(signUpError)); return }
     changeMode('login')
-    setNotice('Cuenta creada. Revisa tu correo para confirmar el registro.')
+    setNotice(`Cuenta creada. Confirma tu correo; después ${schoolName} revisará tu solicitud.`)
   }
 
   async function login() {
@@ -67,7 +81,7 @@ export default function Login({ onLoginSuccess }) {
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role,full_name')
+      .select('role,full_name,status')
       .eq('id', data.user.id)
       .maybeSingle()
 
@@ -84,6 +98,7 @@ export default function Login({ onLoginSuccess }) {
       id: data.user.id,
       email: data.user.email,
       role: profile.role,
+      status: profile.status,
       name: profile.full_name || data.user.user_metadata?.full_name || 'Usuario',
     })
   }
@@ -125,7 +140,7 @@ export default function Login({ onLoginSuccess }) {
 
   const titles = {
     login: ['Bienvenido', 'Accede con tu cuenta de la escuela.'],
-    register: ['Crear cuenta', 'Solo te llevará un momento.'],
+    register: ['Crear cuenta', 'Tu escuela revisará tu solicitud antes de darte acceso.'],
     reset: ['Recuperar contraseña', 'Te enviaremos un enlace a tu correo.'],
   }
 
@@ -147,6 +162,34 @@ export default function Login({ onLoginSuccess }) {
           <p className="mt-1 text-sm text-muted">{titles[mode][1]}</p>
 
           <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
+            {isRegister && (
+              <label className="field">
+                <span>Código de escuela</span>
+                <input
+                  className="input uppercase tracking-wider"
+                  type="text"
+                  value={joinCode}
+                  onChange={(event) => { setJoinCode(event.target.value); checkJoinCode(event.target.value) }}
+                  placeholder="ABCD-2345"
+                  autoComplete="off"
+                  required
+                />
+                <span className="text-xs font-normal text-muted">{schoolName ? `Escuela: ${schoolName}` : 'Te lo da tu escuela.'}</span>
+              </label>
+            )}
+            {isRegister && (
+              <fieldset className="field">
+                <legend className="mb-1.5">Me registro como</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {[['alumno', 'Alumno'], ['profesor', 'Profesor']].map(([value, label]) => (
+                    <label key={value} className={`btn h-10 cursor-pointer border ${requestedRole === value ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line-strong bg-surface text-ink-soft'}`}>
+                      <input type="radio" name="requested-role" value={value} checked={requestedRole === value} onChange={() => setRequestedRole(value)} className="sr-only" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             {isRegister && (
               <label className="field">
                 <span>Nombre completo</span>

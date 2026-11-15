@@ -1,4 +1,4 @@
-import { handler, requireManager, attachToCallerSchool, readJson, HttpError } from '../_shared/utils.ts'
+import { handler, requireManager, resolveTargetSchool, attachToSchool, readJson, HttpError } from '../_shared/utils.ts'
 
 const MAX_ROWS_PER_REQUEST = 25
 const ALLOWED_ROLES = ['alumno', 'profesor'] // supervisor y admin solo se nombran desde Escuelas
@@ -99,6 +99,7 @@ Deno.serve(handler(async (req) => {
   if (typeof role !== 'string' || !ALLOWED_ROLES.includes(role)) {
     throw new HttpError(400, 'Rol no válido.')
   }
+  const schoolId = await resolveTargetSchool(caller, body.school_id)
   const sendInvites = body.send_invites === true
   const rows = body.rows
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_ROWS_PER_REQUEST) {
@@ -174,13 +175,14 @@ Deno.serve(handler(async (req) => {
         full_name: data.full_name,
         phone: data.phone || null,
         role,
+        status: 'activo',
       })
       if (profileError) {
         console.error(profileError)
         throw new RowError('No se pudo guardar el perfil.')
       }
-      // Creado por un supervisor: pertenece a su escuela (admin_import_student la lee de aquí)
-      await attachToCallerSchool(caller, uid)
+      // Escuela del usuario (admin_import_student la lee de aquí)
+      await attachToSchool(caller, uid, schoolId)
 
       if (role === 'alumno') {
         // Ficha, datos privados, vínculo y módulos, todo en una sola transacción

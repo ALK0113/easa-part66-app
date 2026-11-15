@@ -19,11 +19,13 @@ async function getFunctionError(error, fallback) {
   return fallback
 }
 
-export default function ImportUsers({ onBack, onImported }) {
+// `schools`: solo para el admin, que elige la escuela; el supervisor importa en la suya.
+export default function ImportUsers({ schools, onBack, onImported }) {
   const [parsed, setParsed] = useState(null) // { fileName, rows }
   const [fileError, setFileError] = useState('')
   const [reading, setReading] = useState(false)
   const [role, setRole] = useState('alumno')
+  const [schoolId, setSchoolId] = useState(schools?.length === 1 ? schools[0].id : '')
   const [sendInvites, setSendInvites] = useState(true)
   const [phase, setPhase] = useState('select') // select | running | done
   const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -97,6 +99,7 @@ export default function ImportUsers({ onBack, onImported }) {
         const { data, error } = await supabase.functions.invoke('admin-import-users', {
           body: {
             role,
+            school_id: schools ? schoolId : undefined,
             send_invites: sendInvites,
             rows: chunk.map((r) => ({ row: r.rowNumber, ...r.data })),
           },
@@ -225,6 +228,15 @@ export default function ImportUsers({ onBack, onImported }) {
                 <option value="profesor">Profesor</option>
               </select>
             </div>
+            {schools && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-soft">Escuela</label>
+                <select className={inputClass} value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
+                  <option value="">Elige una escuela…</option>
+                  {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                </select>
+              </div>
+            )}
             <label className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" checked={sendInvites} onChange={(e) => setSendInvites(e.target.checked)} />
               Enviar invitación por correo a cada usuario
@@ -239,7 +251,7 @@ export default function ImportUsers({ onBack, onImported }) {
 
           <div className="flex justify-end gap-2">
             <button className={secondaryClass} onClick={reset}>Cancelar</button>
-            <button className={buttonClass} onClick={runImport} disabled={!validRows.length}>
+            <button className={buttonClass} onClick={runImport} disabled={!validRows.length || (schools && !schoolId)}>
               Importar {validRows.length} usuarios
             </button>
           </div>
