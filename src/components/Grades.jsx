@@ -125,7 +125,7 @@ export default function Grades({ user, initialClass = null }) {
       {classes?.length === 0 ? (
         <div className="card empty">
           <p className="font-medium text-ink-soft">{isAdmin ? 'Aún no hay alumnos matriculados en módulos' : 'No tienes clases asignadas este curso'}</p>
-          <p className="mt-1">{isAdmin ? 'Matricula los grupos en Asignaciones.' : 'Administración te asigna módulos y grupos.'}</p>
+          <p className="mt-1">{isAdmin ? 'Matricula los grupos en Escuela → Alumnos.' : 'Administración te asigna módulos y grupos.'}</p>
         </div>
       ) : (
         <>

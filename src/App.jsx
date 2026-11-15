@@ -16,7 +16,6 @@ import { useSchool } from './contexts/useSchool.js'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
-const AcademicStructure = lazy(() => import('./components/AcademicStructure.jsx'))
 const Timetable = lazy(() => import('./components/Timetable.jsx'))
 const Grades = lazy(() => import('./components/Grades.jsx'))
 const StudentList = lazy(() => import('./components/StudentList.jsx'))
@@ -26,7 +25,7 @@ const VideoList = lazy(() => import('./components/VideoList.jsx'))
 const ModuleDetailPage = lazy(() => import('./components/ModuleDetail.jsx'))
 const loadManagementPages = () => import('./components/ManagementPages.jsx')
 const ModulesPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ModulesPage })))
-const AssignmentsPage = lazy(() => import('./components/Assignments.jsx'))
+const SchoolSetup = lazy(() => import('./components/SchoolSetup.jsx'))
 const TeacherGroups = lazy(() => import('./components/TeacherGroups.jsx'))
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
 const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
@@ -64,6 +63,8 @@ function App() {
   const [selectedTlbId, setSelectedTlbId] = useState(null)
   // Lo que una página pide a otra al navegar (p. ej. «Crear TLB» desde una práctica): { page, ...datos }
   const [pageIntent, setPageIntent] = useState(null)
+  // Paso abierto en la página «Escuela»
+  const [setupStep, setSetupStep] = useState('degrees')
   // Al ir a otra página, lo pedido para la anterior ya no vale
   if (pageIntent && pageIntent.page !== activePage) setPageIntent(null)
 
@@ -175,6 +176,7 @@ function App() {
   const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
   const openModule = (moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }
   const goWith = (page, data) => { setPageIntent({ page, ...data }); setActivePage(page) }
+  const openSetup = (step) => { setSetupStep(step); setActivePage('setup') }
   const intentFor = (page) => (pageIntent?.page === page ? pageIntent : null)
   const clearIntent = () => setPageIntent(null)
 
@@ -186,7 +188,8 @@ function App() {
       case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} onCreateTLB={(prefill) => goWith('tlb', prefill)} onNewPractice={() => goWith('practices', { module_id: selectedModuleId })} onNewVideo={() => goWith('videos', { module_id: selectedModuleId })} />
-      case 'assignments': return <AssignmentsPage user={user} />
+      // Estructura académica y Asignaciones viven ahora dentro de «Escuela» (los accesos antiguos siguen llevando allí)
+      case 'setup': case 'structure': case 'assignments': return <SchoolSetup user={user} step={setupStep} onStep={setSetupStep} />
       case 'mygroups': return <TeacherGroups user={user} onOpenGrades={(groupId, degreeModuleId) => goWith('grades', { group_id: groupId, degree_module_id: degreeModuleId })} />
       case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
@@ -195,10 +198,9 @@ function App() {
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyDataPage user={user} />
       case 'schools': return <SchoolManagement user={user} />
-      case 'structure': return <AcademicStructure />
       case 'timetable': return <Timetable user={user} />
       case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
-      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} />
+      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} openSetup={openSetup} />
     }
   }
 
@@ -210,7 +212,8 @@ function App() {
     practices: 'Prácticas',
     tlb: user.role === ROLES.STUDENT ? 'Mi Task Log Book' : 'Task Log Book',
     videos: 'Vídeos formativos',
-    assignments: 'Asignaciones',
+    assignments: 'Escuela',
+    setup: 'Escuela',
     mygroups: 'Mis grupos',
     teachers: 'Perfiles',
     aircraft: 'Aviones',
@@ -219,7 +222,7 @@ function App() {
     mydata: 'Mis datos',
     progress: 'Mi progreso',
     schools: 'Escuelas',
-    structure: 'Estructura académica',
+    structure: 'Escuela',
     timetable: user.role === ROLES.STUDENT ? 'Mi horario' : 'Horario',
     grades: 'Notas',
   }
@@ -282,7 +285,26 @@ const GLOBAL_PAGES = new Set(['dashboard', 'schools', 'settings', 'mydata'])
 function SchoolScoped({ page, children }) {
   const { isAdmin, schoolId } = useSchool()
   if (isAdmin && !schoolId && !GLOBAL_PAGES.has(page)) return <SchoolPicker />
-  return <Fragment key={schoolId || 'all'}>{children}</Fragment>
+  return (
+    <>
+      {isAdmin && !GLOBAL_PAGES.has(page) && <SchoolSwitch />}
+      <Fragment key={schoolId || 'all'}>{children}</Fragment>
+    </>
+  )
+}
+
+// Admin: en qué escuela está trabajando, con cambio rápido sin salir de la página
+function SchoolSwitch() {
+  const { schools, schoolId, setSchoolId } = useSchool()
+  return (
+    <div className="mb-4 flex items-center justify-end gap-2 text-sm">
+      <Icon name="school" size={16} className="text-faint" />
+      <label className="sr-only" htmlFor="school-switch">Escuela</label>
+      <select id="school-switch" className="input h-9 w-auto py-0 text-sm" value={schoolId} onChange={(event) => setSchoolId(event.target.value)}>
+        {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+      </select>
+    </div>
+  )
 }
 
 function Home(props) {
@@ -325,7 +347,7 @@ function greeting() {
   return 'Buenas noches'
 }
 
-function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice }) {
+function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, openSetup }) {
   const { isAdmin, filterId, school, setSchoolId } = useSchool()
   const [stats, setStats] = useState(null)
   const [upcoming, setUpcoming] = useState(null)
@@ -420,7 +442,7 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice }) {
 
       {!isStudent && <PendingRequests user={user} schoolId={filterId} />}
 
-      {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted schoolId={filterId} setActivePage={setActivePage} />}
+      {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted schoolId={filterId} setActivePage={setActivePage} openSetup={openSetup} />}
 
       {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} onOpenPractice={onOpenPractice} />}
 

@@ -398,7 +398,7 @@ function OneOffForm({ assignments, onClose, onSaved }) {
 /* Plantilla semanal (administración: todo; profesor: sus clases)      */
 /* ------------------------------------------------------------------ */
 
-function TemplateEditor({ user }) {
+export function TemplateEditor({ user }) {
   const ownOnly = !isManager(user.role)
   const { groups: allGroups, assignments } = useCurrentAssignments(true, ownOnly ? user.id : null)
   // El profesor solo ve los grupos donde imparte
@@ -470,7 +470,7 @@ function TemplateEditor({ user }) {
       {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
 
       {groupAssignments.length === 0 ? (
-        <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Asignaciones → Profesores.</p></div>
+        <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Escuela → Profesores.</p></div>
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-5">
