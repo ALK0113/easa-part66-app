@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Icon from './Icon.jsx'
 import JoinCode from './JoinCode.jsx'
+import { useSchool } from '../contexts/useSchool.js'
 
 // Primeros pasos de una escuela (panel del supervisor). Cada paso se marca solo
 // según los datos, y la tarjeta desaparece cuando la escuela ya está en marcha.
 // `schoolId`: la escuela elegida por el admin; el supervisor usa la suya.
-export default function GettingStarted({ user, schoolId: chosenSchool, setActivePage }) {
+export default function GettingStarted({ schoolId: chosenSchool, setActivePage }) {
   const [state, setState] = useState(null)
+  const { schoolId: contextSchool } = useSchool()
 
   useEffect(() => {
     let active = true
     async function load() {
-      const schoolId = chosenSchool
-        || (await supabase.from('school_profiles').select('school_id').eq('profile_id', user.id).maybeSingle()).data?.school_id
+      // La escuela ya la conoce el contexto: no hace falta volver a consultarla
+      const schoolId = chosenSchool || contextSchool
       if (!schoolId) return
       const [degrees, year, members] = await Promise.all([
         supabase.from('degrees').select('id,degree_modules(id)').eq('school_id', schoolId),
@@ -39,7 +41,7 @@ export default function GettingStarted({ user, schoolId: chosenSchool, setActive
     }
     load()
     return () => { active = false }
-  }, [user.id, chosenSchool])
+  }, [contextSchool, chosenSchool])
 
   if (!state) return null
   const steps = [

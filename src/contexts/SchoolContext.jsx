@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { ROLES } from '../lib/roles.js'
 import { SchoolContext } from './useSchool.js'
+import { useTheme } from './useTheme.js'
+import { DEFAULT_BRAND_COLOR } from '../lib/theme.js'
 
 const STORAGE_KEY = 'aviatrack.adminSchool'
 
@@ -20,7 +22,7 @@ export function SchoolProvider({ user, children }) {
     let active = true
     async function load() {
       if (isAdmin) {
-        const { data } = await supabase.from('schools').select('id,name,brand_color').order('name')
+        const { data } = await supabase.from('schools').select('id,name,brand_color,created_at').order('name')
         if (active) setSchools(data || [])
       } else {
         const { data } = await supabase.from('school_profiles').select('school_id,schools(id,name,brand_color)').eq('profile_id', user.id).maybeSingle()
@@ -43,14 +45,24 @@ export function SchoolProvider({ user, children }) {
   const adminChoice = isAdmin && schools.some((school) => school.id === selected) ? selected : ''
   const schoolId = isAdmin ? adminChoice : ownSchoolId
 
+  const school = schools.find((item) => item.id === schoolId) || null
+
+  // El color sigue a la escuela en la que se trabaja; el admin sin escuela ve el de la primera creada
+  const { setPrimaryColor } = useTheme()
+  const fallbackColor = isAdmin
+    ? [...schools].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0]?.brand_color
+    : null
+  const brandColor = school?.brand_color || fallbackColor || DEFAULT_BRAND_COLOR
+  useEffect(() => { setPrimaryColor(brandColor) }, [brandColor, setPrimaryColor])
+
   const value = useMemo(() => ({
     isAdmin,
     schools,
     schoolId,
     filterId: adminChoice || null,
-    school: schools.find((school) => school.id === schoolId) || null,
+    school,
     setSchoolId,
-  }), [isAdmin, schools, schoolId, adminChoice, setSchoolId])
+  }), [isAdmin, schools, schoolId, adminChoice, school, setSchoolId])
 
   return <SchoolContext.Provider value={value}>{children}</SchoolContext.Provider>
 }

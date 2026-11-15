@@ -12,7 +12,7 @@ import PendingRequests from './components/PendingRequests.jsx'
 import GettingStarted from './components/GettingStarted.jsx'
 import AdminOverview, { SchoolPicker } from './components/AdminOverview.jsx'
 import { SchoolProvider } from './contexts/SchoolContext.jsx'
-import { fetchSchoolModuleIds, useSchool } from './contexts/useSchool.js'
+import { useSchool } from './contexts/useSchool.js'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
@@ -223,7 +223,7 @@ function App() {
   }
 
   return (
-    <ThemeProvider user={user}>
+    <ThemeProvider>
       <SchoolProvider user={user}>
       <div className="min-h-screen bg-canvas text-ink">
         <Sidebar
@@ -296,25 +296,17 @@ function FullScreenMessage({ children }) {
   )
 }
 
-const PAGE_SIZE = 1000
 
-async function fetchEnrolledStudentIds(moduleIds) {
-  const ids = new Set()
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from('student_modules')
-      .select('student_id,module_id')
-      .in('module_id', moduleIds)
-      .order('student_id')
-      .order('module_id')
-      .range(from, from + PAGE_SIZE - 1)
-    if (error) throw error
-    ;(data || []).forEach((entry) => ids.add(String(entry.student_id)))
-    if (!data || data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
+// Módulos propios de un profesor o alumno (para sus próximas prácticas)
+async function fetchOwnModuleIds(user) {
+  if (user.role === ROLES.STUDENT) {
+    const { data: link } = await supabase.from('student_profiles').select('student_id').eq('profile_id', user.id).maybeSingle()
+    if (!link) return []
+    const { data } = await supabase.from('student_modules').select('module_id').eq('student_id', link.student_id)
+    return (data || []).map((entry) => entry.module_id)
   }
-  return ids
+  const { data } = await supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
+  return (data || []).map((entry) => entry.module_id)
 }
 
 const STAT_TABLES = ['students', 'practices', 'tlbs', 'videos', 'modules']
@@ -341,80 +333,31 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
     let timer = null
 
     async function fetchStats() {
+      // Cifras en una sola llamada (la RLS decide qué cuenta cada rol); las próximas prácticas, en paralelo
+      const upcomingQuery = async () => {
+        let query = supabase
+          .from('practices')
+          .select('id,module_id,title,date,start_time,hours')
+          .gte('date', todayISO())
+          .order('date')
+          .order('start_time')
+          .limit(4)
+        if (filterId) query = query.eq('school_id', filterId)
+        else if (!isManager(user.role)) {
+          const moduleIds = await fetchOwnModuleIds({ id: user.id, role: user.role })
+          if (!moduleIds.length) return { data: [], error: null }
+          query = query.in('module_id', moduleIds)
+        }
+        return query
+      }
       try {
-        let moduleIds = []
-        let studentCount = null
-
-        if (user.role === ROLES.TEACHER) {
-          const { data, error } = await supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
-          if (error) throw error
-          moduleIds = (data || []).map((entry) => entry.module_id)
-          studentCount = moduleIds.length ? (await fetchEnrolledStudentIds(moduleIds)).size : 0
-        } else if (filterId) {
-          moduleIds = await fetchSchoolModuleIds(filterId)
-        } else if (user.role === ROLES.STUDENT) {
-          const { data: link, error: linkError } = await supabase.from('student_profiles').select('student_id').eq('profile_id', user.id).maybeSingle()
-          if (linkError) throw linkError
-          if (link) {
-            const { data: memberships, error } = await supabase.from('student_modules').select('module_id').eq('student_id', link.student_id)
-            if (error) throw error
-            moduleIds = (memberships || []).map((entry) => entry.module_id)
-          }
-          studentCount = 0
-        }
-
-        const countTable = (table, moduleScoped) => {
-          let query = supabase.from(table).select('id', { count: 'exact', head: true })
-          if (filterId && table !== 'modules') return query.eq('school_id', filterId)
-          if (moduleScoped) {
-            if (!moduleIds.length) return Promise.resolve({ count: 0, error: null })
-            query = query.in('module_id', moduleIds)
-          }
-          return query
-        }
-
-        const upcomingQuery = () => {
-          if (!isManager(user.role) && !moduleIds.length) return Promise.resolve({ data: [], error: null })
-          let query = supabase
-            .from('practices')
-            .select('id,module_id,title,date,start_time,hours')
-            .gte('date', todayISO())
-            .order('date')
-            .order('start_time')
-            .limit(4)
-          if (filterId) query = query.eq('school_id', filterId)
-          else if (!isManager(user.role)) query = query.in('module_id', moduleIds)
-          return query
-        }
-
-        const [counts, upcomingResult] = await Promise.all([
-          filterId
-            ? Promise.all([
-              countTable('students', false),
-              countTable('practices', false),
-              countTable('tlbs', false),
-              countTable('videos', false),
-              Promise.resolve({ count: moduleIds.length, error: null }),
-            ])
-            : isManager(user.role)
-            ? Promise.all(STAT_TABLES.map((table) => countTable(table, false)))
-            : Promise.all([
-              Promise.resolve({ count: studentCount, error: null }),
-              countTable('practices', true),
-              countTable('tlbs', true),
-              countTable('videos', true),
-              Promise.resolve({ count: moduleIds.length, error: null }),
-            ]),
+        const [statsResult, upcomingResult] = await Promise.all([
+          supabase.rpc('dashboard_stats', { p_school_id: filterId }),
           upcomingQuery(),
         ])
-
-        if (!cancelled) {
-          setStats(Object.fromEntries(STAT_TABLES.map((table, index) => [
-            table,
-            counts[index].error ? '—' : counts[index].count ?? 0,
-          ])))
-          setUpcoming(upcomingResult.error ? [] : upcomingResult.data || [])
-        }
+        if (cancelled) return
+        setStats(Object.fromEntries(STAT_TABLES.map((table) => [table, statsResult.error ? '—' : statsResult.data?.[table] ?? 0])))
+        setUpcoming(upcomingResult.error ? [] : upcomingResult.data || [])
       } catch {
         if (!cancelled) {
           setStats(Object.fromEntries(STAT_TABLES.map((table) => [table, '—'])))
@@ -475,7 +418,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
 
       {!isStudent && <PendingRequests user={user} schoolId={filterId} />}
 
-      {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted user={user} schoolId={filterId} setActivePage={setActivePage} />}
+      {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted schoolId={filterId} setActivePage={setActivePage} />}
 
       {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
 
