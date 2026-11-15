@@ -308,13 +308,16 @@ export function ModulesPage({ user, onOpenModule }) {
 const EMPTY_AIRCRAFT = { type: '', registration: '', msn: '', engines: '', seats: '', category: 'Narrow Body' }
 
 export function AircraftPage({ user }) {
-  const { rows: aircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category')
+  const { filterId } = useSchool()
+  const { rows: allAircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category,school_id')
+  // Cada escuela tiene sus aviones; el admin ve los de la escuela elegida
+  const aircraft = filterId ? allAircraft.filter((item) => item.school_id === filterId) : allAircraft
   const [editing, setEditing] = useState(null)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_AIRCRAFT)
   const [notice, notify] = useNotice()
   const [busy, setBusy] = useState(false)
-  const canEdit = user.role === ROLES.ADMIN || user.role === ROLES.TEACHER
+  const canEdit = isManager(user.role)
   const closeForm = useCallback(() => setFormOpen(false), [])
 
   function openForm(item = null) {
@@ -334,6 +337,7 @@ export function AircraftPage({ user }) {
       seats: form.seats === '' || form.seats == null ? null : Number(form.seats),
       category: form.category || null,
     }
+    if (!editing && filterId) payload.school_id = filterId
     setBusy(true)
     try {
       const result = editing

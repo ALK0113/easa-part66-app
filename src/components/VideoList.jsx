@@ -27,13 +27,14 @@ export default function VideoList({ user }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      // Con una escuela elegida por el admin: solo los vídeos de los módulos que usa esa escuela
-      let scopeIds = null
+      // Cada escuela tiene sus vídeos; el admin ve los de la escuela elegida
+      let scopeIds
       try { scopeIds = filterId ? await fetchSchoolModuleIds(filterId) : null } catch (err) { setError(err.message); setLoading(false); return }
-      const inScope = (query, column = 'module_id') => (scopeIds ? query.in(column, scopeIds) : query)
+      const videos = supabase.from('videos').select('*').order('id', { ascending: true })
+      const modules = supabase.from('modules').select('id,name')
       const [videoResult, moduleResult, assignmentResult] = await Promise.all([
-        inScope(supabase.from('videos').select('*').order('id', { ascending: true })),
-        inScope(supabase.from('modules').select('id,name'), 'id'),
+        filterId ? videos.eq('school_id', filterId) : videos,
+        scopeIds ? modules.in('id', scopeIds) : modules,
         teachesLikeProfessor(user.role)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
@@ -78,7 +79,7 @@ export default function VideoList({ user }) {
     const payload = { module_id: form.module_id, ata: form.ata.trim(), title: form.title.trim(), youtube_url: id }
     const result = editing
       ? await supabase.from('videos').update(payload).eq('id', editing.id).select().single()
-      : await supabase.from('videos').insert(payload).select().single()
+      : await supabase.from('videos').insert(filterId ? { ...payload, school_id: filterId } : payload).select().single()
     setBusy(false)
     if (result.error) { setMessage(result.error.message); return }
     setVideos((current) => editing ? current.map((video) => video.id === editing.id ? result.data : video) : [...current, result.data])

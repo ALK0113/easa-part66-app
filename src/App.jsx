@@ -179,7 +179,7 @@ function App() {
       case 'videos': return <VideoList user={user} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} />
-      case 'assignments': return <NeedsSchool what="Cada asignación"><AssignmentsPage user={user} /></NeedsSchool>
+      case 'assignments': return <AssignmentsPage user={user} />
       case 'mygroups': return <TeacherGroups user={user} />
       case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
@@ -188,7 +188,7 @@ function App() {
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyDataPage user={user} />
       case 'schools': return <SchoolManagement user={user} />
-      case 'structure': return <NeedsSchool what="La estructura académica"><AcademicStructure /></NeedsSchool>
+      case 'structure': return <AcademicStructure />
       case 'timetable': return <Timetable user={user} />
       case 'grades': return <Grades user={user} />
       default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} />
@@ -256,7 +256,7 @@ function App() {
           <div key={currentPage} className="fade-in mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-10">
             <PageErrorBoundary resetKey={currentPage}>
               <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando…</div>}>
-                <SchoolScoped>{renderPage()}</SchoolScoped>
+                <SchoolScoped page={currentPage}>{renderPage()}</SchoolScoped>
               </Suspense>
             </PageErrorBoundary>
           </div>
@@ -267,15 +267,15 @@ function App() {
   )
 }
 
-// Al cambiar el admin de escuela, la página se vuelve a montar y carga los datos de la nueva.
-function SchoolScoped({ children }) {
-  const { schoolId } = useSchool()
-  return <Fragment key={schoolId || 'all'}>{children}</Fragment>
-}
+// Páginas que no son de una escuela concreta. En todas las demás, cada escuela tiene sus propios
+// datos y el admin tiene que elegir una: nunca se mezclan escuelas.
+const GLOBAL_PAGES = new Set(['dashboard', 'schools', 'settings', 'mydata'])
 
-function NeedsSchool({ what, children }) {
+// Al cambiar el admin de escuela, la página se vuelve a montar y carga los datos de la nueva.
+function SchoolScoped({ page, children }) {
   const { isAdmin, schoolId } = useSchool()
-  return isAdmin && !schoolId ? <SchoolPicker what={what} /> : children
+  if (isAdmin && !schoolId && !GLOBAL_PAGES.has(page)) return <SchoolPicker />
+  return <Fragment key={schoolId || 'all'}>{children}</Fragment>
 }
 
 function Home(props) {
@@ -360,7 +360,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
 
         const countTable = (table, moduleScoped) => {
           let query = supabase.from(table).select('id', { count: 'exact', head: true })
-          if (filterId && (table === 'students' || table === 'practices')) return query.eq('school_id', filterId)
+          if (filterId && table !== 'modules') return query.eq('school_id', filterId)
           if (moduleScoped) {
             if (!moduleIds.length) return Promise.resolve({ count: 0, error: null })
             query = query.in('module_id', moduleIds)
@@ -387,8 +387,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
             ? Promise.all([
               countTable('students', false),
               countTable('practices', false),
-              countTable('tlbs', true),
-              countTable('videos', true),
+              countTable('tlbs', false),
+              countTable('videos', false),
               Promise.resolve({ count: moduleIds.length, error: null }),
             ])
             : isManager(user.role)

@@ -118,13 +118,13 @@ export default function AdminOverview({ user, setActivePage }) {
   )
 }
 
-// Para páginas que trabajan sobre una sola escuela cuando el admin aún no ha elegido ninguna.
-export function SchoolPicker({ what }) {
+// Para cualquier sección cuando el admin aún no ha elegido escuela.
+export function SchoolPicker() {
   const { schools, setSchoolId } = useSchool()
   return (
     <div className="card mx-auto max-w-lg p-6">
       <h2 className="font-semibold text-ink">Elige una escuela</h2>
-      <p className="mt-1 text-sm text-muted">{what} es de cada escuela. Elige cuál quieres ver; puedes cambiarla cuando quieras en el menú.</p>
+      <p className="mt-1 text-sm text-muted">Cada escuela tiene sus propios datos. Elige cuál quieres ver; puedes cambiarla cuando quieras en el menú.</p>
       <div className="mt-4 space-y-2">
         {schools.map((school) => (
           <button key={school.id} type="button" onClick={() => setSchoolId(school.id)}

@@ -64,12 +64,12 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   useEffect(() => {
     let cancelled = false
     async function load() {
-      // Con una escuela elegida por el admin: solo los TLB de los módulos que usa esa escuela
-      let scopeIds = null
+      // Cada escuela tiene sus TLB y aviones; el admin ve los de la escuela elegida
+      let scopeIds
       try { scopeIds = filterId ? await fetchSchoolModuleIds(filterId) : null } catch (err) { setError(err.message); setLoading(false); return }
       const inScope = (query, column = 'module_id') => (scopeIds ? query.in(column, scopeIds) : query)
       const [tlbResult, practiceResult, defectResult, answerResult, moduleResult, aircraftResult, teacherResult, profilesResult] = await Promise.all([
-        inScope(supabase.from('tlbs').select('*').order('date', { ascending: false })),
+        filterId ? supabase.from('tlbs').select('*').eq('school_id', filterId).order('date', { ascending: false }) : supabase.from('tlbs').select('*').order('date', { ascending: false }),
         filterId ? supabase.from('practices').select('id,title,module_id,ata').eq('school_id', filterId) : supabase.from('practices').select('id,title,module_id,ata'),
         supabase.from('defects').select('*').order('defect_number', { ascending: true }),
         // Las respuestas oficiales solo las devuelve la RLS al admin y a los profesores del módulo
@@ -77,7 +77,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
           ? Promise.resolve({ data: [], error: null })
           : supabase.from('defect_answers').select('defect_id,correct_action'),
         inScope(supabase.from('modules').select('id,name'), 'id'),
-        supabase.from('aircraft').select('id,type,registration,msn'),
+        filterId ? supabase.from('aircraft').select('id,type,registration,msn').eq('school_id', filterId) : supabase.from('aircraft').select('id,type,registration,msn'),
         teachesLikeProfessor(userRole)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),

@@ -25,7 +25,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
-  // Admin con una escuela elegida: solo prácticas, alumnos y profesores de esa escuela
+  // Admin con una escuela elegida: solo los datos de esa escuela
   const { filterId } = useSchool()
   const bySchool = useCallback((query, column = 'school_id') => (filterId ? query.eq(column, filterId) : query), [filterId])
 
@@ -37,8 +37,8 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
         bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours').eq('module_id', moduleId).order('date')),
         supabase.from('student_modules').select('student_id').eq('module_id', moduleId),
         supabase.from('teacher_modules').select('profile_id').eq('module_id', moduleId),
-        supabase.from('tlbs').select('id,practice_id,module_id,aircraft,registration,msn,date,teacher_name,published,crs').eq('module_id', moduleId).order('date', { ascending: false }),
-        supabase.from('videos').select('id,module_id,ata,title,youtube_url').eq('module_id', moduleId).order('ata'),
+        bySchool(supabase.from('tlbs').select('id,practice_id,module_id,aircraft,registration,msn,date,teacher_name,published,crs').eq('module_id', moduleId).order('date', { ascending: false })),
+        bySchool(supabase.from('videos').select('id,module_id,ata,title,youtube_url').eq('module_id', moduleId).order('ata')),
       ])
       if (cancelled) return
       const baseError = moduleResult.error || practiceResult.error
