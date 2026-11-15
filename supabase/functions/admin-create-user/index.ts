@@ -23,6 +23,9 @@ Deno.serve(handler(async (req) => {
     throw new HttpError(400, 'Rol no válido.')
   }
   const schoolId = await resolveTargetSchool(caller, body.school_id)
+  // Grupo opcional para un alumno: queda matriculado en el curso actual y sus módulos
+  const groupId = role === 'alumno' && typeof body.group_id === 'string' && body.group_id ? body.group_id : null
+  if (groupId && !/^[0-9a-f-]{36}$/i.test(groupId)) throw new HttpError(400, 'Grupo no válido.')
 
   // Un correo = una sola cuenta
   const { data: existing } = await adminClient.from('profiles').select('id').eq('email', email).limit(1)
@@ -79,6 +82,14 @@ Deno.serve(handler(async (req) => {
 
   try {
     await attachToSchool(caller, userId, schoolId)
+    // Un alumno nace con su ficha (y su grupo, si se eligió): no hace falta un segundo paso
+    if (role === 'alumno') {
+      const { error: studentError } = await adminClient.rpc('service_setup_student', { p_profile_id: userId, p_group_id: groupId })
+      if (studentError) {
+        console.error(studentError)
+        throw new HttpError(400, studentError.code === '23503' ? studentError.message : 'No se pudo crear la ficha del alumno.')
+      }
+    }
   } catch (e) {
     await adminClient.auth.admin.deleteUser(userId)
     throw e

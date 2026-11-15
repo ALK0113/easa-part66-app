@@ -80,7 +80,7 @@ export default function SchoolManagement({ user }) {
   const [colorModalOpen, setColorModalOpen] = useState(false)
   const [colorEditingSchool, setColorEditingSchool] = useState(null)
 
-  const emptyForm = { name: '', address: '', city: '', phone: '', email: '', brand_color: DEFAULT_BRAND_COLOR }
+  const emptyForm = { name: '', address: '', city: '', phone: '', email: '', brand_color: DEFAULT_BRAND_COLOR, supervisor_name: '', supervisor_email: '' }
   const [createForm, setCreateForm] = useState(emptyForm)
   // Nota: brand_color se gestiona en su propio modal, no en el formulario de edición general
   const [editForm, setEditForm] = useState({ id: '', name: '', address: '', city: '', phone: '', email: '' })
@@ -211,6 +211,11 @@ export default function SchoolManagement({ user }) {
     if (!form.name.trim()) errors.name = 'Nombre obligatorio'
     if (form.name.length > 200) errors.name = 'Máximo 200 caracteres'
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Email inválido'
+    // Supervisor opcional al crear: si se rellena uno de los dos campos, hacen falta ambos
+    if (form.supervisor_email !== undefined && (form.supervisor_email.trim() || form.supervisor_name.trim())) {
+      if (!form.supervisor_name.trim()) errors.supervisor_name = 'Nombre del supervisor obligatorio'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.supervisor_email.trim())) errors.supervisor_email = 'Email inválido'
+    }
     return errors
   }
 
@@ -283,7 +288,22 @@ export default function SchoolManagement({ user }) {
         })
       }
 
-      addToast('success', 'Escuela creada correctamente')
+      // La escuela nace con su supervisor (recibe una invitación por correo)
+      const supervisorEmail = createForm.supervisor_email.trim().toLowerCase()
+      if (supervisorEmail && data?.school_id) {
+        const { error: supError } = await supabase.functions.invoke('admin-create-user', {
+          body: { email: supervisorEmail, full_name: createForm.supervisor_name.trim(), role: 'supervisor', school_id: data.school_id },
+        })
+        if (supError) {
+          let message = 'No se pudo crear el supervisor.'
+          try { message = (await supError.context.json())?.error || message } catch { /* sin cuerpo */ }
+          addToast('error', `Escuela creada, pero el supervisor no: ${message} Créalo desde «Supervisores».`)
+        } else {
+          addToast('success', `Escuela creada. Invitación enviada a ${supervisorEmail}`)
+        }
+      } else {
+        addToast('success', 'Escuela creada correctamente')
+      }
       setCreateModalOpen(false)
       await loadSchools()
     } catch (err) {
@@ -641,6 +661,18 @@ export default function SchoolManagement({ user }) {
             <FormField label="Email" error={createErrors.email}>
               <input type="email" className={inputClass} value={createForm.email} onChange={e => setCreateForm({ ...createForm, email: e.target.value })} placeholder="info@escuela.com" />
             </FormField>
+            <fieldset className="space-y-3 rounded-xl border border-line p-3">
+              <legend className="px-1 text-sm font-semibold text-ink-soft">Supervisor (opcional)</legend>
+              <p className="text-xs text-muted">Recibirá una invitación por correo y podrá poner en marcha la escuela. También puedes nombrarlo después.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FormField label="Nombre" error={createErrors.supervisor_name}>
+                  <input className={inputClass} value={createForm.supervisor_name} onChange={e => setCreateForm({ ...createForm, supervisor_name: e.target.value })} maxLength={100} autoComplete="off" />
+                </FormField>
+                <FormField label="Correo" error={createErrors.supervisor_email}>
+                  <input type="email" className={inputClass} value={createForm.supervisor_email} onChange={e => setCreateForm({ ...createForm, supervisor_email: e.target.value })} autoComplete="off" />
+                </FormField>
+              </div>
+            </fieldset>
             <ColorPickerField
               label="Color de marca del centro"
               value={createForm.brand_color}

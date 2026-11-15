@@ -9,7 +9,7 @@ import { teachesLikeProfessor } from '../lib/roles.js'
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
-export default function VideoList({ user }) {
+export default function VideoList({ user, initialModuleId = null, onClearInitial }) {
   const { filterId } = useSchool()
   const [videos, setVideos] = useState([])
   const [modules, setModules] = useState([])
@@ -63,9 +63,17 @@ export default function VideoList({ user }) {
     return (!filterAta || video.ata === filterAta) && (!query || `${video.title} ${video.ata} ${video.module_id}`.toLowerCase().includes(query))
   })
 
-  function openForm(video = null) {
+  // Llegada desde un módulo («Añadir vídeo a M7»): el formulario se abre con ese módulo
+  useEffect(() => {
+    if (loading || !initialModuleId) return
+    openForm(null, initialModuleId)
+    onClearInitial?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al terminar de cargar
+  }, [loading, initialModuleId])
+
+  function openForm(video = null, moduleId = null) {
     setEditing(video)
-    setForm(video ? { module_id: video.module_id, ata: video.ata, title: video.title, youtube_url: video.youtube_url } : { module_id: visibleModules[0]?.id || '', ata: '', title: '', youtube_url: '' })
+    setForm(video ? { module_id: video.module_id, ata: video.ata, title: video.title, youtube_url: video.youtube_url } : { module_id: moduleId || visibleModules[0]?.id || '', ata: '', title: '', youtube_url: '' })
     setMessage('')
     setFormOpen(true)
   }

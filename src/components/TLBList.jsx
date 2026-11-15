@@ -23,7 +23,7 @@ const EMAILJS_READY = Boolean(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templat
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
-export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }) {
+export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, initialCreate = null, onClearInitialCreate }) {
   const [tlbs, setTlbs] = useState([])
   const [defects, setDefects] = useState([])
   const [practices, setPractices] = useState([])
@@ -222,6 +222,37 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     setStudentResponses(prev => ({ ...prev, [defectId]: value }))
   }
 
+  // Formulario de TLB nuevo con lo que ya se sabe: módulo, práctica (si solo hay una) y avión (si la escuela tiene uno)
+  function openCreate(prefill = {}) {
+    const moduleId = prefill.module_id || (editableModules.length === 1 ? editableModules[0] : editableModules[0] || '')
+    const modulePractices = practices.filter((practice) => practice.module_id === moduleId)
+    setMessage('')
+    setNewTLB({
+      module_id: moduleId,
+      practice_id: prefill.practice_id || (modulePractices.length === 1 ? modulePractices[0].id : ''),
+      aircraft_id: aircraft.length === 1 ? String(aircraft[0].id) : '',
+      date: new Date().toISOString().slice(0, 10),
+      defect_description: '',
+      correct_action: '',
+    })
+    setCreateOpen(true)
+  }
+
+  // Llegada desde una práctica («Crear TLB»): el formulario se abre ya relleno
+  useEffect(() => {
+    if (loading || !initialCreate) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- abre el formulario una sola vez al llegar
+    openCreate(initialCreate)
+    onClearInitialCreate?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al terminar de cargar
+  }, [loading, initialCreate])
+
+  // Al cambiar de módulo, si solo tiene una práctica se elige sola
+  const withModule = (form, moduleId) => {
+    const modulePractices = practices.filter((practice) => practice.module_id === moduleId)
+    return { ...form, module_id: moduleId, practice_id: modulePractices.length === 1 ? modulePractices[0].id : '' }
+  }
+
   const toggleTeacher = (teacherId) => {
     setEditForm(prev => ({
       ...prev,
@@ -243,6 +274,8 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
         .map(t => t.id)
     }
 
+    // Sin profesores guardados: se propone quien edita, si es profesor
+    if (currentTeacherIds.length === 0 && teachers.some((teacher) => teacher.id === user.id)) currentTeacherIds = [user.id]
     const matchingAircraft = aircraft.find(p => p.registration === tlb.registration)
 
     setEditForm({
@@ -611,7 +644,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   const pageNotice = message && <p role={isErrorMessage ? 'alert' : 'status'} className={isErrorMessage ? 'notice-error' : 'notice'}>{messageText}</p>
   const formError = message && <p role="alert" className="notice-error">{messageText}</p>
   const tlbFormFields = (form, setForm) => <>
-    <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value, practice_id: '' })} required><option value="">Selecciona módulo</option>{modules.filter((module) => editableModules.includes(module.id)).map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
+    <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm(withModule(form, event.target.value))} required><option value="">Selecciona módulo</option>{modules.filter((module) => editableModules.includes(module.id)).map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
     <label className="field">Práctica<select className={inputClass} value={form.practice_id} onChange={(event) => setForm({ ...form, practice_id: event.target.value })} required><option value="">Selecciona práctica</option>{availablePractices.map((practice) => <option key={practice.id} value={practice.id}>{practice.id} · {practice.title}</option>)}</select></label>
     <div className="grid gap-4 sm:grid-cols-2">
       <label className="field">Avión<select className={inputClass} value={form.aircraft_id} onChange={(event) => setForm({ ...form, aircraft_id: event.target.value })} required><option value="">Selecciona avión</option>{aircraft.map((plane) => <option key={plane.id} value={plane.id}>{plane.type} · {plane.registration}</option>)}</select></label>
@@ -791,7 +824,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   return <div className="space-y-5">
     <div className="page-intro">
       <div><h2>{isStudent ? 'Mi Task Log Book' : 'Task Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
-      {!isStudent && <button className={buttonClass} onClick={() => { setMessage(''); setNewTLB({ module_id: editableModules[0] || '', practice_id: '', aircraft_id: '', date: new Date().toISOString().slice(0, 10), defect_description: '', correct_action: '' }); setCreateOpen(true) }}><Icon name="plus" size={16} />Nuevo TLB</button>}
+      {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
     </div>
     <section className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr]">
       <div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar matrícula, práctica o profesor…" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} /></div>

@@ -22,7 +22,7 @@ function parseObjectives(value) {
 // Con una escuela elegida por el admin, solo sus prácticas y alumnos
 const bySchool = (query, filterId) => (filterId ? query.eq('school_id', filterId) : query)
 
-export default function PracticeList({ user }) {
+export default function PracticeList({ user, initialModuleId = null, onClearInitial, onCreateTLB }) {
   const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
@@ -95,7 +95,7 @@ export default function PracticeList({ user }) {
   const canCreate = isManager(user?.role) || visibleModules.length > 0
   const canEdit = (practice) => isManager(user?.role) || teacherModules.includes(practice.module_id) // 🆕 helper
 
-  function openForm(practice = null) {
+  function openForm(practice = null, moduleId = null) {
     setEditing(practice)
     const objectives = practice ? parseObjectives(practice.objectives) : ['']
     setObjectivesInput(objectives.length ? objectives : [''])
@@ -106,10 +106,20 @@ export default function PracticeList({ user }) {
           description: practice.description || '',
           objectives: objectives
         } 
-      : { id: '', module_id: visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [] })
+      : { id: '', module_id: moduleId || moduleFilter || visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [] })
     setFormOpen(true)
     setMessage('')
   }
+
+  // Llegada desde un módulo («Nueva práctica en M7»): filtro y formulario con ese módulo
+  useEffect(() => {
+    if (loading || !initialModuleId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- se aplica una sola vez al llegar
+    setModuleFilter(initialModuleId)
+    openForm(null, initialModuleId)
+    onClearInitial?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al terminar de cargar
+  }, [loading, initialModuleId])
 
   // 🆕 Handlers para objetivos en el formulario
   const addObjective = () => setObjectivesInput([...objectivesInput, ''])
@@ -237,6 +247,7 @@ export default function PracticeList({ user }) {
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
         {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
+          {canEdit(selectedPractice) && onCreateTLB && <button type="button" className="btn-secondary h-8 px-3 text-xs" onClick={() => onCreateTLB({ module_id: selectedPractice.module_id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
           {selectedPractice.start_time && <span className="badge gap-1.5 bg-surface py-1"><Icon name="clock" size={14} className="text-faint" />{String(selectedPractice.start_time).slice(0, 5)} · {selectedPractice.hours} h</span>}
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="users" size={14} className="text-faint" />{enrolled.length} alumnos</span>
@@ -327,6 +338,7 @@ export default function PracticeList({ user }) {
           </span>
         </button>
         {canEdit(practice) && <div className="flex gap-1 text-muted">
+          {onCreateTLB && <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Crear TLB de ${practice.title}`} title="Crear TLB" onClick={() => onCreateTLB({ module_id: practice.module_id, practice_id: practice.id })}><Icon name="clipboard" size={16} /></button>}
           <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Editar ${practice.title}`} onClick={() => openForm(practice)}><Icon name="edit" size={16} /></button>
           {isManager(user.role) && <button className="rounded-lg p-2 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${practice.title}`} onClick={() => deletePractice(practice)}><Icon name="trash" size={16} /></button>}
         </div>}

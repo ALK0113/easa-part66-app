@@ -4,6 +4,9 @@ import { useSchool } from '../contexts/useSchool.js'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportUsers from './ImportUsers.jsx'
+import JoinCode from './JoinCode.jsx'
+import PendingRequests from './PendingRequests.jsx'
+import { groupLabel } from '../lib/academic.js'
 import { ROLES, ROLE_LABELS } from '../lib/roles.js'
 
 const inputClass = 'input'
@@ -22,7 +25,7 @@ async function getFunctionErrorMessage(error, fallback) {
 export default function ProfileManagement({ user }) {
   const isAdmin = user.role === ROLES.ADMIN
   // Admin con una escuela elegida: solo los perfiles de esa escuela
-  const { filterId } = useSchool()
+  const { filterId, schoolId: currentSchoolId } = useSchool()
   // El supervisor solo gestiona alumnos y profesores; admin y supervisores se gestionan en Escuelas
   const canManage = (profile) => isAdmin || profile.role === ROLES.STUDENT || profile.role === ROLES.TEACHER
   const [profiles, setProfiles] = useState([])
@@ -39,6 +42,10 @@ export default function ProfileManagement({ user }) {
   // El admin elige la escuela del usuario nuevo; el supervisor siempre crea en la suya
   const [schools, setSchools] = useState([])
   const [newUserSchool, setNewUserSchool] = useState('')
+  // Alta en un solo paso: un alumno puede quedar ya matriculado en su grupo
+  const [newUserGroup, setNewUserGroup] = useState('')
+  const [groups, setGroups] = useState([])
+  const [addTab, setAddTab] = useState('one')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState('list')
   
@@ -55,6 +62,22 @@ export default function ProfileManagement({ user }) {
     if (!isAdmin) return
     supabase.from('schools').select('id,name').order('name').then(({ data }) => setSchools(data || []))
   }, [isAdmin])
+
+  const targetSchool = isAdmin ? newUserSchool : currentSchoolId
+  useEffect(() => {
+    if (!addModalOpen || newUserRole !== ROLES.STUDENT || !targetSchool) return
+    let active = true
+    supabase.from('class_groups').select('id,level,name,degrees(code),academic_years!inner(is_current,school_id)')
+      .eq('academic_years.is_current', true).eq('academic_years.school_id', targetSchool).order('level').order('name')
+      .then(({ data }) => {
+        if (!active) return
+        const list = data || []
+        setGroups(list)
+        // Si solo hay un grupo, se propone
+        setNewUserGroup((current) => (list.some((group) => group.id === current) ? current : list.length === 1 ? list[0].id : ''))
+      })
+    return () => { active = false }
+  }, [addModalOpen, newUserRole, targetSchool])
 
   async function loadProfiles() {
     setLoading(true)
@@ -103,6 +126,9 @@ export default function ProfileManagement({ user }) {
     setNewUserEmail('')
     setNewUserRole('alumno')
     setNewUserSchool(filterId || (schools.length === 1 ? schools[0].id : ''))
+    setNewUserGroup('')
+    setGroups([])
+    setAddTab('one')
     setAddModalOpen(true)
     setMessage('')
   }
@@ -125,9 +151,7 @@ export default function ProfileManagement({ user }) {
 
     // El cambio de rol pasa por la función que limpia asignaciones y matrículas
     if (!error && formData.role !== editingProfile.role) {
-      ;({ error } = formData.role === ROLES.ADMIN
-        ? await supabase.from('profiles').update({ role: ROLES.ADMIN }).eq('id', editingProfile.id)
-        : await supabase.rpc('admin_set_profile_role', { p_profile_id: editingProfile.id, p_role: formData.role }))
+      ;({ error } = await supabase.rpc('admin_set_profile_role', { p_profile_id: editingProfile.id, p_role: formData.role }))
     }
 
     setBusy(false)
@@ -153,6 +177,7 @@ export default function ProfileManagement({ user }) {
           full_name: formData.full_name.trim(),
           role: newUserRole,
           school_id: isAdmin ? newUserSchool : undefined,
+          group_id: newUserRole === ROLES.STUDENT && newUserGroup ? newUserGroup : undefined,
         }
       }
     )
@@ -180,7 +205,9 @@ export default function ProfileManagement({ user }) {
     if (extraError) {
       setMessage('️ Invitación enviada, pero no se pudieron guardar teléfono y notas: ' + extraError.message)
     } else {
-      setMessage(`✅ Invitación enviada a ${inviteData.email}. El usuario elegirá su contraseña desde el correo.`)
+      const group = groups.find((item) => item.id === newUserGroup)
+      const enrolled = newUserRole === ROLES.STUDENT && group ? ` Ya está matriculado en ${group.degrees?.code ? `${group.degrees.code} · ` : ''}${groupLabel(group)}.` : ''
+      setMessage(`✅ Invitación enviada a ${inviteData.email}. El usuario elegirá su contraseña desde el correo.${enrolled}`)
     }
     setAddModalOpen(false)
     loadProfiles()
@@ -221,14 +248,9 @@ export default function ProfileManagement({ user }) {
           <h2>Perfiles</h2>
           <p>{profiles.length} usuarios</p>
         </div>
-        <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => setView('import')}>
-            <Icon name="upload" size={16} />Importar
-          </button>
-          <button className={buttonClass} onClick={openAddModal}>
-            <Icon name="plus" size={16} />Añadir usuario
-          </button>
-        </div>
+        <button className={buttonClass} onClick={openAddModal}>
+          <Icon name="plus" size={16} />Añadir personas
+        </button>
       </div>
 
       {message && !editModalOpen && !addModalOpen && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
@@ -399,8 +421,26 @@ export default function ProfileManagement({ user }) {
 
       {/* Modal de Añadir Usuario */}
       {addModalOpen && (
-        <Modal title="Añadir usuario" onClose={() => setAddModalOpen(false)}>
-            <form className="space-y-4" onSubmit={addNewProfile}>
+        <Modal title="Añadir personas" onClose={() => setAddModalOpen(false)}>
+            <nav aria-label="Forma de añadir" className="tabs mb-4">
+              {[['one', 'Una persona'], ['many', 'Varias (Excel/CSV)'], ['code', 'Código de registro']].map(([id, label]) => (
+                <button key={id} type="button" className="tab" aria-current={addTab === id ? 'page' : undefined}
+                  onClick={() => { if (id === 'many') { setAddModalOpen(false); setView('import') } else setAddTab(id) }}>{label}</button>
+              ))}
+            </nav>
+            {addTab === 'code' && (
+              <div className="space-y-4">
+                {isAdmin && !filterId && (
+                  <select className={inputClass} value={newUserSchool} onChange={(e) => setNewUserSchool(e.target.value)} aria-label="Escuela">
+                    <option value="">Elige una escuela…</option>
+                    {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                  </select>
+                )}
+                {targetSchool ? <JoinCode key={targetSchool} schoolId={targetSchool} /> : <p className="text-sm text-muted">Elige una escuela para ver su código.</p>}
+                <PendingRequests user={user} schoolId={isAdmin ? targetSchool || null : null} />
+              </div>
+            )}
+            {addTab === 'one' && <form className="space-y-4" onSubmit={addNewProfile}>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-soft">Correo electrónico</label>
                 <input
@@ -433,6 +473,7 @@ export default function ProfileManagement({ user }) {
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
+                  {isAdmin && <option value="supervisor">Supervisor</option>}
                 </select>
               </div>
 
@@ -443,6 +484,17 @@ export default function ProfileManagement({ user }) {
                     <option value="">Elige una escuela…</option>
                     {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
                   </select>
+                </div>
+              )}
+
+              {newUserRole === ROLES.STUDENT && groups.length > 0 && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-soft">Grupo (curso actual)</label>
+                  <select className={inputClass} value={newUserGroup} onChange={(e) => setNewUserGroup(e.target.value)}>
+                    <option value="">Sin grupo por ahora</option>
+                    {groups.map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
+                  </select>
+                  <p className="mt-1 text-xs text-muted">Queda matriculado en el grupo y en sus módulos.</p>
                 </div>
               )}
 
@@ -469,7 +521,7 @@ export default function ProfileManagement({ user }) {
 
               <p className="notice text-xs">
                 Le enviaremos una invitación por correo para que elija su contraseña.
-                Para crear un administrador, cambia el rol después desde «Editar».
+                {isAdmin && ' Para crear un administrador, cambia el rol después desde «Editar».'}
               </p>
               {message && <p role={isError ? 'alert' : 'status'} className={isError ? 'notice-error' : 'notice-success'}>{messageText}</p>}
 
@@ -477,7 +529,7 @@ export default function ProfileManagement({ user }) {
                 <button type="button" className="btn-secondary" onClick={() => setAddModalOpen(false)}>Cancelar</button>
                 <button className={buttonClass} disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
               </div>
-            </form>
+            </form>}
         </Modal>
       )}
     </div>
