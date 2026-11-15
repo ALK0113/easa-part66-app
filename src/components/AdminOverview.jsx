@@ -5,19 +5,6 @@ import { useSchool } from '../contexts/useSchool.js'
 import Icon from './Icon.jsx'
 import PendingRequests from './PendingRequests.jsx'
 
-const count = (query) => query.then(({ count: total, error }) => (error ? null : total ?? 0))
-
-async function schoolStats(schoolId) {
-  const [students, teachers, groups] = await Promise.all([
-    count(supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', schoolId)),
-    count(supabase.from('school_profiles').select('profile_id,profiles!inner(role,status)', { count: 'exact', head: true })
-      .eq('school_id', schoolId).eq('profiles.role', 'profesor').eq('profiles.status', 'activo')),
-    count(supabase.from('class_groups').select('id,academic_years!inner(school_id,is_current)', { count: 'exact', head: true })
-      .eq('academic_years.school_id', schoolId).eq('academic_years.is_current', true)),
-  ])
-  return { students, teachers, groups }
-}
-
 const show = (value) => (value == null ? '—' : value)
 
 // Inicio del admin sin escuela elegida: resumen de todas las escuelas y acceso a cada una.
@@ -31,14 +18,16 @@ export default function AdminOverview({ user, setActivePage }) {
     let active = true
     let timer = null
     async function load() {
-      const [perSchool, pendingResult] = await Promise.all([
-        Promise.all(schools.map(async (school) => [school.id, await schoolStats(school.id)])),
-        supabase.rpc('list_pending_profiles'),
-      ])
-      if (!active) return
-      setStats(Object.fromEntries(perSchool))
+      // Una sola llamada con las cifras de todas las escuelas
+      const { data, error } = await supabase.rpc('admin_school_overview')
+      if (!active || error) return
+      const perSchool = {}
       const bySchool = {}
-      ;(pendingResult.data || []).forEach((item) => { bySchool[item.school_id] = (bySchool[item.school_id] || 0) + 1 })
+      ;(data || []).forEach((row) => {
+        perSchool[row.school_id] = { students: row.students, teachers: row.teachers, groups: row.groups }
+        bySchool[row.school_id] = row.pending
+      })
+      setStats(perSchool)
       setPending(bySchool)
     }
     load()
