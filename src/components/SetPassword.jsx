@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { MIN_PASSWORD_LENGTH, validateNewPassword } from '../lib/password.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary h-11 w-full'
@@ -40,16 +41,14 @@ export default function SetPassword({ onDone }) {
     event.preventDefault()
     setError('')
 
-    if (password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres.')
-      return
-    }
-    if (password !== confirm) {
-      setError('Las contraseñas no coinciden.')
+    setBusy(true)
+    const passwordError = await validateNewPassword(password, confirm)
+    if (passwordError) {
+      setBusy(false)
+      setError(passwordError)
       return
     }
 
-    setBusy(true)
     const { error: updateError } = await supabase.auth.updateUser({ password })
 
     if (updateError) {
@@ -57,7 +56,9 @@ export default function SetPassword({ onDone }) {
       setError(
         updateError.message.includes('different from the old')
           ? 'La nueva contraseña debe ser distinta de la anterior.'
-          : 'No se pudo guardar la contraseña: ' + updateError.message
+          : updateError.code === 'weak_password'
+            ? `La contraseña es demasiado débil. Usa al menos ${MIN_PASSWORD_LENGTH} caracteres.`
+            : 'No se pudo guardar la contraseña: ' + updateError.message
       )
       return
     }
@@ -86,7 +87,7 @@ export default function SetPassword({ onDone }) {
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4"><div className="card fade-in w-full max-w-md p-8">
       <h1 className="mb-1 text-xl font-semibold text-ink">Elige tu contraseña</h1>
       <p className="mb-6 text-sm text-muted">
-        Mínimo 8 caracteres. La usarás para entrar en AviaTrack.
+        Mínimo {MIN_PASSWORD_LENGTH} caracteres. La usarás para entrar en AviaTrack.
       </p>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
