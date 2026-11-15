@@ -246,3 +246,6 @@ begin
   return jsonb_build_object('tlb', to_jsonb(v_tlb), 'defect', to_jsonb(v_defect) || jsonb_build_object('correct_action', trim(p_correct_action)));
 end;
 $$;
+
+-- Los vídeos nuevos reciben un id automático (la app no lo envía)
+alter table public.videos alter column id set default gen_random_uuid()::text;
