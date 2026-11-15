@@ -6,10 +6,13 @@ import { subscribeToTables } from './lib/supabaseRealtime.js'
 import { ROLES, canAccessPage } from './lib/roles.js'
 import { ThemeProvider } from './contexts/ThemeContext.jsx'
 import Icon from './components/Icon.jsx'
+import TodayClasses from './components/TodayClasses.jsx'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
 const AcademicStructure = lazy(() => import('./components/AcademicStructure.jsx'))
+const Timetable = lazy(() => import('./components/Timetable.jsx'))
+const Grades = lazy(() => import('./components/Grades.jsx'))
 const StudentList = lazy(() => import('./components/StudentList.jsx'))
 const PracticeList = lazy(() => import('./components/PracticeList.jsx'))
 const TLBList = lazy(() => import('./components/TLBList.jsx'))
@@ -17,7 +20,7 @@ const VideoList = lazy(() => import('./components/VideoList.jsx'))
 const ModuleDetailPage = lazy(() => import('./components/ModuleDetail.jsx'))
 const loadManagementPages = () => import('./components/ManagementPages.jsx')
 const ModulesPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ModulesPage })))
-const AssignmentsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AssignmentsPage })))
+const AssignmentsPage = lazy(() => import('./components/Assignments.jsx'))
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
 const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
@@ -172,6 +175,8 @@ function App() {
       case 'progress': return <MyDataPage user={user} />
       case 'schools': return <SchoolManagement user={user} />
       case 'structure': return <AcademicStructure />
+      case 'timetable': return <Timetable user={user} />
+      case 'grades': return <Grades user={user} />
       default: return <DashboardHome user={user} setActivePage={setActivePage} onOpenModule={openModule} />
     }
   }
@@ -193,6 +198,8 @@ function App() {
     progress: 'Mi progreso',
     schools: 'Escuelas',
     structure: 'Estructura académica',
+    timetable: user.role === ROLES.STUDENT ? 'Mi horario' : 'Horario',
+    grades: 'Notas',
   }
 
   return (
@@ -413,6 +420,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
           </button>
         ))}
       </section>
+
+      {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
 
       <section className="card">
         <div className="flex items-center justify-between px-5 pb-2 pt-5">
