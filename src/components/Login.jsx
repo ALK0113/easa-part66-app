@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Icon from './Icon.jsx'
-
-const MIN_PASSWORD_LENGTH = 8 // Configura el mismo mínimo en Supabase: Authentication > Providers > Email
+import { MIN_PASSWORD_LENGTH, validateNewPassword } from '../lib/password.js'
 
 function friendlyAuthError(error) {
   const code = error?.code || ''
@@ -37,8 +36,8 @@ export default function Login({ onLoginSuccess }) {
 
   async function register() {
     if (!name.trim()) { setError('Introduce tu nombre completo.'); return }
-    if (password.length < MIN_PASSWORD_LENGTH) { setError(`La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`); return }
-    if (password !== confirmPassword) { setError('Las contraseñas no coinciden.'); return }
+    const passwordError = await validateNewPassword(password, confirmPassword)
+    if (passwordError) { setError(passwordError); return }
 
     // Solo se envía el nombre. El rol NUNCA se pide desde el cliente.
     const { error: signUpError } = await supabase.auth.signUp({
