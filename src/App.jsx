@@ -64,6 +64,8 @@ function App() {
   const [selectedTlbId, setSelectedTlbId] = useState(null)
   // Lo que una página pide a otra al navegar (p. ej. «Crear TLB» desde una práctica): { page, ...datos }
   const [pageIntent, setPageIntent] = useState(null)
+  // Al ir a otra página, lo pedido para la anterior ya no vale
+  if (pageIntent && pageIntent.page !== activePage) setPageIntent(null)
 
   const userIdRef = useRef(null)
   const inFlightRef = useRef(null)
@@ -179,13 +181,13 @@ function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'students': return <StudentList />
-      case 'practices': return <PracticeList user={user} initialModuleId={intentFor('practices')?.module_id} onClearInitial={clearIntent} onCreateTLB={(prefill) => goWith('tlb', prefill)} />
+      case 'practices': return <PracticeList user={user} initialModuleId={intentFor('practices')?.module_id} initialPracticeId={intentFor('practices')?.practice_id} onClearInitial={clearIntent} onCreateTLB={(prefill) => goWith('tlb', prefill)} />
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} initialCreate={intentFor('tlb')} onClearInitialCreate={clearIntent} />
       case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} onCreateTLB={(prefill) => goWith('tlb', prefill)} onNewPractice={() => goWith('practices', { module_id: selectedModuleId })} onNewVideo={() => goWith('videos', { module_id: selectedModuleId })} />
       case 'assignments': return <AssignmentsPage user={user} />
-      case 'mygroups': return <TeacherGroups user={user} />
+      case 'mygroups': return <TeacherGroups user={user} onOpenGrades={(groupId, degreeModuleId) => goWith('grades', { group_id: groupId, degree_module_id: degreeModuleId })} />
       case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
       case 'reports': return <ReportsPage />
@@ -195,8 +197,8 @@ function App() {
       case 'schools': return <SchoolManagement user={user} />
       case 'structure': return <AcademicStructure />
       case 'timetable': return <Timetable user={user} />
-      case 'grades': return <Grades user={user} />
-      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} />
+      case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
+      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} />
     }
   }
 
@@ -323,7 +325,7 @@ function greeting() {
   return 'Buenas noches'
 }
 
-function DashboardHome({ user, setActivePage, onOpenModule }) {
+function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice }) {
   const { isAdmin, filterId, school, setSchoolId } = useSchool()
   const [stats, setStats] = useState(null)
   const [upcoming, setUpcoming] = useState(null)
@@ -420,7 +422,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
 
       {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted schoolId={filterId} setActivePage={setActivePage} />}
 
-      {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
+      {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} onOpenPractice={onOpenPractice} />}
 
       <section className="card">
         <div className="flex items-center justify-between px-5 pb-2 pt-5">

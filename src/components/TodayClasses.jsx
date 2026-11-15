@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { ROLES, teachesLikeProfessor } from '../lib/roles.js'
@@ -6,8 +7,10 @@ import { fetchSessions, time, toISODate } from '../lib/schedule.js'
 import Icon from './Icon.jsx'
 
 // Clases de hoy en el inicio (profesor y alumno). Al tocar una se abre el horario.
-export default function TodayClasses({ user, onOpen }) {
+// El profesor ve también las prácticas de hoy de sus módulos que no van en una clase: se abren para pasar lista.
+export default function TodayClasses({ user, onOpen, onOpenPractice }) {
   const [sessions, setSessions] = useState(null)
+  const [practices, setPractices] = useState([])
 
   useEffect(() => {
     let active = true
@@ -15,14 +18,20 @@ export default function TodayClasses({ user, onOpen }) {
     async function load() {
       try {
         // El supervisor ve en el inicio sus propias clases
-        const result = await fetchSessions(user, today, today, user.role === ROLES.SUPERVISOR ? { profileId: user.id } : {})
-        if (active) setSessions(result.sessions)
+        const [result, practiceRows] = await Promise.all([
+          fetchSessions(user, today, today, user.role === ROLES.SUPERVISOR ? { profileId: user.id } : {}),
+          teachesLikeProfessor(user.role) ? todayPractices(user.id, today) : [],
+        ])
+        if (!active) return
+        setSessions(result.sessions)
+        const linked = new Set(result.sessions.map((session) => session.practice_id).filter(Boolean))
+        setPractices(practiceRows.filter((practice) => !linked.has(practice.id)))
       } catch {
         if (active) setSessions([])
       }
     }
     load()
-    const unsubscribe = subscribeToTables(['class_sessions'], load, `today-${user.id}`)
+    const unsubscribe = subscribeToTables(['class_sessions', 'practices'], load, `today-${user.id}`)
     return () => { active = false; unsubscribe() }
   }, [user])
 
@@ -35,7 +44,23 @@ export default function TodayClasses({ user, onOpen }) {
         <button type="button" className="link" onClick={onOpen}>Ver horario</button>
       </div>
       {sessions === null && <p className="empty">Cargando…</p>}
-      {sessions?.length === 0 && <p className="empty">Hoy no tienes clases.</p>}
+      {sessions?.length === 0 && !practices.length && <p className="empty">Hoy no tienes clases.</p>}
+      {practices.length > 0 && onOpenPractice && (
+        <ul className="px-2">
+          {practices.map((practice) => (
+            <li key={practice.id}>
+              <button type="button" onClick={() => onOpenPractice(practice.id)} className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle">
+                <span className="w-14 shrink-0 text-sm tabular-nums text-muted">{practice.start_time ? time(practice.start_time) : '—'}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-ink">{practice.title}</span>
+                  <span className="mt-0.5 block text-xs text-muted">Práctica · {practice.module_id} · pasar lista y evaluar</span>
+                </span>
+                <Icon name="next" size={16} className="text-faint" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {sessions?.length > 0 && (
         <ul className="px-2 pb-2">
           {sessions.map((session) => {
@@ -64,4 +89,13 @@ export default function TodayClasses({ user, onOpen }) {
       )}
     </section>
   )
+}
+
+// Prácticas de hoy de los módulos que imparte el profesor
+async function todayPractices(profileId, today) {
+  const { data: own } = await supabase.from('teacher_modules').select('module_id').eq('profile_id', profileId)
+  const moduleIds = (own || []).map((row) => row.module_id)
+  if (!moduleIds.length) return []
+  const { data } = await supabase.from('practices').select('id,title,module_id,start_time').eq('date', today).in('module_id', moduleIds).order('start_time')
+  return data || []
 }
