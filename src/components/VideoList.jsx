@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { youtubeId } from '../lib/youtube.js'
 import Icon from './Icon.jsx'
+import { teachesLikeProfessor } from '../lib/roles.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -27,7 +28,7 @@ export default function VideoList({ user }) {
       const [videoResult, moduleResult, assignmentResult] = await Promise.all([
         supabase.from('videos').select('*').order('id', { ascending: true }),
         supabase.from('modules').select('id,name'),
-        user.role === 'profesor'
+        teachesLikeProfessor(user.role)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
       ])
@@ -46,9 +47,9 @@ export default function VideoList({ user }) {
     return () => { cancelled = true; unsubscribe() }
   }, [user.id, user.role])
 
-  const canEditVideo = (video) => user.role === 'admin' || (user.role === 'profesor' && teacherModules.includes(video.module_id))
-  const visibleVideos = videos.filter((video) => user.role !== 'profesor' || teacherModules.includes(video.module_id))
-  const visibleModules = user.role === 'profesor' ? modules.filter((module) => teacherModules.includes(module.id)) : modules
+  const canEditVideo = (video) => user.role === 'admin' || (teachesLikeProfessor(user.role) && teacherModules.includes(video.module_id))
+  const visibleVideos = videos.filter((video) => !teachesLikeProfessor(user.role) || teacherModules.includes(video.module_id))
+  const visibleModules = teachesLikeProfessor(user.role) ? modules.filter((module) => teacherModules.includes(module.id)) : modules
   const atas = [...new Set(visibleVideos.map((video) => video.ata).filter(Boolean))].sort()
   const filteredVideos = visibleVideos.filter((video) => {
     const query = search.trim().toLowerCase()
@@ -66,7 +67,7 @@ export default function VideoList({ user }) {
     event.preventDefault()
     const id = youtubeId(form.youtube_url)
     if (!id) { setMessage('Introduce un ID de YouTube válido o una URL estándar de vídeo.'); return }
-    if (user.role === 'profesor' && !teacherModules.includes(form.module_id)) { setMessage('No tienes permiso para editar ese módulo.'); return }
+    if (teachesLikeProfessor(user.role) && !teacherModules.includes(form.module_id)) { setMessage('No tienes permiso para editar ese módulo.'); return }
     setBusy(true)
     const payload = { module_id: form.module_id, ata: form.ata.trim(), title: form.title.trim(), youtube_url: id }
     const result = editing

@@ -4,6 +4,7 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
+import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { youtubeId } from '../lib/youtube.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 
@@ -81,7 +82,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB }) {
     return () => { cancelled = true; unsubscribe() }
   }, [moduleId, user.id])
 
-  const canEdit = user.role === 'admin' || user.role === 'profesor'
+  const canEdit = isManager(user.role) || teachesLikeProfessor(user.role)
   const recordsForPractice = (practiceId) => records.filter((record) => record.practice_id === practiceId)
   const getRecord = (studentId, practiceId) => records.find((record) => record.student_id === String(studentId) && record.practice_id === practiceId) || {}
   const tlbForPractice = (practiceId) => tlbs.filter((tlb) => tlb.practice_id === practiceId)

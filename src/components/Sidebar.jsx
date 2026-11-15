@@ -1,4 +1,4 @@
-import { ROLES, canAccessPage } from '../lib/roles.js'
+import { ROLE_LABELS, canAccessPage } from '../lib/roles.js'
 import Icon from './Icon.jsx'
 
 // Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
@@ -33,7 +33,6 @@ const sections = [
   },
 ]
 
-const ROLE_LABELS = { [ROLES.ADMIN]: 'Administración', [ROLES.TEACHER]: 'Profesor', [ROLES.STUDENT]: 'Alumno' }
 
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
   const isActive = (id) => activePage === id || (activePage === 'module-detail' && id === 'modules')

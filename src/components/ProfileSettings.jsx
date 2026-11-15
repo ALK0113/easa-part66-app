@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { ROLE_LABELS } from '../lib/roles.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -57,7 +58,6 @@ export default function ProfileSettings({ user }) {
 
   if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando tu perfil…</div>
 
-  const ROLE_LABELS = { admin: 'Administración', profesor: 'Profesor', alumno: 'Alumno' }
   const isError = message.startsWith('❌')
   const messageText = message.replace(/^(❌|✅)\s*/, '')
 

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
-import { ROLES } from '../lib/roles.js'
+import { isManager } from '../lib/roles.js'
 import Icon from './Icon.jsx'
 
 // Notas del curso actual por clase (módulo + grupo).
@@ -14,7 +14,7 @@ const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg
 const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente' }
 
 export default function Grades({ user }) {
-  const isAdmin = user.role === ROLES.ADMIN
+  const isAdmin = isManager(user.role)
   const [classes, setClasses] = useState(null)
   const [selected, setSelected] = useState('')
   const [rows, setRows] = useState(null)

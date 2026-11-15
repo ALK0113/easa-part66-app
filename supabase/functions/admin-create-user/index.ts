@@ -1,10 +1,11 @@
-import { handler, requireAdmin, readJson, HttpError } from '../_shared/utils.ts'
+import { handler, requireManager, attachToCallerSchool, readJson, HttpError } from '../_shared/utils.ts'
 
 const ALLOWED_ROLES = ['alumno', 'profesor']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 Deno.serve(handler(async (req) => {
-  const { adminClient } = await requireAdmin(req)
+  const caller = await requireManager(req)
+  const { adminClient } = caller
 
   const body = await readJson(req)
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
@@ -58,6 +59,13 @@ Deno.serve(handler(async (req) => {
     console.error(profileError)
     await adminClient.auth.admin.deleteUser(userId)
     throw new HttpError(500, 'No se pudo guardar el perfil; se canceló la creación.')
+  }
+
+  try {
+    await attachToCallerSchool(caller, userId)
+  } catch (e) {
+    await adminClient.auth.admin.deleteUser(userId)
+    throw e
   }
 
   return { 

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportUsers from './ImportUsers.jsx'
+import { ROLES, ROLE_LABELS } from '../lib/roles.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -18,6 +19,9 @@ async function getFunctionErrorMessage(error, fallback) {
 }
 
 export default function ProfileManagement({ user }) {
+  const isAdmin = user.role === ROLES.ADMIN
+  // El supervisor solo gestiona alumnos y profesores; admin y supervisores se gestionan en Escuelas
+  const canManage = (profile) => isAdmin || profile.role === ROLES.STUDENT || profile.role === ROLES.TEACHER
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
@@ -92,15 +96,21 @@ export default function ProfileManagement({ user }) {
     event.preventDefault()
     setBusy(true)
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('profiles')
       .update({
         full_name: formData.full_name.trim(),
         phone: formData.phone.trim(),
         bio: formData.bio.trim(),
-        role: formData.role
       })
       .eq('id', editingProfile.id)
+
+    // El cambio de rol pasa por la función que limpia asignaciones y matrículas
+    if (!error && formData.role !== editingProfile.role) {
+      ;({ error } = formData.role === ROLES.ADMIN
+        ? await supabase.from('profiles').update({ role: ROLES.ADMIN }).eq('id', editingProfile.id)
+        : await supabase.rpc('admin_set_profile_role', { p_profile_id: editingProfile.id, p_role: formData.role }))
+    }
 
     setBusy(false)
     if (error) {
@@ -185,8 +195,6 @@ export default function ProfileManagement({ user }) {
 
   const isError = message.startsWith('❌')
   const messageText = message.replace(/^(❌|✅)\s*/, '')
-  const ROLE_LABELS = { admin: 'Administración', profesor: 'Profesor', alumno: 'Alumno' }
-
   return (
     <div className="space-y-5">
       <div className="page-intro">
@@ -221,6 +229,7 @@ export default function ProfileManagement({ user }) {
           <select className={inputClass} value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
             <option value="">Todos los roles</option>
             <option value="admin">Administrador</option>
+            <option value="supervisor">Supervisor</option>
             <option value="profesor">Profesor</option>
             <option value="alumno">Alumno</option>
           </select>
@@ -255,17 +264,17 @@ export default function ProfileManagement({ user }) {
                 <td className="px-5 py-3 font-medium text-ink">{profile.full_name || 'Sin nombre'}</td>
                 <td className="px-5 py-3 text-muted">{profile.email || '—'}</td>
                 <td className="px-5 py-3">
-                  <span className={`badge ${profile.role === 'admin' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
+                  <span className={`badge ${profile.role === 'admin' || profile.role === 'supervisor' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
                     {ROLE_LABELS[profile.role] || profile.role}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-muted">{profile.phone || '—'}</td>
                 <td className="px-5 py-3">
                   <div className="flex justify-end gap-1 text-muted">
-                    <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${profile.full_name || profile.email}`} onClick={() => openEditModal(profile)}>
+                    {canManage(profile) && <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${profile.full_name || profile.email}`} onClick={() => openEditModal(profile)}>
                       <Icon name="edit" size={16} />
-                    </button>
-                    {profile.id !== user.id && (
+                    </button>}
+                    {profile.id !== user.id && canManage(profile) && (
                       <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${profile.full_name || profile.email}`} onClick={() => deleteProfile(profile)} disabled={busy}>
                         <Icon name="trash" size={16} />
                       </button>
@@ -311,14 +320,18 @@ export default function ProfileManagement({ user }) {
                   className={inputClass}
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  disabled={editingProfile.id === user.id}
+                  disabled={editingProfile.id === user.id || editingProfile.role === ROLES.SUPERVISOR}
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
-                  <option value="admin">Administrador</option>
+                  {editingProfile.role === ROLES.SUPERVISOR && <option value="supervisor">Supervisor</option>}
+                  {isAdmin && <option value="admin">Administrador</option>}
                 </select>
                 {editingProfile.id === user.id && (
                   <p className="mt-1 text-xs text-muted">No puedes cambiar tu propio rol.</p>
+                )}
+                {editingProfile.role === ROLES.SUPERVISOR && editingProfile.id !== user.id && (
+                  <p className="mt-1 text-xs text-muted">Los supervisores se nombran y se quitan en Escuelas.</p>
                 )}
               </div>
 
