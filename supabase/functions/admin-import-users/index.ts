@@ -106,8 +106,11 @@ Deno.serve(handler(async (req) => {
     throw new HttpError(400, `Se admiten entre 1 y ${MAX_ROWS_PER_REQUEST} filas por petición.`)
   }
 
-  // 3. Módulos existentes (para traducir "M1" o "Mathematics" a su id)
-  const { data: modules, error: modulesError } = await adminClient.from('modules').select('id, name')
+  // 3. Módulos del catálogo EASA y de la escuela (para traducir "M1" o "Mathematics" a su id)
+  const { data: modules, error: modulesError } = await adminClient
+    .from('modules')
+    .select('id, name')
+    .or(`school_id.is.null,school_id.eq.${schoolId}`)
   if (modulesError) {
     console.error(modulesError)
     throw new HttpError(500, 'No se pudieron leer los módulos.')

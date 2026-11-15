@@ -9,6 +9,7 @@ import Icon from './components/Icon.jsx'
 import TodayClasses from './components/TodayClasses.jsx'
 import PendingApproval from './components/PendingApproval.jsx'
 import PendingRequests from './components/PendingRequests.jsx'
+import GettingStarted from './components/GettingStarted.jsx'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
@@ -23,6 +24,7 @@ const ModuleDetailPage = lazy(() => import('./components/ModuleDetail.jsx'))
 const loadManagementPages = () => import('./components/ManagementPages.jsx')
 const ModulesPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ModulesPage })))
 const AssignmentsPage = lazy(() => import('./components/Assignments.jsx'))
+const TeacherGroups = lazy(() => import('./components/TeacherGroups.jsx'))
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
 const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
@@ -175,6 +177,7 @@ function App() {
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
       case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} />
       case 'assignments': return <AssignmentsPage user={user} />
+      case 'mygroups': return <TeacherGroups user={user} />
       case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
       case 'reports': return <ReportsPage />
@@ -198,6 +201,7 @@ function App() {
     tlb: user.role === ROLES.STUDENT ? 'Mi Task Log Book' : 'Task Log Book',
     videos: 'Vídeos formativos',
     assignments: 'Asignaciones',
+    mygroups: 'Mis grupos',
     teachers: 'Perfiles',
     aircraft: 'Aviones',
     reports: 'Informes',
@@ -430,6 +434,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
       </section>
 
       {!isStudent && <PendingRequests user={user} />}
+
+      {user.role === ROLES.SUPERVISOR && <GettingStarted user={user} setActivePage={setActivePage} />}
 
       {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
 

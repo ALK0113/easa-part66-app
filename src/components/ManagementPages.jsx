@@ -8,7 +8,7 @@ import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage, isMissingTable } from '../lib/supabaseErrors.js'
 import { downloadBlob, downloadCsv } from '../lib/download.js'
-import { ROLES } from '../lib/roles.js'
+import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
 
 /* ------------------------------------------------------------------ */
@@ -157,7 +157,7 @@ function ErrorOrLoading({ loading, error }) {
 /* ------------------------------------------------------------------ */
 
 export function ModulesPage({ user, onOpenModule }) {
-  const { rows: modules, loading, error, reload } = useRows('modules', 'id,name,description,color')
+  const { rows: modules, loading, error, reload } = useRows('modules', 'id,name,description,color,school_id')
   const { rows: practices } = useRows('practices', 'id,module_id,hours')
   const { rows: teacherAssignments } = useRows('teacher_modules', 'profile_id,module_id')
   const { rows: studentAssignments } = useRows('student_modules', 'student_id,module_id')
@@ -167,8 +167,18 @@ export function ModulesPage({ user, onOpenModule }) {
   const [form, setForm] = useState({ id: '', name: '', description: '', color: 1 })
   const [notice, notify] = useNotice()
   const [busy, setBusy] = useState(false)
-  const canEdit = user.role === ROLES.ADMIN
+  const isAdmin = user.role === ROLES.ADMIN
+  const isSupervisor = user.role === ROLES.SUPERVISOR
+  // El admin crea módulos del catálogo EASA; el supervisor, módulos propios de su escuela
+  const canCreate = isManager(user.role)
+  const [schoolId, setSchoolId] = useState(null)
   const closeForm = useCallback(() => setFormOpen(false), [])
+
+  useEffect(() => {
+    if (!isSupervisor) return
+    supabase.from('school_profiles').select('school_id').eq('profile_id', user.id).maybeSingle()
+      .then(({ data }) => setSchoolId(data?.school_id || null))
+  }, [isSupervisor, user.id])
 
   const ownStudentId = studentProfiles.find((entry) => entry.profile_id === user.id)?.student_id
   const assignedModuleIds = user.role === ROLES.TEACHER
@@ -177,6 +187,10 @@ export function ModulesPage({ user, onOpenModule }) {
       ? studentAssignments.filter((entry) => String(entry.student_id) === String(ownStudentId)).map((entry) => entry.module_id)
       : modules.map((mod) => mod.id)
   const visibleModules = modules.filter((mod) => assignedModuleIds.includes(mod.id))
+  const teaches = (mod) => teacherAssignments.some((entry) => entry.profile_id === user.id && entry.module_id === mod.id)
+  // Catálogo EASA: solo el admin. Módulo de escuela: su supervisor o un profesor que lo imparte.
+  const canEditModule = (mod) => isAdmin || (Boolean(mod.school_id) && (isSupervisor || (teachesLikeProfessor(user.role) && teaches(mod))))
+  const canDeleteModule = (mod) => isAdmin || (Boolean(mod.school_id) && isSupervisor)
 
   function openForm(mod = null) {
     setEditing(mod)
@@ -192,9 +206,12 @@ export function ModulesPage({ user, onOpenModule }) {
     setBusy(true)
     try {
       const result = editing
-        ? await supabase.from('modules').update({ name: payload.name, description: payload.description, color }).eq('id', editing.id)
-        : await supabase.from('modules').insert(payload)
-      if (result.error) { notify(errorText(result.error), true); return }
+        ? await supabase.rpc('update_module_content', { p_module_id: editing.id, p_name: payload.name, p_description: payload.description, p_color: color })
+        : await supabase.from('modules').insert(isSupervisor ? { ...payload, school_id: schoolId } : payload)
+      if (result.error) {
+        notify(result.error.code === '23505' ? 'Ese código ya existe. Usa otro (por ejemplo, añade las siglas de tu escuela).' : errorText(result.error), true)
+        return
+      }
       setEditing(null)
       setFormOpen(false)
       notify('Módulo guardado.')
@@ -221,12 +238,12 @@ export function ModulesPage({ user, onOpenModule }) {
           <h2>{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66'}</h2>
           <p>{visibleModules.length} {visibleModules.length === 1 ? 'módulo' : 'módulos'}</p>
         </div>
-        {canEdit && <button className={primaryButton} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo módulo</button>}
+        {canCreate && <button className={primaryButton} onClick={() => openForm()} disabled={isSupervisor && !schoolId}><Icon name="plus" size={16} />{isSupervisor ? 'Nuevo módulo de la escuela' : 'Nuevo módulo'}</button>}
       </div>
       <ErrorOrLoading loading={loading} error={error} />
       {!formOpen && <NoticeBar notice={notice} />}
       {!loading && !error && visibleModules.length === 0 && (
-        <div className="card empty">{user.role === ROLES.ADMIN ? 'Aún no hay módulos. Crea el primero.' : 'Todavía no tienes módulos asignados. Administración te los asignará en breve.'}</div>
+        <div className="card empty">{canCreate ? 'Aún no hay módulos. Crea el primero.' : 'Todavía no tienes módulos asignados. Administración te los asignará en breve.'}</div>
       )}
       <section>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -237,16 +254,17 @@ export function ModulesPage({ user, onOpenModule }) {
               <article key={mod.id} className="card group flex flex-col transition-shadow hover:shadow-lift">
                 <button className="flex-1 p-5 text-left" onClick={() => onOpenModule(mod.id)}>
                   <span className="badge bg-accent-soft text-accent-strong">{mod.id}</span>
+                  {user.role !== ROLES.STUDENT && <span className="badge ml-1.5">{mod.school_id ? 'Escuela' : 'EASA'}</span>}
                   <h3 className="mt-3 font-semibold text-ink">{mod.name}</h3>
                   <p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p>
                 </button>
                 <div className="flex items-center gap-4 border-t border-line px-5 py-3 text-xs text-muted">
                   <span><strong className="font-semibold text-ink-soft">{count}</strong> {count === 1 ? 'práctica' : 'prácticas'}</span>
                   {user.role !== ROLES.STUDENT && <span><strong className="font-semibold text-ink-soft">{studentCount}</strong> {studentCount === 1 ? 'alumno' : 'alumnos'}</span>}
-                  {canEdit ? (
+                  {canEditModule(mod) ? (
                     <span className="ml-auto flex gap-1">
                       <button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${mod.id}`} onClick={() => openForm(mod)}><Icon name="edit" size={16} /></button>
-                      <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${mod.id}`} onClick={() => deleteModule(mod)}><Icon name="trash" size={16} /></button>
+                      {canDeleteModule(mod) && <button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${mod.id}`} onClick={() => deleteModule(mod)}><Icon name="trash" size={16} /></button>}
                     </span>
                   ) : <Icon name="next" size={16} className="ml-auto text-faint transition-colors group-hover:text-accent" />}
                 </div>

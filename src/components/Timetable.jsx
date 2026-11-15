@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
-import { ROLES, isManager } from '../lib/roles.js'
+import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { WEEKDAYS, addDays, fetchSessions, parseISODate, startOfWeek, time, toISODate } from '../lib/schedule.js'
 import { AttendanceControl } from './RecordControls.jsx'
 import Icon from './Icon.jsx'
@@ -18,6 +18,8 @@ const assignmentLabel = (assignment) => assignment
 
 export default function Timetable({ user }) {
   const isAdmin = isManager(user.role)
+  // El profesor también edita la plantilla semanal, pero solo de sus clases
+  const canEditTemplate = isAdmin || teachesLikeProfessor(user.role)
   const [tab, setTab] = useState('week')
 
   return (
@@ -28,13 +30,13 @@ export default function Timetable({ user }) {
           <p>{user.role === ROLES.STUDENT ? 'Tus clases de la semana.' : user.role === ROLES.TEACHER ? 'Tus clases. Toca una para pasar lista.' : 'Clases de cada grupo y profesor.'}</p>
         </div>
       </div>
-      {isAdmin && (
+      {canEditTemplate && (
         <div className="tabs" role="tablist">
           <button type="button" role="tab" className="tab" aria-selected={tab === 'week'} onClick={() => setTab('week')}>Semana</button>
           <button type="button" role="tab" className="tab" aria-selected={tab === 'template'} onClick={() => setTab('template')}>Plantilla semanal</button>
         </div>
       )}
-      {tab === 'week' ? <WeekView user={user} /> : <TemplateEditor />}
+      {tab === 'week' ? <WeekView user={user} /> : <TemplateEditor user={user} />}
     </div>
   )
 }
@@ -366,11 +368,14 @@ function OneOffForm({ assignments, onClose, onSaved }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Plantilla semanal (administración)                                  */
+/* Plantilla semanal (administración: todo; profesor: sus clases)      */
 /* ------------------------------------------------------------------ */
 
-function TemplateEditor() {
-  const { groups, assignments } = useCurrentAssignments(true, null)
+function TemplateEditor({ user }) {
+  const ownOnly = !isManager(user.role)
+  const { groups: allGroups, assignments } = useCurrentAssignments(true, ownOnly ? user.id : null)
+  // El profesor solo ve los grupos donde imparte
+  const groups = ownOnly ? allGroups.filter((group) => assignments.some((item) => item.group_id === group.id)) : allGroups
   const [groupId, setGroupId] = useState('')
   const [slots, setSlots] = useState([])
   const [editing, setEditing] = useState(null)
@@ -415,7 +420,15 @@ function TemplateEditor() {
     setVersion((value) => value + 1)
   }
 
-  if (!groups.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p></div>
+  if (!groups.length) {
+    return (
+      <div className="card empty">
+        <p className="font-medium text-ink-soft">{ownOnly ? 'Aún no tienes clases asignadas este curso' : 'No hay grupos en el curso actual'}</p>
+        {ownOnly && <p className="mt-1">La supervisión te asigna los módulos y grupos; después podrás fijar aquí su horario.</p>}
+      </div>
+    )
+  }
+  const isMine = (slot) => groupAssignments.some((item) => item.id === slot.teaching_assignment_id)
 
   return (
     <div className="space-y-4">
@@ -442,7 +455,7 @@ function TemplateEditor() {
                   <ul className="space-y-1.5">
                     {items.map((slot) => (
                       <li key={slot.id}>
-                        <button type="button" onClick={() => setEditing(slot)} className="w-full rounded-xl border border-line px-3 py-2 text-left hover:bg-subtle">
+                        <button type="button" onClick={() => setEditing(slot)} disabled={!isMine(slot)} className="w-full rounded-xl border border-line px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60">
                           <span className="block text-xs tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}{slot.room ? ` · ${slot.room}` : ''}</span>
                           <span className="block text-sm font-medium text-ink">{assignmentLabel(slot.teaching_assignments)}</span>
                           <span className="block truncate text-xs text-muted">{slot.teaching_assignments.profiles?.full_name}</span>
