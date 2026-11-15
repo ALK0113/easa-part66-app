@@ -9,6 +9,7 @@ function friendlyAuthError(error) {
   if (code === 'weak_password' || message.includes('password should be')) return `La contraseña es demasiado débil. Usa al menos ${MIN_PASSWORD_LENGTH} caracteres.`
   if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || message.includes('rate limit')) return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.'
   if (code === 'email_address_invalid' || message.includes('invalid email')) return 'El correo electrónico no es válido.'
+  if (code === 'user_already_exists' || code === 'email_exists' || message.includes('already registered')) return 'Ya existe una cuenta con este correo. Inicia sesión o recupera tu contraseña.'
   if (code === 'signup_disabled') return 'El registro está desactivado. Contacta con administración.'
   return 'No se pudo completar la operación. Inténtalo de nuevo.'
 }
@@ -54,7 +55,7 @@ export default function Login({ onLoginSuccess }) {
 
     // La cuenta queda pendiente hasta que la escuela la aprueba; el rol pedido
     // solo puede ser alumno o profesor (lo garantiza la base de datos).
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
@@ -63,6 +64,11 @@ export default function Login({ onLoginSuccess }) {
       },
     })
     if (signUpError) { setError(friendlyAuthError(signUpError)); return }
+    // Cada correo es una sola cuenta: Supabase no da error si ya existe, pero no le crea identidad nueva
+    if (signUpData?.user && !signUpData.user.identities?.length) {
+      setError('Ya existe una cuenta con este correo. Inicia sesión o recupera tu contraseña.')
+      return
+    }
     changeMode('login')
     setNotice(`Cuenta creada. Confirma tu correo; después ${schoolName} revisará tu solicitud.`)
   }
