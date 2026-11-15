@@ -109,6 +109,9 @@ export default function ProfileManagement({ user }) {
 
   async function saveProfile(event) {
     event.preventDefault()
+    // Dar el rol de administrador es delicado: se confirma también al guardar
+    if (formData.role === ROLES.ADMIN && editingProfile.role !== ROLES.ADMIN
+      && !window.confirm(`Vas a guardar a ${editingProfile.full_name || editingProfile.email} como ADMINISTRADOR. Tendrá acceso total a todas las escuelas. ¿Guardar?`)) return
     setBusy(true)
 
     let { error } = await supabase
@@ -281,7 +284,7 @@ export default function ProfileManagement({ user }) {
                 <td className="px-5 py-3 font-medium text-ink">{profile.full_name || 'Sin nombre'}</td>
                 <td className="px-5 py-3 text-muted">{profile.email || '—'}</td>
                 <td className="px-5 py-3">
-                  <span className={`badge ${profile.role === 'admin' || profile.role === 'supervisor' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
+                  <span className={`badge ${profile.role === 'admin' ? 'bg-danger-soft font-semibold text-danger' : profile.role === 'supervisor' ? 'bg-accent-soft text-accent-strong' : profile.role === 'profesor' ? 'bg-success-soft text-success' : ''}`}>
                     {ROLE_LABELS[profile.role] || profile.role}
                   </span>
                   {profile.status !== 'activo' && (
@@ -337,9 +340,15 @@ export default function ProfileManagement({ user }) {
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-soft">Rol</label>
                 <select
-                  className={inputClass}
+                  className={`${inputClass} ${formData.role === ROLES.ADMIN ? 'border-danger font-semibold text-danger' : ''}`}
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  onChange={(e) => {
+                    const role = e.target.value
+                    // Primera confirmación al elegir Administrador
+                    if (role === ROLES.ADMIN && editingProfile.role !== ROLES.ADMIN
+                      && !window.confirm(`¿Seguro que quieres hacer ADMINISTRADOR a ${editingProfile.full_name || editingProfile.email}? Tendrá acceso total a todas las escuelas.`)) return
+                    setFormData({ ...formData, role })
+                  }}
                   disabled={editingProfile.id === user.id || editingProfile.role === ROLES.SUPERVISOR}
                 >
                   <option value="alumno">Alumno</option>
@@ -349,6 +358,9 @@ export default function ProfileManagement({ user }) {
                 </select>
                 {editingProfile.id === user.id && (
                   <p className="mt-1 text-xs text-muted">No puedes cambiar tu propio rol.</p>
+                )}
+                {formData.role === ROLES.ADMIN && editingProfile.id !== user.id && (
+                  <p className="mt-1 text-xs font-medium text-danger">Administrador: acceso total a todas las escuelas.</p>
                 )}
                 {editingProfile.role === ROLES.SUPERVISOR && editingProfile.id !== user.id && (
                   <p className="mt-1 text-xs text-muted">Los supervisores se nombran y se quitan en Escuelas.</p>

@@ -24,6 +24,10 @@ Deno.serve(handler(async (req) => {
   }
   const schoolId = await resolveTargetSchool(caller, body.school_id)
 
+  // Un correo = una sola cuenta
+  const { data: existing } = await adminClient.from('profiles').select('id').eq('email', email).limit(1)
+  if (existing?.length) throw new HttpError(409, 'Ya existe un usuario con ese correo.')
+
   let userId: string
 
   if (sendInvite) {
@@ -34,6 +38,10 @@ Deno.serve(handler(async (req) => {
     })
     if (inviteError || !inviteData.user) {
       console.error(inviteError)
+      const e = inviteError as { code?: string; message?: string } | null
+      if (e?.code === 'email_exists' || /already.*registered/i.test(e?.message ?? '')) {
+        throw new HttpError(409, 'Ya existe un usuario con ese correo.')
+      }
       throw new HttpError(400, 'No se pudo enviar la invitación.')
     }
     userId = inviteData.user.id
@@ -49,6 +57,10 @@ Deno.serve(handler(async (req) => {
     })
     if (userError || !userData.user) {
       console.error(userError)
+      const e = userError as { code?: string; message?: string } | null
+      if (e?.code === 'email_exists' || /already.*registered/i.test(e?.message ?? '')) {
+        throw new HttpError(409, 'Ya existe un usuario con ese correo.')
+      }
       throw new HttpError(400, 'No se pudo crear el usuario.')
     }
     userId = userData.user.id
