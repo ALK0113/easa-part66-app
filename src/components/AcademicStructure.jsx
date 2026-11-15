@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import Modal from './Modal.jsx'
@@ -75,18 +76,9 @@ function useSchoolStructure(schoolId) {
 }
 
 export default function AcademicStructure() {
-  const [schools, setSchools] = useState([])
-  const [schoolId, setSchoolId] = useState('')
+  const { schoolId } = useSchool()
   const [tab, setTab] = useState('degrees')
   const [notice, setNotice] = useState(null)
-
-  useEffect(() => {
-    supabase.from('schools').select('id,name').order('name').then(({ data, error }) => {
-      if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return }
-      setSchools(data || [])
-      setSchoolId((current) => current || data?.[0]?.id || '')
-    })
-  }, [])
 
   const { data, error, reload } = useSchoolStructure(schoolId)
 
@@ -106,11 +98,6 @@ export default function AcademicStructure() {
           <h2>Estructura académica</h2>
           <p>Grados, módulos, grupos y promociones de la escuela.</p>
         </div>
-        {schools.length > 1 && (
-          <select className="input w-auto min-w-48" value={schoolId} onChange={(event) => setSchoolId(event.target.value)} aria-label="Escuela">
-            {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
-          </select>
-        )}
       </div>
 
       <div className="tabs" role="tablist">

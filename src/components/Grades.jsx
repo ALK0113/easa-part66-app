@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
@@ -14,6 +15,7 @@ const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg
 const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente' }
 
 export default function Grades({ user }) {
+  const { filterId } = useSchool()
   const isAdmin = isManager(user.role)
   const [classes, setClasses] = useState(null)
   const [selected, setSelected] = useState('')
@@ -30,8 +32,9 @@ export default function Grades({ user }) {
         if (isAdmin) {
           const { data, error: loadError } = await supabase
             .from('module_enrollments')
-            .select('group_id,degree_module_id,class_groups(level,name),degree_modules(module_id,kind),academic_years!inner(is_current,schools(grade_max,pass_mark))')
+            .select('group_id,degree_module_id,class_groups(level,name),degree_modules(module_id,kind),academic_years!inner(is_current,school_id,schools(grade_max,pass_mark))')
             .eq('academic_years.is_current', true)
+            .match(filterId ? { 'academic_years.school_id': filterId } : {})
           if (loadError) throw loadError
           const seen = new Map()
           ;(data || []).forEach((row) => {
@@ -59,7 +62,7 @@ export default function Grades({ user }) {
     load()
     const unsubscribe = subscribeToTables(['teaching_assignments', 'module_enrollments'], load, `grades-classes-${user.id}`)
     return () => { active = false; unsubscribe() }
-  }, [isAdmin, user.id])
+  }, [isAdmin, user.id, filterId])
 
   const current = classes?.find((item) => item.key === selected)
   const scale = current?.scale || { grade_max: 100, pass_mark: 75 }

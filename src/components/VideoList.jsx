@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { fetchSchoolModuleIds, useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { youtubeId } from '../lib/youtube.js'
 import Icon from './Icon.jsx'
@@ -9,6 +10,7 @@ const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
 export default function VideoList({ user }) {
+  const { filterId } = useSchool()
   const [videos, setVideos] = useState([])
   const [modules, setModules] = useState([])
   const [teacherModules, setTeacherModules] = useState([])
@@ -25,9 +27,14 @@ export default function VideoList({ user }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
+      // Cada escuela tiene sus vídeos; el admin ve los de la escuela elegida
+      let scopeIds
+      try { scopeIds = filterId ? await fetchSchoolModuleIds(filterId) : null } catch (err) { setError(err.message); setLoading(false); return }
+      const videos = supabase.from('videos').select('*').order('id', { ascending: true })
+      const modules = supabase.from('modules').select('id,name')
       const [videoResult, moduleResult, assignmentResult] = await Promise.all([
-        supabase.from('videos').select('*').order('id', { ascending: true }),
-        supabase.from('modules').select('id,name'),
+        filterId ? videos.eq('school_id', filterId) : videos,
+        scopeIds ? modules.in('id', scopeIds) : modules,
         teachesLikeProfessor(user.role)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
@@ -45,7 +52,7 @@ export default function VideoList({ user }) {
     load()
     const unsubscribe = subscribeToTables(['videos', 'modules', 'teacher_modules'], load, 'video-list')
     return () => { cancelled = true; unsubscribe() }
-  }, [user.id, user.role])
+  }, [user.id, user.role, filterId])
 
   const canEditVideo = (video) => user.role === 'admin' || (teachesLikeProfessor(user.role) && teacherModules.includes(video.module_id))
   const visibleVideos = videos.filter((video) => !teachesLikeProfessor(user.role) || teacherModules.includes(video.module_id))
@@ -72,7 +79,7 @@ export default function VideoList({ user }) {
     const payload = { module_id: form.module_id, ata: form.ata.trim(), title: form.title.trim(), youtube_url: id }
     const result = editing
       ? await supabase.from('videos').update(payload).eq('id', editing.id).select().single()
-      : await supabase.from('videos').insert(payload).select().single()
+      : await supabase.from('videos').insert(filterId ? { ...payload, school_id: filterId } : payload).select().single()
     setBusy(false)
     if (result.error) { setMessage(result.error.message); return }
     setVideos((current) => editing ? current.map((video) => video.id === editing.id ? result.data : video) : [...current, result.data])

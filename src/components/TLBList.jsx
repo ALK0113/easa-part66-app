@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { fetchSchoolModuleIds, useSchool } from '../contexts/useSchool.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { jsPDF } from 'jspdf'
@@ -58,24 +59,31 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
   const [hiddenActions, setHiddenActions] = useState({})
 
   const userRole = user.role
+  const { filterId } = useSchool()
 
   useEffect(() => {
     let cancelled = false
     async function load() {
+      // Cada escuela tiene sus TLB y aviones; el admin ve los de la escuela elegida
+      let scopeIds
+      try { scopeIds = filterId ? await fetchSchoolModuleIds(filterId) : null } catch (err) { setError(err.message); setLoading(false); return }
+      const inScope = (query, column = 'module_id') => (scopeIds ? query.in(column, scopeIds) : query)
       const [tlbResult, practiceResult, defectResult, answerResult, moduleResult, aircraftResult, teacherResult, profilesResult] = await Promise.all([
-        supabase.from('tlbs').select('*').order('date', { ascending: false }),
-        supabase.from('practices').select('id,title,module_id,ata'),
+        filterId ? supabase.from('tlbs').select('*').eq('school_id', filterId).order('date', { ascending: false }) : supabase.from('tlbs').select('*').order('date', { ascending: false }),
+        filterId ? supabase.from('practices').select('id,title,module_id,ata').eq('school_id', filterId) : supabase.from('practices').select('id,title,module_id,ata'),
         supabase.from('defects').select('*').order('defect_number', { ascending: true }),
         // Las respuestas oficiales solo las devuelve la RLS al admin y a los profesores del módulo
         userRole === 'alumno'
           ? Promise.resolve({ data: [], error: null })
           : supabase.from('defect_answers').select('defect_id,correct_action'),
-        supabase.from('modules').select('id,name'),
-        supabase.from('aircraft').select('id,type,registration,msn'),
+        inScope(supabase.from('modules').select('id,name'), 'id'),
+        filterId ? supabase.from('aircraft').select('id,type,registration,msn').eq('school_id', filterId) : supabase.from('aircraft').select('id,type,registration,msn'),
         teachesLikeProfessor(userRole)
           ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
           : Promise.resolve({ data: [], error: null }),
-        supabase.from('profiles').select('id,full_name,email').in('role', ['profesor', 'supervisor']).order('full_name', { ascending: true }),
+        filterId
+          ? supabase.from('profiles').select('id,full_name,email,school_profiles!inner(school_id)').in('role', ['profesor', 'supervisor']).eq('school_profiles.school_id', filterId).order('full_name', { ascending: true })
+          : supabase.from('profiles').select('id,full_name,email').in('role', ['profesor', 'supervisor']).order('full_name', { ascending: true }),
       ])
       if (cancelled) return
       const failure = tlbResult.error || practiceResult.error || defectResult.error || answerResult.error || moduleResult.error || aircraftResult.error || teacherResult.error || profilesResult.error
@@ -100,7 +108,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb }
     load()
     const unsubscribe = subscribeToTables(['tlbs', 'practices', 'defects', 'defect_answers', 'modules', 'aircraft', 'teacher_modules', 'profiles'], load, 'tlb-list')
     return () => { cancelled = true; unsubscribe() }
-  }, [user.id, userRole])
+  }, [user.id, userRole, filterId])
 
   const activeTLBId = selectedTLBId || initialTlbId
 

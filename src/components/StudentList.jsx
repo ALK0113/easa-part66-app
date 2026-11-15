@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
@@ -25,6 +26,7 @@ function toRow(student) {
 const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))
 
 export default function StudentList() {
+  const { filterId } = useSchool()
   const [students, setStudents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -35,7 +37,9 @@ export default function StudentList() {
   useEffect(() => {
     let active = true
     async function load() {
-      const { data, error: loadError } = await supabase.from('students').select(STUDENT_COLUMNS).order('name')
+      let query = supabase.from('students').select(STUDENT_COLUMNS).order('name')
+      if (filterId) query = query.eq('school_id', filterId)
+      const { data, error: loadError } = await query
       if (!active) return
       if (loadError) setError(getSupabaseErrorMessage(loadError))
       else { setStudents((data || []).map(toRow)); setError('') }
@@ -44,7 +48,7 @@ export default function StudentList() {
     load()
     const unsubscribe = subscribeToTables(['students', 'enrollments', 'class_groups', 'cohorts'], load, 'student-list')
     return () => { active = false; unsubscribe() }
-  }, [])
+  }, [filterId])
 
   const options = useMemo(() => ({
     level: unique(students.map((student) => student.level)),

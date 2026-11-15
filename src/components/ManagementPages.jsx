@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { fetchSchoolModuleIds, useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { aircraft as starterAircraft } from '../data/aircraft.js'
 import { modules as starterModules } from '../data/modules.js'
@@ -158,7 +159,7 @@ function ErrorOrLoading({ loading, error }) {
 
 export function ModulesPage({ user, onOpenModule }) {
   const { rows: modules, loading, error, reload } = useRows('modules', 'id,name,description,color,school_id')
-  const { rows: practices } = useRows('practices', 'id,module_id,hours')
+  const { rows: allPractices } = useRows('practices', 'id,module_id,hours,school_id')
   const { rows: teacherAssignments } = useRows('teacher_modules', 'profile_id,module_id')
   const { rows: studentAssignments } = useRows('student_modules', 'student_id,module_id')
   const { rows: studentProfiles } = useRows('student_profiles', 'student_id,profile_id')
@@ -169,23 +170,30 @@ export function ModulesPage({ user, onOpenModule }) {
   const [busy, setBusy] = useState(false)
   const isAdmin = user.role === ROLES.ADMIN
   const isSupervisor = user.role === ROLES.SUPERVISOR
-  // El admin crea módulos del catálogo EASA; el supervisor, módulos propios de su escuela
+  // El supervisor crea módulos propios de su escuela; el admin, de la escuela elegida o, sin escuela, del catálogo EASA
   const canCreate = isManager(user.role)
-  const [schoolId, setSchoolId] = useState(null)
+  const { schoolId: ownSchoolId, filterId } = useSchool()
+  const schoolId = isSupervisor ? ownSchoolId : filterId
+  const [schoolModuleIds, setSchoolModuleIds] = useState(null)
   const closeForm = useCallback(() => setFormOpen(false), [])
+  const practices = filterId ? allPractices.filter((practice) => practice.school_id === filterId) : allPractices
 
+  // Admin con una escuela elegida: solo los módulos que usa esa escuela
   useEffect(() => {
-    if (!isSupervisor) return
-    supabase.from('school_profiles').select('school_id').eq('profile_id', user.id).maybeSingle()
-      .then(({ data }) => setSchoolId(data?.school_id || null))
-  }, [isSupervisor, user.id])
+    if (!filterId) return undefined
+    let active = true
+    fetchSchoolModuleIds(filterId)
+      .then((ids) => { if (active) setSchoolModuleIds(ids) })
+      .catch(() => { if (active) setSchoolModuleIds([]) })
+    return () => { active = false }
+  }, [filterId, modules])
 
   const ownStudentId = studentProfiles.find((entry) => entry.profile_id === user.id)?.student_id
   const assignedModuleIds = user.role === ROLES.TEACHER
     ? teacherAssignments.filter((entry) => entry.profile_id === user.id).map((entry) => entry.module_id)
     : user.role === ROLES.STUDENT
       ? studentAssignments.filter((entry) => String(entry.student_id) === String(ownStudentId)).map((entry) => entry.module_id)
-      : modules.map((mod) => mod.id)
+      : filterId ? schoolModuleIds || [] : modules.map((mod) => mod.id)
   const visibleModules = modules.filter((mod) => assignedModuleIds.includes(mod.id))
   const teaches = (mod) => teacherAssignments.some((entry) => entry.profile_id === user.id && entry.module_id === mod.id)
   // Catálogo EASA: solo el admin. Módulo de escuela: su supervisor o un profesor que lo imparte.
@@ -207,7 +215,7 @@ export function ModulesPage({ user, onOpenModule }) {
     try {
       const result = editing
         ? await supabase.rpc('update_module_content', { p_module_id: editing.id, p_name: payload.name, p_description: payload.description, p_color: color })
-        : await supabase.from('modules').insert(isSupervisor ? { ...payload, school_id: schoolId } : payload)
+        : await supabase.from('modules').insert(schoolId ? { ...payload, school_id: schoolId } : payload)
       if (result.error) {
         notify(result.error.code === '23505' ? 'Ese código ya existe. Usa otro (por ejemplo, añade las siglas de tu escuela).' : errorText(result.error), true)
         return
@@ -238,7 +246,7 @@ export function ModulesPage({ user, onOpenModule }) {
           <h2>{user.role === ROLES.STUDENT ? 'Mis módulos' : 'Módulos Part-66'}</h2>
           <p>{visibleModules.length} {visibleModules.length === 1 ? 'módulo' : 'módulos'}</p>
         </div>
-        {canCreate && <button className={primaryButton} onClick={() => openForm()} disabled={isSupervisor && !schoolId}><Icon name="plus" size={16} />{isSupervisor ? 'Nuevo módulo de la escuela' : 'Nuevo módulo'}</button>}
+        {canCreate && <button className={primaryButton} onClick={() => openForm()} disabled={isSupervisor && !schoolId}><Icon name="plus" size={16} />{schoolId ? 'Nuevo módulo de la escuela' : 'Nuevo módulo EASA'}</button>}
       </div>
       <ErrorOrLoading loading={loading} error={error} />
       {!formOpen && <NoticeBar notice={notice} />}
@@ -300,13 +308,16 @@ export function ModulesPage({ user, onOpenModule }) {
 const EMPTY_AIRCRAFT = { type: '', registration: '', msn: '', engines: '', seats: '', category: 'Narrow Body' }
 
 export function AircraftPage({ user }) {
-  const { rows: aircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category')
+  const { filterId } = useSchool()
+  const { rows: allAircraft, loading, error, reload } = useRows('aircraft', 'id,type,registration,msn,engines,seats,category,school_id')
+  // Cada escuela tiene sus aviones; el admin ve los de la escuela elegida
+  const aircraft = filterId ? allAircraft.filter((item) => item.school_id === filterId) : allAircraft
   const [editing, setEditing] = useState(null)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState(EMPTY_AIRCRAFT)
   const [notice, notify] = useNotice()
   const [busy, setBusy] = useState(false)
-  const canEdit = user.role === ROLES.ADMIN || user.role === ROLES.TEACHER
+  const canEdit = isManager(user.role)
   const closeForm = useCallback(() => setFormOpen(false), [])
 
   function openForm(item = null) {
@@ -326,6 +337,7 @@ export function AircraftPage({ user }) {
       seats: form.seats === '' || form.seats == null ? null : Number(form.seats),
       category: form.category || null,
     }
+    if (!editing && filterId) payload.school_id = filterId
     setBusy(true)
     try {
       const result = editing
@@ -379,8 +391,12 @@ export function AircraftPage({ user }) {
 const percent = (part, total) => (total ? Math.round((part / total) * 100) : 0)
 
 export function ReportsPage() {
-  const { rows: students, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,group_name,promo')
-  const { rows: practices, loading: practicesLoading } = useRows('practices', 'id,module_id,title')
+  const { filterId } = useSchool()
+  const { rows: allStudents, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,group_name,promo,school_id')
+  const { rows: allPractices, loading: practicesLoading } = useRows('practices', 'id,module_id,title,school_id')
+  // Admin con una escuela elegida: solo sus alumnos y prácticas
+  const students = useMemo(() => (filterId ? allStudents.filter((item) => item.school_id === filterId) : allStudents), [allStudents, filterId])
+  const practices = useMemo(() => (filterId ? allPractices.filter((item) => item.school_id === filterId) : allPractices), [allPractices, filterId])
   const { rows: memberships, loading: membershipsLoading } = useRows('student_modules', 'student_id,module_id')
   const { rows: records, loading: recordsLoading, error: recordsError } = useRows('practice_records', 'student_id,practice_id,attendance,evaluation')
   const [promo, setPromo] = useState('')

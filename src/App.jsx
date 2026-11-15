@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Component, Fragment, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase.js'
 import Login from './components/Login.jsx'
 import Sidebar from './components/Sidebar.jsx'
@@ -10,6 +10,9 @@ import TodayClasses from './components/TodayClasses.jsx'
 import PendingApproval from './components/PendingApproval.jsx'
 import PendingRequests from './components/PendingRequests.jsx'
 import GettingStarted from './components/GettingStarted.jsx'
+import AdminOverview, { SchoolPicker } from './components/AdminOverview.jsx'
+import { SchoolProvider } from './contexts/SchoolContext.jsx'
+import { fetchSchoolModuleIds, useSchool } from './contexts/useSchool.js'
 
 const SchoolManagement = lazy(() => import('./components/SchoolManagement.jsx'))
 
@@ -188,7 +191,7 @@ function App() {
       case 'structure': return <AcademicStructure />
       case 'timetable': return <Timetable user={user} />
       case 'grades': return <Grades user={user} />
-      default: return <DashboardHome user={user} setActivePage={setActivePage} onOpenModule={openModule} />
+      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} />
     }
   }
 
@@ -216,6 +219,7 @@ function App() {
 
   return (
     <ThemeProvider user={user}>
+      <SchoolProvider user={user}>
       <div className="min-h-screen bg-canvas text-ink">
         <Sidebar
           activePage={currentPage}
@@ -252,14 +256,31 @@ function App() {
           <div key={currentPage} className="fade-in mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-10">
             <PageErrorBoundary resetKey={currentPage}>
               <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando…</div>}>
-                {renderPage()}
+                <SchoolScoped page={currentPage}>{renderPage()}</SchoolScoped>
               </Suspense>
             </PageErrorBoundary>
           </div>
         </main>
       </div>
+      </SchoolProvider>
     </ThemeProvider>
   )
+}
+
+// Páginas que no son de una escuela concreta. En todas las demás, cada escuela tiene sus propios
+// datos y el admin tiene que elegir una: nunca se mezclan escuelas.
+const GLOBAL_PAGES = new Set(['dashboard', 'schools', 'settings', 'mydata'])
+
+// Al cambiar el admin de escuela, la página se vuelve a montar y carga los datos de la nueva.
+function SchoolScoped({ page, children }) {
+  const { isAdmin, schoolId } = useSchool()
+  if (isAdmin && !schoolId && !GLOBAL_PAGES.has(page)) return <SchoolPicker />
+  return <Fragment key={schoolId || 'all'}>{children}</Fragment>
+}
+
+function Home(props) {
+  const { isAdmin, filterId } = useSchool()
+  return isAdmin && !filterId ? <AdminOverview {...props} /> : <DashboardHome {...props} />
 }
 
 function FullScreenMessage({ children }) {
@@ -306,6 +327,7 @@ function greeting() {
 }
 
 function DashboardHome({ user, setActivePage, onOpenModule }) {
+  const { isAdmin, filterId, school, setSchoolId } = useSchool()
   const [stats, setStats] = useState(null)
   const [upcoming, setUpcoming] = useState(null)
 
@@ -323,6 +345,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
           if (error) throw error
           moduleIds = (data || []).map((entry) => entry.module_id)
           studentCount = moduleIds.length ? (await fetchEnrolledStudentIds(moduleIds)).size : 0
+        } else if (filterId) {
+          moduleIds = await fetchSchoolModuleIds(filterId)
         } else if (user.role === ROLES.STUDENT) {
           const { data: link, error: linkError } = await supabase.from('student_profiles').select('student_id').eq('profile_id', user.id).maybeSingle()
           if (linkError) throw linkError
@@ -336,6 +360,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
 
         const countTable = (table, moduleScoped) => {
           let query = supabase.from(table).select('id', { count: 'exact', head: true })
+          if (filterId && table !== 'modules') return query.eq('school_id', filterId)
           if (moduleScoped) {
             if (!moduleIds.length) return Promise.resolve({ count: 0, error: null })
             query = query.in('module_id', moduleIds)
@@ -352,12 +377,21 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
             .order('date')
             .order('start_time')
             .limit(4)
-          if (!isManager(user.role)) query = query.in('module_id', moduleIds)
+          if (filterId) query = query.eq('school_id', filterId)
+          else if (!isManager(user.role)) query = query.in('module_id', moduleIds)
           return query
         }
 
         const [counts, upcomingResult] = await Promise.all([
-          isManager(user.role)
+          filterId
+            ? Promise.all([
+              countTable('students', false),
+              countTable('practices', false),
+              countTable('tlbs', false),
+              countTable('videos', false),
+              Promise.resolve({ count: moduleIds.length, error: null }),
+            ])
+            : isManager(user.role)
             ? Promise.all(STAT_TABLES.map((table) => countTable(table, false)))
             : Promise.all([
               Promise.resolve({ count: studentCount, error: null }),
@@ -392,7 +426,7 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
     fetchStats()
     const unsubscribe = subscribeToTables(['students', 'practices', 'tlbs', 'videos', 'modules', 'student_modules', 'teacher_modules'], scheduleFetch, `dashboard-stats-${user.id}`)
     return () => { cancelled = true; clearTimeout(timer); unsubscribe() }
-  }, [user.id, user.role])
+  }, [user.id, user.role, filterId])
 
   const isStudent = user.role === ROLES.STUDENT
   const cards = isStudent
@@ -408,7 +442,8 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
     <div className="space-y-8">
       <section>
         <p className="text-sm text-muted">{today}</p>
-        <h2 className="mt-1 text-2xl font-semibold text-ink md:text-[28px]">{greeting()}, {firstName}</h2>
+        <h2 className="mt-1 text-2xl font-semibold text-ink md:text-[28px]">{isAdmin && school ? school.name : `${greeting()}, ${firstName}`}</h2>
+        {isAdmin && school && <button type="button" className="link mt-2" onClick={() => setSchoolId('')}>← Volver a todas las escuelas</button>}
       </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -433,9 +468,9 @@ function DashboardHome({ user, setActivePage, onOpenModule }) {
         ))}
       </section>
 
-      {!isStudent && <PendingRequests user={user} />}
+      {!isStudent && <PendingRequests user={user} schoolId={filterId} />}
 
-      {user.role === ROLES.SUPERVISOR && <GettingStarted user={user} setActivePage={setActivePage} />}
+      {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted user={user} schoolId={filterId} setActivePage={setActivePage} />}
 
       {user.role !== ROLES.ADMIN && <TodayClasses user={user} onOpen={() => setActivePage('timetable')} />}
 
