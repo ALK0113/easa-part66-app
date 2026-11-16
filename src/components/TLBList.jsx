@@ -23,7 +23,8 @@ const EMAILJS_READY = Boolean(EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.templat
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
-export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, initialCreate = null, onClearInitialCreate }) {
+// Con moduleId se muestra dentro de un módulo: solo sus TLB y sin filtro de módulo
+export default function TLBList({ user, moduleId = null, initialTlbId = null, onClearInitialTlb, initialCreate = null, onClearInitialCreate }) {
   const [tlbs, setTlbs] = useState([])
   const [defects, setDefects] = useState([])
   const [practices, setPractices] = useState([])
@@ -201,11 +202,12 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
   const getModule = (id) => modules.find((module) => module.id === id)
   const getDefects = (id) => defects.filter((defect) => defect.tlb_id === id).sort((a, b) => a.defect_number - b.defect_number)
   const availablePractices = practices.filter((practice) => practice.module_id === (editForm.module_id || newTLB.module_id))
-  const availableModules = [...new Set(tlbs.map((tlb) => tlb.module_id))]
-  const availablePracticesFilter = [...new Set(tlbs.map((tlb) => tlb.practice_id))]
-  const availableDates = [...new Set(tlbs.map((tlb) => tlb.date))].sort().reverse()
+  const scopedTLBs = moduleId ? tlbs.filter((tlb) => tlb.module_id === moduleId) : tlbs
+  const availableModules = [...new Set(scopedTLBs.map((tlb) => tlb.module_id))]
+  const availablePracticesFilter = [...new Set(scopedTLBs.map((tlb) => tlb.practice_id))]
+  const availableDates = [...new Set(scopedTLBs.map((tlb) => tlb.date))].sort().reverse()
 
-  const filteredTLBs = tlbs.filter((tlb) => {
+  const filteredTLBs = scopedTLBs.filter((tlb) => {
     const practice = getPractice(tlb.practice_id)
     const query = filters.search.trim().toLowerCase()
     const matchesSearch = !query || [practice?.title, tlb.practice_id, tlb.aircraft, tlb.registration, tlb.teacher_name]
@@ -227,11 +229,11 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
 
   // Formulario de TLB nuevo con lo que ya se sabe: módulo, práctica (si solo hay una) y avión (si la escuela tiene uno)
   function openCreate(prefill = {}) {
-    const moduleId = prefill.module_id || (editableModules.length === 1 ? editableModules[0] : editableModules[0] || '')
-    const modulePractices = practices.filter((practice) => practice.module_id === moduleId)
+    const targetModuleId = prefill.module_id || moduleId || editableModules[0] || ''
+    const modulePractices = practices.filter((practice) => practice.module_id === targetModuleId)
     setMessage('')
     setNewTLB({
-      module_id: moduleId,
+      module_id: targetModuleId,
       practice_id: prefill.practice_id || (modulePractices.length === 1 ? modulePractices[0].id : ''),
       aircraft_id: aircraft.length === 1 ? String(aircraft[0].id) : '',
       date: new Date().toISOString().slice(0, 10),
@@ -251,9 +253,9 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
   }, [loading, initialCreate])
 
   // Al cambiar de módulo, si solo tiene una práctica se elige sola
-  const withModule = (form, moduleId) => {
-    const modulePractices = practices.filter((practice) => practice.module_id === moduleId)
-    return { ...form, module_id: moduleId, practice_id: modulePractices.length === 1 ? modulePractices[0].id : '' }
+  const withModule = (form, nextModuleId) => {
+    const modulePractices = practices.filter((practice) => practice.module_id === nextModuleId)
+    return { ...form, module_id: nextModuleId, practice_id: modulePractices.length === 1 ? modulePractices[0].id : '' }
   }
 
   const toggleTeacher = (teacherId) => {
@@ -825,13 +827,18 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
   const hasFilters = Boolean(filters.module || filters.practice || filters.date || filters.search)
 
   return <div className="space-y-5">
-    <div className="page-intro">
-      <div><h2>{isStudent ? 'Mi Task Log Book' : 'Task Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
-      {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
-    </div>
-    <section className="grid gap-2 md:grid-cols-[2fr_1fr_1fr_1fr]">
+    {moduleId
+      ? <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted">{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p>
+        {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
+      </div>
+      : <div className="page-intro">
+        <div><h2>{isStudent ? 'Mi Task Log Book' : 'Task Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
+        {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
+      </div>}
+    <section className={`grid gap-2 ${moduleId ? 'md:grid-cols-[2fr_1fr_1fr]' : 'md:grid-cols-[2fr_1fr_1fr_1fr]'}`}>
       <div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar matrícula, práctica o profesor…" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} /></div>
-      <select className={inputClass} value={filters.module} onChange={(event) => setFilters({ ...filters, module: event.target.value })}><option value="">Todos los módulos</option>{availableModules.map((id) => <option key={id} value={id}>{id} · {getModule(id)?.name || ''}</option>)}</select>
+      {!moduleId && <select className={inputClass} value={filters.module} onChange={(event) => setFilters({ ...filters, module: event.target.value })}><option value="">Todos los módulos</option>{availableModules.map((id) => <option key={id} value={id}>{id} · {getModule(id)?.name || ''}</option>)}</select>}
       <select className={inputClass} value={filters.practice} onChange={(event) => setFilters({ ...filters, practice: event.target.value })}><option value="">Todas las prácticas</option>{availablePracticesFilter.map((id) => <option key={id} value={id}>{id} · {getPractice(id)?.title || ''}</option>)}</select>
       <select className={inputClass} value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })}><option value="">Todas las fechas</option>{availableDates.map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select>
     </section>
@@ -849,7 +856,7 @@ export default function TLBList({ user, initialTlbId = null, onClearInitialTlb, 
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-              <span className="badge py-0">{tlb.module_id}</span>
+              {!moduleId && <span className="badge py-0">{tlb.module_id}</span>}
               <span>{tlb.aircraft} · {tlb.registration}</span>
               <span>· {formatDate(tlb.date)}</span>
               <span>· {tlbDefects.length} {tlbDefects.length === 1 ? 'defecto' : 'defectos'}</span>

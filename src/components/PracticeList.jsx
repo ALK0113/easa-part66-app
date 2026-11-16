@@ -7,6 +7,8 @@ import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import Icon from './Icon.jsx'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 import { isManager, teachesLikeProfessor } from '../lib/roles.js'
+import { HoursStatus, SessionsCard, SessionsEditor } from './PracticeSessions.jsx'
+import { SESSION_FIELDS, saveSessions, sessionErrors, useFreeModuleSessions, useModuleAssignments } from '../lib/practiceSessions.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -22,7 +24,8 @@ function parseObjectives(value) {
 // Con una escuela elegida por el admin, solo sus prácticas y alumnos
 const bySchool = (query, filterId) => (filterId ? query.eq('school_id', filterId) : query)
 
-export default function PracticeList({ user, initialModuleId = null, initialPracticeId = null, onClearInitial, onCreateTLB }) {
+// Con moduleId se muestra dentro de un módulo: solo sus prácticas y sin filtro de módulo
+export default function PracticeList({ user, moduleId = null, initialModuleId = null, initialPracticeId = null, onClearInitial, onCreateTLB }) {
   const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
@@ -47,6 +50,9 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
     objectives: []    // 🆕
   })
   const [busy, setBusy] = useState(false)
+  // Sesiones (clases del horario enlazadas a cada práctica) y borrador del formulario
+  const [sessions, setSessions] = useState([])
+  const [sessionDraft, setSessionDraft] = useState([])
 
   // 🆕 Estado para objetivos en el formulario (array de strings)
   const [objectivesInput, setObjectivesInput] = useState([''])
@@ -54,13 +60,14 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [practiceResult, moduleResult, studentResult, membershipResult, recordResult, teacherResult] = await Promise.all([
+      const [practiceResult, moduleResult, studentResult, membershipResult, recordResult, teacherResult, sessionResult] = await Promise.all([
         bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId),
         supabase.from('modules').select('id,name'),
         bySchool(supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }), filterId),
         supabase.from('student_modules').select('student_id,module_id'),
         supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation'),
         teachesLikeProfessor(user?.role) ? supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id) : Promise.resolve({ data: [], error: null }),
+        supabase.from('class_sessions').select(SESSION_FIELDS).not('practice_id', 'is', null).order('date').order('start_time'),
       ])
       if (cancelled) return
       const requiredError = practiceResult.error || moduleResult.error || studentResult.error
@@ -74,13 +81,14 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
         setMemberships(membershipResult.error ? [] : membershipResult.data || [])
         setRecords(recordResult.error ? [] : recordResult.data || [])
         setTeacherModules((teacherResult.error ? [] : teacherResult.data || []).map((entry) => entry.module_id))
+        setSessions(sessionResult.error ? [] : sessionResult.data || [])
         if (setupErrors.length) setSetupNotice('Faltan tablas de asignaciones/asistencia. Las prácticas se muestran, pero matrículas y evaluación requieren aplicar la migración de Supabase.')
         else if (optionalError) setError(optionalError.message)
       }
       setLoading(false)
     }
     load()
-    const unsubscribe = subscribeToTables(['practices', 'modules', 'students', 'student_modules', 'practice_records', 'teacher_modules'], load, 'practice-list')
+    const unsubscribe = subscribeToTables(['practices', 'modules', 'students', 'student_modules', 'practice_records', 'teacher_modules', 'class_sessions'], load, 'practice-list')
     return () => { cancelled = true; unsubscribe() }
   }, [user?.id, user?.role, filterId])
 
@@ -89,13 +97,17 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
   const filtered = visiblePractices.filter((practice) => {
     const query = search.trim().toLowerCase()
     const matchesSearch = !query || [practice.id, practice.title, practice.detail, practice.ata, practice.description].some((value) => String(value || '').toLowerCase().includes(query))
-    return matchesSearch && (!moduleFilter || practice.module_id === moduleFilter) && (!ataFilter || practice.ata === ataFilter)
+    const matchesModule = moduleId ? practice.module_id === moduleId : !moduleFilter || practice.module_id === moduleFilter
+    return matchesSearch && matchesModule && (!ataFilter || practice.ata === ataFilter)
   })
-  const atas = [...new Set(visiblePractices.map((practice) => practice.ata).filter(Boolean))].sort()
+  const atas = [...new Set(visiblePractices.filter((practice) => !moduleId || practice.module_id === moduleId).map((practice) => practice.ata).filter(Boolean))].sort()
   const canCreate = isManager(user?.role) || visibleModules.length > 0
+  const formAssignments = useModuleAssignments(formOpen ? form.module_id : null, user)
+  const freeSessions = useFreeModuleSessions(formOpen ? formAssignments : null)
+  const sessionsOf = (practiceId) => sessions.filter((session) => session.practice_id === practiceId)
   const canEdit = (practice) => isManager(user?.role) || teacherModules.includes(practice.module_id) // 🆕 helper
 
-  function openForm(practice = null, moduleId = null) {
+  function openForm(practice = null, targetModuleId = null) {
     setEditing(practice)
     const objectives = practice ? parseObjectives(practice.objectives) : ['']
     setObjectivesInput(objectives.length ? objectives : [''])
@@ -106,7 +118,8 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
           description: practice.description || '',
           objectives: objectives
         } 
-      : { id: '', module_id: moduleId || moduleFilter || visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [] })
+      : { id: '', module_id: targetModuleId || moduleId || moduleFilter || visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [] })
+    setSessionDraft(practice ? sessionsOf(practice.id) : [])
     setFormOpen(true)
     setMessage('')
   }
@@ -142,6 +155,8 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
 
   async function savePractice(event) {
     event.preventDefault()
+    const invalidSession = sessionErrors(sessionDraft)
+    if (invalidSession) { setMessage(invalidSession); return }
     setBusy(true)
     //  Filtrar objetivos vacíos
     const cleanObjectives = objectivesInput.map(o => o.trim()).filter(o => o.length > 0)
@@ -155,13 +170,25 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
       description: form.description.trim(), // 
       objectives: cleanObjectives           //  se guarda como array (Supabase JSONB)
     }
+    // Con sesiones, la fecha y la hora de la práctica son las de la primera sesión
+    const firstSession = [...sessionDraft].sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`))[0]
+    if (firstSession) { payload.date = firstSession.date; payload.start_time = firstSession.start_time }
     const result = editing
       ? await supabase.from('practices').update(payload).eq('id', editing.id)
       : await supabase.from('practices').insert(filterId ? { ...payload, school_id: filterId } : payload)
+    if (result.error) { setBusy(false); setMessage(result.error.message); return }
+    try {
+      await saveSessions(payload.id, editing ? sessionsOf(editing.id) : [], sessionDraft)
+    } catch (sessionError) {
+      setBusy(false)
+      setMessage(`Práctica guardada, pero las sesiones no: ${getSupabaseErrorMessage(sessionError)}`)
+      return
+    }
     setBusy(false)
-    if (result.error) { setMessage(result.error.message); return }
     setFormOpen(false)
     setMessage('Práctica guardada.')
+    const { data: sessionRows } = await supabase.from('class_sessions').select(SESSION_FIELDS).not('practice_id', 'is', null).order('date').order('start_time')
+    setSessions(sessionRows || [])
     const { data } = await bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId)
     setPractices(data || [])
   }
@@ -288,6 +315,8 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
         </section>
       )}
 
+      <SessionsCard sessions={sessionsOf(selectedPractice.id)} requiredHours={selectedPractice.hours} />
+
       <RecordSummary items={[['Presentes', summary.P, 'bg-success'], ['Tarde', summary.L, 'bg-warn'], ['Faltas', summary.A, 'bg-danger'], ['Aptos', `${summary.apto}/${enrolled.length}`, 'bg-accent']]} />
 
       <section className="card overflow-hidden">
@@ -323,9 +352,11 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
   }
 
   return <div className="space-y-5">
-    <div className="page-intro"><div><h2>Prácticas</h2><p>{filtered.length} {filtered.length === 1 ? 'práctica' : 'prácticas'} de tus módulos</p></div>{canCreate && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nueva práctica</button>}</div>
+    {moduleId
+      ? <div className="flex items-center justify-between gap-3"><p className="text-sm text-muted">{filtered.length} {filtered.length === 1 ? 'práctica' : 'prácticas'}</p>{canCreate && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nueva práctica</button>}</div>
+      : <div className="page-intro"><div><h2>Prácticas</h2><p>{filtered.length} {filtered.length === 1 ? 'práctica' : 'prácticas'} de tus módulos</p></div>{canCreate && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nueva práctica</button>}</div>}
     <section>
-      <div className="grid gap-2 sm:grid-cols-[2fr_1fr_1fr]"><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar práctica…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className={inputClass} value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">Todos los módulos</option>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select><select className={inputClass} value={ataFilter} onChange={(event) => setAtaFilter(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
+      <div className={`grid gap-2 ${moduleId ? 'sm:grid-cols-[2fr_1fr]' : 'sm:grid-cols-[2fr_1fr_1fr]'}`}><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar práctica…" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{!moduleId && <select className={inputClass} value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">Todos los módulos</option>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select>}<select className={inputClass} value={ataFilter} onChange={(event) => setAtaFilter(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
       {(setupNotice || message) && <p role="status" className="notice mt-3">{setupNotice || message}</p>}
     </section>
     <div className="space-y-2">{filtered.map((practice) => {
@@ -339,10 +370,10 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-              <span className="badge py-0">{practice.module_id}</span>
+              {!moduleId && <span className="badge py-0">{practice.module_id}</span>}
               <span>{practice.ata}</span>
               {practice.start_time && <span>· {String(practice.start_time).slice(0, 5)}</span>}
-              <span>· {practice.hours} h</span>
+              <span>· <HoursStatus compact sessions={sessionsOf(practice.id)} requiredHours={practice.hours} /></span>
               <span>· {enrolledCount} alumnos</span>
             </span>
           </span>
@@ -355,7 +386,7 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
         <Icon name="next" size={16} className="hidden text-faint group-hover:text-accent sm:block" />
       </article>
     })}</div>
-    {filtered.length === 0 && <p className="card empty">{visiblePractices.length === 0 ? 'No hay prácticas asignadas. Administración debe cargar los datos iniciales y asignar el módulo al profesor.' : 'No hay prácticas que coincidan con los filtros.'}</p>}
+    {filtered.length === 0 && <p className="card empty">{moduleId && !search && !ataFilter ? 'Este módulo aún no tiene prácticas.' : visiblePractices.length === 0 ? 'No hay prácticas asignadas. Administración debe cargar los datos iniciales y asignar el módulo al profesor.' : 'No hay prácticas que coincidan con los filtros.'}</p>}
 
     {formOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar práctica' : 'Nueva práctica'} className="fade-in max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl"><h2 className="mb-5 text-lg font-semibold text-ink">{editing ? 'Editar práctica' : 'Nueva práctica'}</h2><form className="grid gap-4 sm:grid-cols-2" onSubmit={savePractice}>
       <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
@@ -384,9 +415,12 @@ export default function PracticeList({ user, initialModuleId = null, initialPrac
         <button type="button" className="btn-ghost mt-2 min-h-[34px] px-2 text-xs text-accent" onClick={addObjective}><Icon name="plus" size={14} />Añadir objetivo</button>
       </div>
 
-      <label className="field">Fecha<input className={inputClass} type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label>
-      <label className="field">Hora<input className={inputClass} type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} required /></label>
-      <label className="field">Duración (h)<input className={inputClass} type="number" min="1" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} required /></label>
+      <label className="field">Duración total (h)<input className={inputClass} type="number" min="1" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} required /></label>
+      {sessionDraft.length === 0 && <>
+        <label className="field">Fecha<input className={inputClass} type="date" value={form.date || ''} onChange={(event) => setForm({ ...form, date: event.target.value })} required /></label>
+        <label className="field">Hora<input className={inputClass} type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} required /></label>
+      </>}
+      <SessionsEditor sessions={sessionDraft} onChange={setSessionDraft} assignments={formAssignments} freeSessions={freeSessions} requiredHours={form.hours} />
       {message && <p role="alert" className="notice-error sm:col-span-2">{message}</p>}
       <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="btn-secondary" onClick={() => setFormOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
     </form></section></div>}

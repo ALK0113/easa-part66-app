@@ -9,6 +9,7 @@ import { WEEKDAYS, addDays, fetchSessions, parseISODate, startOfWeek, time, toIS
 import { AttendanceControl, EvaluationControl } from './RecordControls.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
+import ImportSchedule from './ImportSchedule.jsx'
 
 // Horario semanal. Profesor: sus clases y pasar lista. Alumno: sus clases.
 // Administración: por grupo o por profesor, y la plantilla semanal de cada grupo.
@@ -35,9 +36,12 @@ export default function Timetable({ user }) {
         <div className="tabs" role="tablist">
           <button type="button" role="tab" className="tab" aria-selected={tab === 'week'} onClick={() => setTab('week')}>Semana</button>
           <button type="button" role="tab" className="tab" aria-selected={tab === 'template'} onClick={() => setTab('template')}>Plantilla semanal</button>
+          {isAdmin && <button type="button" role="tab" className="tab" aria-selected={tab === 'import'} onClick={() => setTab('import')}>Importar</button>}
         </div>
       )}
-      {tab === 'week' ? <WeekView user={user} /> : <TemplateEditor user={user} />}
+      {tab === 'week' && <WeekView user={user} />}
+      {tab === 'template' && <TemplateEditor user={user} />}
+      {tab === 'import' && isAdmin && <ImportSchedule user={user} />}
     </div>
   )
 }
@@ -92,6 +96,7 @@ function WeekView({ user }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
   const [filter, setFilter] = useState({ kind: 'group', id: '' })
   const [sessions, setSessions] = useState(null)
+  const [holidays, setHolidays] = useState([])
   const [error, setError] = useState('')
   const [open, setOpen] = useState(null)
   const [creating, setCreating] = useState(false)
@@ -120,11 +125,24 @@ function WeekView({ user }) {
     return () => { active = false; unsubscribe() }
   }, [user, from, to, isAdmin, effectiveFilter?.kind, effectiveFilter?.id, version])
 
+  // Festivos de la semana (se ven en su día)
+  const { filterId } = useSchool()
+  useEffect(() => {
+    let active = true
+    let query = supabase.from('school_holidays').select('starts_on,ends_on,name,academic_years!inner(school_id,is_current)').lte('starts_on', to).gte('ends_on', from)
+    if (filterId) query = query.eq('academic_years.school_id', filterId)
+    query.then(({ data }) => { if (active) setHolidays(data || []) })
+    return () => { active = false }
+  }, [from, to, filterId])
+
   const days = useMemo(() => {
-    const list = WEEKDAYS.map((label, index) => ({ label, date: toISODate(addDays(weekStart, index)), sessions: [] }))
+    const list = WEEKDAYS.map((label, index) => {
+      const date = toISODate(addDays(weekStart, index))
+      return { label, date, sessions: [], holiday: holidays.find((item) => item.starts_on <= date && item.ends_on >= date)?.name || null }
+    })
     ;(sessions || []).forEach((session) => list.find((day) => day.date === session.date)?.sessions.push(session))
     return list.filter((day, index) => index < 5 || day.sessions.length)
-  }, [sessions, weekStart])
+  }, [sessions, weekStart, holidays])
 
   const today = toISODate(new Date())
   const weekTitle = `${weekStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
@@ -164,7 +182,8 @@ function WeekView({ user }) {
                 <span className={`text-sm font-semibold ${day.date === today ? 'text-accent-strong' : 'text-ink'}`}>{day.label}</span>
                 <span className="text-xs text-muted">{parseISODate(day.date).getDate()}</span>
               </h3>
-              {day.sessions.length === 0 ? <p className="px-1 py-2 text-xs text-faint">Sin clases</p> : (
+              {day.holiday && <p className="mb-1.5 rounded-lg bg-warn-soft px-2 py-1 text-xs font-medium text-warn">Festivo · {day.holiday}</p>}
+              {day.sessions.length === 0 ? <p className="px-1 py-2 text-xs text-faint">{day.holiday ? 'No lectivo' : 'Sin clases'}</p> : (
                 <ul className="space-y-1.5">
                   {day.sessions.map((session) => {
                     const assignment = session.teaching_assignments
@@ -307,7 +326,7 @@ function SessionDetail({ session, user, onClose, onChanged }) {
               )}
             </div>
             {roster === null && <p className="text-sm text-muted">Cargando lista…</p>}
-            {roster?.length === 0 && <p className="text-sm text-muted">No hay alumnos matriculados en este módulo con este grupo.</p>}
+            {roster?.length === 0 && <p className="text-sm text-muted">No hay alumnos en esta clase. Se añaden en Escuela → Alumnos → Por clase.</p>}
             {roster?.length > 0 && (
               <ul className="divide-y divide-line rounded-xl border border-line">
                 {roster.map((row) => (

@@ -17,6 +17,9 @@ export function SchoolProvider({ user, children }) {
   const [schools, setSchools] = useState([])
   const [ownSchoolId, setOwnSchoolId] = useState('')
   const [selected, setSelected] = useState(() => (isAdmin ? readStored() : ''))
+  // Subir este número vuelve a cargar las escuelas (p. ej. tras renombrar una)
+  const [version, setVersion] = useState(0)
+  const reloadSchools = useCallback(() => setVersion((v) => v + 1), [])
 
   useEffect(() => {
     let active = true
@@ -34,7 +37,7 @@ export function SchoolProvider({ user, children }) {
     load()
     const unsubscribe = isAdmin ? subscribeToTables(['schools'], load, `school-context-${user.id}`) : () => {}
     return () => { active = false; unsubscribe() }
-  }, [isAdmin, user.id])
+  }, [isAdmin, user.id, version])
 
   const setSchoolId = useCallback((id) => {
     setSelected(id || '')
@@ -62,7 +65,8 @@ export function SchoolProvider({ user, children }) {
     filterId: adminChoice || null,
     school,
     setSchoolId,
-  }), [isAdmin, schools, schoolId, adminChoice, school, setSchoolId])
+    reloadSchools,
+  }), [isAdmin, schools, schoolId, adminChoice, school, setSchoolId, reloadSchools])
 
   return <SchoolContext.Provider value={value}>{children}</SchoolContext.Provider>
 }
