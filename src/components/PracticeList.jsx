@@ -9,6 +9,8 @@ import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { HoursStatus, SessionsCard, SessionsEditor } from './PracticeSessions.jsx'
 import { SESSION_FIELDS, saveSessions, sessionErrors, useFreeModuleSessions, useModuleAssignments } from '../lib/practiceSessions.js'
+import { compareCodes, outcomeLabel, useModuleStructure } from '../lib/curriculum.js'
+import Assessments from './Assessments.jsx'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -40,6 +42,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
   const [selectedPractice, setSelectedPractice] = useState(null)
   const [search, setSearch] = useState('')
   const [moduleFilter, setModuleFilter] = useState('')
+  const [subFilter, setSubFilter] = useState('')
   const [ataFilter, setAtaFilter] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -61,7 +64,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     let cancelled = false
     async function load() {
       const [practiceResult, moduleResult, studentResult, membershipResult, recordResult, teacherResult, sessionResult] = await Promise.all([
-        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId),
+        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives,school_id,submodule_id,learning_outcome_id').order('date', { ascending: true }), filterId),
         supabase.from('modules').select('id,name'),
         bySchool(supabase.from('students').select('id,student_number,name,group_name,promo').order('student_number', { ascending: true }), filterId),
         supabase.from('student_modules').select('student_id,module_id'),
@@ -98,11 +101,14 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     const query = search.trim().toLowerCase()
     const matchesSearch = !query || [practice.id, practice.title, practice.detail, practice.ata, practice.description].some((value) => String(value || '').toLowerCase().includes(query))
     const matchesModule = moduleId ? practice.module_id === moduleId : !moduleFilter || practice.module_id === moduleFilter
-    return matchesSearch && matchesModule && (!ataFilter || practice.ata === ataFilter)
+    const matchesSub = !subFilter || (subFilter === 'sin' ? !practice.submodule_id : practice.submodule_id === subFilter)
+    return matchesSearch && matchesModule && matchesSub && (!ataFilter || practice.ata === ataFilter)
   })
   const atas = [...new Set(visiblePractices.filter((practice) => !moduleId || practice.module_id === moduleId).map((practice) => practice.ata).filter(Boolean))].sort()
   const canCreate = isManager(user?.role) || visibleModules.length > 0
   const formAssignments = useModuleAssignments(formOpen ? form.module_id : null, user)
+  // Submódulos y RA del módulo con el que se trabaja (el del formulario, la práctica abierta o el fijo)
+  const structure = useModuleStructure(formOpen ? form.module_id : selectedPractice?.module_id || moduleId)
   const freeSessions = useFreeModuleSessions(formOpen ? formAssignments : null)
   const sessionsOf = (practiceId) => sessions.filter((session) => session.practice_id === practiceId)
   const canEdit = (practice) => isManager(user?.role) || teacherModules.includes(practice.module_id) // 🆕 helper
@@ -116,9 +122,11 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
           ...practice, 
           date: practice.date?.slice(0, 10) || '',
           description: practice.description || '',
-          objectives: objectives
+          objectives: objectives,
+          submodule_id: practice.submodule_id || '',
+          learning_outcome_id: practice.learning_outcome_id || '',
         } 
-      : { id: '', module_id: targetModuleId || moduleId || moduleFilter || visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [] })
+      : { id: '', module_id: targetModuleId || moduleId || moduleFilter || visibleModules[0]?.id || '', ata: '', title: '', detail: '', date: '', start_time: '09:00', hours: 1, description: '', objectives: [], submodule_id: subFilter && subFilter !== 'sin' ? subFilter : '', learning_outcome_id: '' })
     setSessionDraft(practice ? sessionsOf(practice.id) : [])
     setFormOpen(true)
     setMessage('')
@@ -168,8 +176,11 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
       detail: form.detail.trim(), 
       hours: Number(form.hours),
       description: form.description.trim(), // 
-      objectives: cleanObjectives           //  se guarda como array (Supabase JSONB)
+      objectives: cleanObjectives,          //  se guarda como array (Supabase JSONB)
+      submodule_id: form.submodule_id || null,
+      learning_outcome_id: form.learning_outcome_id || null,
     }
+    delete payload.school_id
     // Con sesiones, la fecha y la hora de la práctica son las de la primera sesión
     const firstSession = [...sessionDraft].sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`))[0]
     if (firstSession) { payload.date = firstSession.date; payload.start_time = firstSession.start_time }
@@ -189,7 +200,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     setMessage('Práctica guardada.')
     const { data: sessionRows } = await supabase.from('class_sessions').select(SESSION_FIELDS).not('practice_id', 'is', null).order('date').order('start_time')
     setSessions(sessionRows || [])
-    const { data } = await bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives').order('date', { ascending: true }), filterId)
+    const { data } = await bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours,description,objectives,school_id,submodule_id,learning_outcome_id').order('date', { ascending: true }), filterId)
     setPractices(data || [])
   }
 
@@ -348,6 +359,8 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
         </ul>
         {enrolled.length === 0 && <p className="empty">No hay alumnos matriculados en este módulo.</p>}
       </section>
+
+      <Assessments user={user} schoolId={filterId || selectedPractice.school_id} moduleId={selectedPractice.module_id} practiceId={selectedPractice.id} outcomes={structure.outcomes} canEdit={canEdit(selectedPractice)} />
     </div>
   }
 
@@ -357,6 +370,14 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
       : <div className="page-intro"><div><h2>Prácticas</h2><p>{filtered.length} {filtered.length === 1 ? 'práctica' : 'prácticas'} de tus módulos</p></div>{canCreate && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nueva práctica</button>}</div>}
     <section>
       <div className={`grid gap-2 ${moduleId ? 'sm:grid-cols-[2fr_1fr]' : 'sm:grid-cols-[2fr_1fr_1fr]'}`}><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar práctica…" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{!moduleId && <select className={inputClass} value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">Todos los módulos</option>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select>}<select className={inputClass} value={ataFilter} onChange={(event) => setAtaFilter(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
+      {moduleId && structure.submodules.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Submódulo">
+          {[['', 'Todos'], ...[...structure.submodules].sort((a, b) => compareCodes(a.code, b.code)).map((sub) => [sub.id, sub.code]), ['sin', 'Sin submódulo']].map(([id, label]) => (
+            <button key={id || 'all'} type="button" role="radio" aria-checked={subFilter === id} onClick={() => setSubFilter(id)}
+              className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${subFilter === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>{label}</button>
+          ))}
+        </div>
+      )}
       {(setupNotice || message) && <p role="status" className="notice mt-3">{setupNotice || message}</p>}
     </section>
     <div className="space-y-2">{filtered.map((practice) => {
@@ -371,6 +392,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
             <span className="block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {!moduleId && <span className="badge py-0">{practice.module_id}</span>}
+              {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}
               <span>{practice.ata}</span>
               {practice.start_time && <span>· {String(practice.start_time).slice(0, 5)}</span>}
               <span>· <HoursStatus compact sessions={sessionsOf(practice.id)} requiredHours={practice.hours} /></span>
@@ -393,6 +415,18 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
       <label className="field">ID práctica<input className={inputClass} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} required disabled={Boolean(editing)} /></label>
       <label className="field">ATA<input className={inputClass} value={form.ata} onChange={(event) => setForm({ ...form, ata: event.target.value })} required /></label>
       <label className="field">Título<input className={inputClass} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
+      <label className="field">Submódulo
+        <select className={inputClass} value={form.submodule_id || ''} onChange={(event) => setForm({ ...form, submodule_id: event.target.value })}>
+          <option value="">{structure.submodules.length ? 'Sin submódulo' : 'Sin submódulos (Escuela → Grado y módulos)'}</option>
+          {[...structure.submodules].sort((a, b) => compareCodes(a.code, b.code)).map((sub) => <option key={sub.id} value={sub.id}>{sub.code} · {sub.name}</option>)}
+        </select>
+      </label>
+      <label className="field">RA
+        <select className={inputClass} value={form.learning_outcome_id || ''} onChange={(event) => setForm({ ...form, learning_outcome_id: event.target.value })}>
+          <option value="">{structure.outcomes.length ? 'Sin RA' : 'Sin RA (Escuela → Currículum oficial)'}</option>
+          {structure.outcomes.map((outcome) => <option key={outcome.id} value={outcome.id}>{outcomeLabel(outcome)} – {outcome.description.slice(0, 60)}</option>)}
+        </select>
+      </label>
       <label className="field sm:col-span-2">Detalle<textarea className={inputClass} rows="2" value={form.detail || ''} onChange={(event) => setForm({ ...form, detail: event.target.value })} /></label>
       
       {/*  Descripción completa */}

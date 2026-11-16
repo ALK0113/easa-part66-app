@@ -57,7 +57,16 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const responsesDirty = useRef(false)
   const [submissions, setSubmissions] = useState([])
+  // Firma y solicitudes de cambio
+  const [changeRequests, setChangeRequests] = useState([])
+  const [signOpen, setSignOpen] = useState(false)
+  const [signForm, setSignForm] = useState({ name: '', confirm: false })
+  const [changeOpen, setChangeOpen] = useState(false)
+  const [changeReason, setChangeReason] = useState('')
+  const [requestsVersion, setRequestsVersion] = useState(0)
   const [hiddenActions, setHiddenActions] = useState({})
+  // Entrega que se imprime en el PDF del alumno (con su nº de control y revisión)
+  const pdfSubmission = useRef(null)
 
   const userRole = user.role
   const { filterId } = useSchool()
@@ -137,14 +146,13 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
   }, [activeTLBId, userRole, user.id])
 
   // Guarda las respuestas como borrador mientras el alumno escribe.
-  async function saveSubmission(responses, completed) {
+  async function saveSubmission(responses) {
     const { data, error: saveError } = await supabase
       .from('tlb_submissions')
       .upsert({
         student_id: user.id,
         tlb_id: activeTLBId,
         defect_responses: responses,
-        completed_at: completed ? new Date().toISOString() : null,
       }, { onConflict: 'student_id,tlb_id' })
       .select()
       .single()
@@ -154,11 +162,11 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
   }
 
   useEffect(() => {
-    if (userRole !== 'alumno' || !activeTLBId || !responsesDirty.current || ownSubmission?.completed_at) return undefined
+    if (userRole !== 'alumno' || !activeTLBId || !responsesDirty.current || ownSubmission?.signed_at) return undefined
     const timer = setTimeout(async () => {
       setSaveState('saving')
       try {
-        await saveSubmission(studentResponses, false)
+        await saveSubmission(studentResponses)
         responsesDirty.current = false
         setSaveState('saved')
       } catch {
@@ -191,6 +199,13 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     }
     loadSubmissions()
   }, [userRole, selectedTLBId])
+
+  useEffect(() => {
+    let active = true
+    supabase.from('tlb_change_requests').select('id,submission_id,revision,reason,status,response,requested_at,resolved_at').order('requested_at', { ascending: false })
+      .then(({ data }) => { if (active) setChangeRequests(data || []) })
+    return () => { active = false }
+  }, [activeTLBId, ownSubmission?.id, ownSubmission?.signed_at, submissions.length, requestsVersion])
 
   const isStudent = userRole === 'alumno'
   const selectedTLB = tlbs.find((item) => item.id === selectedTLBId)
@@ -366,7 +381,10 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
       ? `Entrega del alumno: ${user.name}`
       : `Informe oficial del TLB`
     doc.text(subtitle, margin, 23)
-    doc.text(`Generado: ${new Date().toLocaleString('es-ES')}`, margin, 28)
+    const signedInfo = isStudentVersion && pdfSubmission.current?.control_number
+      ? ` · Nº de control ${pdfSubmission.current.control_number} · Revisión ${pdfSubmission.current.revision ?? 0} · Firmado por ${pdfSubmission.current.signed_name || user.name}`
+      : ''
+    doc.text(`Generado: ${new Date().toLocaleString('es-ES')}${signedInfo}`, margin, 28)
 
     const practice = getPractice(selectedTLB.practice_id)
     const module = getModule(selectedTLB.module_id)
@@ -437,24 +455,59 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     return doc
   }
 
-  async function generateStudentPdf() {
+  // Firma: guarda las respuestas, la base de datos registra la firma, el nº de control y la revisión,
+  // y la entrega queda cerrada. Después se genera (y se envía) el PDF.
+  async function signSubmission(event) {
+    event.preventDefault()
+    if (!selectedTLB) return
+    setBusy(true)
+    try {
+      await saveSubmission(studentResponses)
+      responsesDirty.current = false
+      const { error: signError } = await supabase.rpc('tlb_sign', { p_tlb_id: selectedTLB.id, p_signed_name: signForm.name })
+      if (signError) throw signError
+      const { data: fresh } = await supabase.from('tlb_submissions').select('*').eq('student_id', user.id).eq('tlb_id', selectedTLB.id).maybeSingle()
+      setOwnSubmission(fresh)
+      setSaveState('saved')
+      setSignOpen(false)
+      setMessage(`✅ TLB firmado. Nº de control ${fresh?.control_number} · revisión ${fresh?.revision ?? 0}.`)
+      await generateStudentPdf(fresh)
+    } catch (signError) {
+      setMessage(`❌ No se pudo firmar: ${getSupabaseErrorMessage(signError)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function requestChange(event) {
+    event.preventDefault()
+    setBusy(true)
+    const { error: requestError } = await supabase.rpc('tlb_request_change', { p_tlb_id: selectedTLB.id, p_reason: changeReason })
+    setBusy(false)
+    if (requestError) { setMessage(`❌ ${getSupabaseErrorMessage(requestError)}`); return }
+    setChangeOpen(false)
+    setChangeReason('')
+    setMessage('Solicitud de cambio enviada al profesor.')
+    setRequestsVersion((value) => value + 1)
+  }
+
+  // Profesor: aprobar (reabre la entrega con la revisión siguiente) o rechazar
+  async function resolveChange(request, approve) {
+    const response = window.prompt(approve ? 'Aprobar el cambio. Comentario para el alumno (opcional):' : 'Rechazar el cambio. Motivo para el alumno (opcional):', '')
+    if (response === null) return
+    setBusy(true)
+    const { error: resolveError } = await supabase.rpc('tlb_resolve_change', { p_request_id: request.id, p_approve: approve, p_response: response })
+    setBusy(false)
+    if (resolveError) { setMessage(`❌ ${getSupabaseErrorMessage(resolveError)}`); return }
+    setMessage(approve ? 'Cambio aprobado: el alumno puede editar y volver a firmar (nueva revisión).' : 'Cambio rechazado.')
+    setRequestsVersion((value) => value + 1)
+    setSubmissions((current) => current.map((item) => (item.id === request.submission_id && approve ? { ...item, signed_at: null, completed_at: null, revision: (item.revision || 0) + 1 } : item)))
+  }
+
+  async function generateStudentPdf(signedSubmission = ownSubmission) {
     if (!selectedTLB) return
     const tlbDefects = getDefects(selectedTLB.id)
-    const allAnswered = tlbDefects.every(defect => studentResponses[defect.id]?.trim())
-
-    if (!allAnswered) {
-      setMessage('⚠️ Completa todas las acciones antes de entregar.')
-      return
-    }
-
-    try {
-      await saveSubmission(studentResponses, true)
-      responsesDirty.current = false
-      setSaveState('saved')
-    } catch (saveError) {
-      setMessage(`❌ No se pudo registrar la entrega: ${getSupabaseErrorMessage(saveError)}`)
-      return
-    }
+    pdfSubmission.current = signedSubmission
 
     const studentEmail = user.email
 
@@ -665,8 +718,13 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     const module = getModule(selectedTLB.module_id)
     const tlbDefects = getDefects(selectedTLB.id)
     const editable = editableTLB(selectedTLB)
-    const completedSubmissions = submissions.filter((s) => s.tlb_id === selectedTLB.id && s.completed_at)
-    const delivered = Boolean(ownSubmission?.completed_at)
+    const completedSubmissions = submissions.filter((s) => s.tlb_id === selectedTLB.id && s.signed_at)
+    const tlbSubmissionIds = new Set(submissions.filter((s) => s.tlb_id === selectedTLB.id).map((s) => s.id))
+    const pendingRequests = changeRequests.filter((request) => request.status === 'pendiente' && tlbSubmissionIds.has(request.submission_id))
+    const delivered = Boolean(ownSubmission?.signed_at)
+    const ownRequests = ownSubmission ? changeRequests.filter((request) => request.submission_id === ownSubmission.id) : []
+    const ownPending = ownRequests.find((request) => request.status === 'pendiente')
+    const lastResolved = ownRequests.find((request) => request.status !== 'pendiente')
     const answeredCount = tlbDefects.filter((defect) => studentResponses[defect.id]?.trim()).length
     const saveLabel = { saving: 'Guardando…', saved: 'Borrador guardado', error: 'No se pudo guardar el borrador' }[saveState]
 
@@ -694,12 +752,73 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
       {pageNotice}
 
       {isStudent && (
-        <section className={`card flex flex-wrap items-center justify-between gap-3 px-5 py-4 ${delivered ? 'bg-success-soft' : ''}`}>
-          <div>
-            <p className={`text-sm font-medium ${delivered ? 'text-success' : 'text-ink'}`}>{delivered ? `Entregado el ${new Date(ownSubmission.completed_at).toLocaleString('es-ES')}` : `${answeredCount} de ${tlbDefects.length} acciones completadas`}</p>
-            {!delivered && <p className="mt-0.5 text-xs text-muted">{saveLabel || 'Tus respuestas se guardan solas mientras escribes.'}</p>}
+        <section className={`card space-y-3 px-5 py-4 ${delivered ? 'bg-success-soft' : ''}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              {delivered ? (
+                <>
+                  <p className="text-sm font-medium text-success">Firmado por {ownSubmission.signed_name} el {new Date(ownSubmission.signed_at).toLocaleString('es-ES')}</p>
+                  <p className="mt-0.5 text-xs text-ink-soft">Nº de control <strong className="tabular-nums">{ownSubmission.control_number}</strong> · Revisión {ownSubmission.revision ?? 0} · ya no se puede editar</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-ink">{answeredCount} de {tlbDefects.length} acciones completadas{ownSubmission?.revision ? ` · Revisión ${ownSubmission.revision} (reabierto)` : ''}</p>
+                  <p className="mt-0.5 text-xs text-muted">{saveLabel || 'Tus respuestas se guardan solas mientras escribes. Al terminar, fírmalo.'}</p>
+                </>
+              )}
+            </div>
+            {!delivered && <button className="btn-primary" disabled={busy || tlbDefects.length === 0 || answeredCount < tlbDefects.length} title={answeredCount < tlbDefects.length ? 'Responde todas las acciones para poder firmar' : undefined} onClick={() => { setSignForm({ name: user.name || '', confirm: false }); setSignOpen(true) }}><Icon name="check" size={16} />Firmar y entregar</button>}
+            {delivered && !ownPending && <button className="btn-secondary" disabled={busy} onClick={() => setChangeOpen(true)}><Icon name="edit" size={16} />Solicitar cambio</button>}
+            {delivered && <button className="btn-ghost" disabled={pdfBusy} onClick={() => { pdfSubmission.current = ownSubmission; buildTlbPdf(tlbDefects, studentResponses, true).save(`TLB_${(ownSubmission.control_number || selectedTLB.id).replace(/\//g, '-')}_rev${ownSubmission.revision ?? 0}.pdf`) }}><Icon name="download" size={16} />PDF</button>}
           </div>
-          {!delivered && <button className="btn-primary" disabled={pdfBusy || tlbDefects.length === 0} onClick={generateStudentPdf}><Icon name="check" size={16} />{pdfBusy ? 'Enviando…' : 'Entregar y enviar PDF'}</button>}
+          {ownPending && <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">Solicitud de cambio enviada el {new Date(ownPending.requested_at).toLocaleString('es-ES')}: pendiente del profesor. «{ownPending.reason}»</p>}
+          {!ownPending && lastResolved && (
+            <p className={`rounded-lg px-3 py-2 text-xs ${lastResolved.status === 'aprobada' ? 'bg-subtle text-ink-soft' : 'bg-danger-soft text-danger'}`}>
+              Última solicitud {lastResolved.status === 'aprobada' ? 'aprobada' : 'rechazada'}{lastResolved.response ? `: «${lastResolved.response}»` : ''}
+            </p>
+          )}
+        </section>
+      )}
+
+      {signOpen && (
+        <Modal title="Firmar y entregar" onClose={() => setSignOpen(false)}>
+          <form className="space-y-4" onSubmit={signSubmission}>
+            <p className="text-sm text-muted">Al firmar, tus respuestas quedan registradas con un número de control y <strong>ya no se pueden editar</strong>. Para cambiarlas tendrás que solicitarlo al profesor.</p>
+            <label className="field">Firma: tu nombre completo<input className={inputClass} required minLength={3} value={signForm.name} onChange={(event) => setSignForm({ ...signForm, name: event.target.value })} /></label>
+            <label className="choice"><input type="checkbox" checked={signForm.confirm} onChange={(event) => setSignForm({ ...signForm, confirm: event.target.checked })} />Confirmo que estas respuestas son mías y doy el TLB por terminado.</label>
+            <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setSignOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy || !signForm.confirm || signForm.name.trim().length < 3}>{busy ? 'Firmando…' : 'Firmar'}</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {changeOpen && (
+        <Modal title="Solicitar cambio" onClose={() => setChangeOpen(false)}>
+          <form className="space-y-4" onSubmit={requestChange}>
+            <p className="text-sm text-muted">El profesor revisará tu solicitud. Si la aprueba, podrás editar y volver a firmar: se mantiene el nº de control {ownSubmission?.control_number} y pasa a la revisión {(ownSubmission?.revision ?? 0) + 1}.</p>
+            <label className="field">¿Qué quieres cambiar y por qué?<textarea className={inputClass} rows="3" required maxLength={500} value={changeReason} onChange={(event) => setChangeReason(event.target.value)} /></label>
+            <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setChangeOpen(false)}>Cancelar</button><button className={buttonClass} disabled={busy || !changeReason.trim()}>Enviar solicitud</button></div>
+          </form>
+        </Modal>
+      )}
+
+      {!isStudent && pendingRequests.length > 0 && (
+        <section className="card border-warn/40 p-3">
+          <h3 className="px-3 pb-1 pt-2 font-semibold text-warn">Solicitudes de cambio · {pendingRequests.length}</h3>
+          <ul>
+            {pendingRequests.map((request) => {
+              const submission = submissions.find((item) => item.id === request.submission_id)
+              return (
+                <li key={request.id} className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-3">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-ink">{submission?.students?.name || 'Alumno'} <span className="text-xs font-normal text-muted">· {submission?.control_number} · rev {request.revision}</span></span>
+                    <span className="block text-xs text-muted">«{request.reason}» · {new Date(request.requested_at).toLocaleString('es-ES')}</span>
+                  </span>
+                  <button className="btn-secondary h-8 px-3 text-xs" disabled={busy} onClick={() => resolveChange(request, false)}>Rechazar</button>
+                  <button className="btn-primary h-8 px-3 text-xs" disabled={busy} onClick={() => resolveChange(request, true)}>Aprobar</button>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 
@@ -712,7 +831,8 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"><Icon name="check" size={16} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-ink">{submission.students?.name || 'Alumno'}</span>
-                  <span className="block text-xs text-muted">{[submission.students?.student_number && `Nº ${submission.students.student_number}`, submission.students?.group_name].filter(Boolean).join(' · ')}{submission.students ? ' · ' : ''}{new Date(submission.completed_at).toLocaleString('es-ES')}</span>
+                  <span className="block text-xs text-muted">{[submission.students?.student_number && `Nº ${submission.students.student_number}`, submission.students?.group_name].filter(Boolean).join(' · ')}{submission.students ? ' · ' : ''}Firmado {new Date(submission.signed_at).toLocaleString('es-ES')}</span>
+                  <span className="block text-xs tabular-nums text-ink-soft">Nº de control {submission.control_number} · Revisión {submission.revision ?? 0}</span>
                 </span>
                 {submission.pdf_url && <a href={submission.pdf_url} target="_blank" rel="noopener noreferrer" className="link">Ver PDF</a>}
               </li>
@@ -848,7 +968,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
       const practice = getPractice(tlb.practice_id)
       const editable = editableTLB(tlb)
       const tlbDefects = getDefects(tlb.id)
-      const completedCount = submissions.filter((s) => s.tlb_id === tlb.id && s.completed_at).length
+      const completedCount = submissions.filter((s) => s.tlb_id === tlb.id && s.signed_at).length
 
       return <article key={tlb.id} className="card group flex items-center gap-3 p-2 pr-3 transition-shadow hover:shadow-lift">
         <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => { setSelectedTLBId(tlb.id); setMessage('') }}>

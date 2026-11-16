@@ -9,6 +9,8 @@ import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import CloseYear from './CloseYear.jsx'
 import ImportModules from './ImportModules.jsx'
 import Holidays from './Holidays.jsx'
+import Curriculum from './Curriculum.jsx'
+import Submodules from './Submodules.jsx'
 
 // Estructura académica de una escuela: grados y sus módulos, grupos por curso escolar,
 // promociones, cursos escolares y escala de calificación.
@@ -134,6 +136,7 @@ export default function AcademicStructure({ tab: fixedTab = null, embedded = fal
 function DegreesTab({ data, schoolId, run, reload, notify }) {
   const [editingDegree, setEditingDegree] = useState(null) // {} nuevo · degree editar
   const [importingDegree, setImportingDegree] = useState(null) // grado al que se importan módulos
+  const [submodulesDegree, setSubmodulesDegree] = useState(null) // grado cuyos submódulos se editan
   const [editingModule, setEditingModule] = useState(null) // { degree, item? }
   const moduleName = useMemo(() => Object.fromEntries(data.modules.map((mod) => [mod.id, mod.name])), [data.modules])
 
@@ -195,6 +198,7 @@ function DegreesTab({ data, schoolId, run, reload, notify }) {
               <div className="flex gap-2">
                 <button type="button" className="btn-ghost" onClick={() => setEditingDegree(degree)}><Icon name="edit" size={16} />Editar</button>
                 <button type="button" className="btn-ghost" onClick={() => setImportingDegree(degree)}><Icon name="upload" size={16} />Importar</button>
+                <button type="button" className="btn-ghost" onClick={() => setSubmodulesDegree(degree)}><Icon name="layers" size={16} />Submódulos</button>
                 <button type="button" className="btn-secondary" onClick={() => setEditingModule({ degree })}><Icon name="plus" size={16} />Módulo</button>
               </div>
             </header>
@@ -227,6 +231,11 @@ function DegreesTab({ data, schoolId, run, reload, notify }) {
       })}
 
       <button type="button" className="btn-secondary" onClick={() => setEditingDegree({})}><Icon name="plus" size={16} />Nuevo grado</button>
+
+      {data.degrees.length > 0 && (
+        <Curriculum schoolId={schoolId} easaModules={[...new Set(data.degrees.flatMap((degree) => degree.degree_modules.map((item) => item.module_id)))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }))} />
+      )}
+      {submodulesDegree && <Submodules degree={submodulesDegree} schoolId={schoolId} moduleNames={moduleName} onClose={() => setSubmodulesDegree(null)} />}
 
       {editingDegree && (
         <DegreeForm degree={editingDegree} onSave={saveDegree} onDelete={editingDegree.id ? () => deleteDegree(editingDegree) : null} onClose={() => setEditingDegree(null)} />

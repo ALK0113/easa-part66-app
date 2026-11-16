@@ -194,6 +194,7 @@ function WeekView({ user }) {
                           className={`w-full rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle ${cancelled ? 'border-line opacity-60' : assignment.degree_modules?.kind === 'practica' ? 'border-line border-l-2 border-l-accent' : 'border-line'}`}>
                           <span className="block text-xs tabular-nums text-muted">{time(session.start_time)}–{time(session.end_time)}{session.room ? ` · ${session.room}` : ''}</span>
                           <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}</span>
+                          {session.theory_classes?.title && <span className="block truncate text-xs text-ink-soft">{session.theory_classes.title}</span>}
                           <span className="block truncate text-xs text-muted">
                             {cancelled ? 'Cancelada' : [showGroup && groupLabel(assignment.class_groups), showTeacher && (assignment.profiles?.full_name || '')].filter(Boolean).join(' · ')}
                           </span>
@@ -307,6 +308,7 @@ function SessionDetail({ session, user, onClose, onChanged }) {
       </p>
       {cancelled && <p className="notice mt-3">Esta clase está cancelada.</p>}
       {session.note && !editing && <p className="mt-3 text-sm text-ink-soft">{session.note}</p>}
+      {session.theory_classes?.title && !editing && <p className="mt-2 text-sm text-ink-soft">Clase teórica: {session.theory_classes.title}</p>}
       {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}{canEdit ? ' · la lista y la evaluación se guardan también en la práctica' : ''}</p>}
       {error && <p role="alert" className="notice-error mt-3">{error}</p>}
 

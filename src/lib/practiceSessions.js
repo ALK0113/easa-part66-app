@@ -4,10 +4,10 @@ import { useSchool } from '../contexts/useSchool.js'
 import { groupLabel } from './academic.js'
 import { isManager } from './roles.js'
 
-// Sesiones de una práctica. Son clases del horario (class_sessions con practice_id),
-// así que lo que se programa aquí aparece en el calendario y viceversa.
+// Sesiones de una clase práctica o teórica. Son clases del horario (class_sessions con practice_id
+// o theory_class_id), así que lo que se programa aquí aparece en el calendario y viceversa.
 
-export const SESSION_FIELDS = 'id,teaching_assignment_id,slot_id,date,start_time,end_time,note,status,practice_id'
+export const SESSION_FIELDS = 'id,teaching_assignment_id,slot_id,date,start_time,end_time,note,status,practice_id,theory_class_id'
 
 const minutes = (value) => {
   const [h, m] = String(value || '').split(':').map(Number)
@@ -40,7 +40,7 @@ export function useModuleAssignments(moduleId, user) {
   return assignments
 }
 
-// Clases del horario del módulo que aún no tienen práctica (de hoy en adelante): de aquí salen las sesiones
+// Clases del horario del módulo que aún no tienen clase práctica ni teórica (de hoy en adelante): de aquí salen las sesiones
 export function useFreeModuleSessions(assignments) {
   const [free, setFree] = useState([])
   const ids = (assignments || []).map((assignment) => assignment.id).join(',')
@@ -50,7 +50,7 @@ export function useFreeModuleSessions(assignments) {
     const today = new Date().toLocaleDateString('sv-SE')
     supabase.from('class_sessions').select(SESSION_FIELDS)
       .in('teaching_assignment_id', ids.split(','))
-      .is('practice_id', null).eq('status', 'programada').gte('date', today)
+      .is('practice_id', null).is('theory_class_id', null).eq('status', 'programada').gte('date', today)
       .order('date').order('start_time').limit(200)
       .then(({ data }) => { if (active) setFree(data || []) })
     return () => { active = false }
@@ -68,15 +68,18 @@ export async function fetchPracticeSessions(practiceId) {
   return data || []
 }
 
-// Guarda la lista editada: crea las nuevas, actualiza las cambiadas y borra las quitadas
-export async function saveSessions(practiceId, original, edited) {
+// Guarda la lista editada: crea las nuevas, actualiza las cambiadas y borra las quitadas.
+// owner: { practice_id } o { theory_class_id } (un texto se entiende como id de práctica)
+export async function saveSessions(ownerOrPracticeId, original, edited) {
+  const owner = typeof ownerOrPracticeId === 'string' ? { practice_id: ownerOrPracticeId } : ownerOrPracticeId
+  const ownerKey = Object.keys(owner)[0]
   const keep = new Set(edited.filter((session) => session.id).map((session) => session.id))
   const removed = original.filter((session) => !keep.has(session.id))
   for (const session of removed) {
-    // Las que vienen de la plantilla semanal no se borran: solo se desvinculan de la práctica
+    // Las que vienen de la plantilla semanal no se borran: solo se desvinculan de la clase
     const { data: row } = await supabase.from('class_sessions').select('slot_id').eq('id', session.id).maybeSingle()
     const result = row?.slot_id
-      ? await supabase.from('class_sessions').update({ practice_id: null }).eq('id', session.id)
+      ? await supabase.from('class_sessions').update({ [ownerKey]: null }).eq('id', session.id)
       : await supabase.from('class_sessions').delete().eq('id', session.id)
     if (result.error) throw result.error
   }
@@ -90,7 +93,7 @@ export async function saveSessions(practiceId, original, edited) {
       note: session.note?.trim() || null,
       // Una clase del horario movida a otro día pasa a ser clase suelta (slot_id null)
       slot_id: session.slot_id || null,
-      practice_id: practiceId,
+      ...owner,
     }
     if (!session.id) {
       const { error } = await supabase.from('class_sessions').insert(values)
