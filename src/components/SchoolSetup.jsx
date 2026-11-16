@@ -10,7 +10,7 @@ const SETUP_STEPS = [
   { id: 'years', label: 'Curso escolar', hint: 'El curso actual es el que usan grupos, matrículas y horario.' },
   { id: 'groups', label: 'Grupos', hint: 'Por ejemplo 1ºA y 2ºA. Puedes crearlos todos de una vez.' },
   { id: 'teachers', label: 'Profesores', hint: 'Toca un grupo para asignar el módulo; después puedes poner su horario.' },
-  { id: 'students', label: 'Alumnos', hint: 'Primero matricula cada grupo en sus módulos; después añade a cada clase los alumnos sueltos de otros cursos.' },
+  { id: 'students', label: 'Alumnos', hint: 'Pon a cada alumno en su grupo: cursa sola todos los módulos de su curso. Después apunta solo las excepciones (convalidados, módulos de otro curso, altas y bajas).' },
   { id: 'timetable', label: 'Horario', hint: 'La plantilla semanal de cada grupo genera las clases hasta fin de curso.' },
 ]
 const EXTRA_STEPS = [
@@ -20,12 +20,9 @@ const EXTRA_STEPS = [
 
 export default function SchoolSetup({ user, step, onStep }) {
   const { school } = useSchool()
-  // El paso Alumnos tiene tres vistas: «students» (por grupo), «students-class» (por clase) y «students-one» (por alumno)
-  const STUDENT_VIEWS = { students: 'groups', 'students-class': 'classes', 'students-one': 'students' }
-  const baseStep = STUDENT_VIEWS[step] ? 'students' : step
+  // Enlaces antiguos a las vistas «por clase» / «por alumno» llevan al paso Alumnos
+  const baseStep = String(step || '').startsWith('students') ? 'students' : step
   const current = [...SETUP_STEPS, ...EXTRA_STEPS].find((item) => item.id === baseStep) || SETUP_STEPS[0]
-  const studentsView = STUDENT_VIEWS[step] || 'groups'
-  const setStudentsView = (view) => onStep(Object.keys(STUDENT_VIEWS).find((key) => STUDENT_VIEWS[key] === view))
 
   return (
     <div className="space-y-5">
@@ -57,16 +54,7 @@ export default function SchoolSetup({ user, step, onStep }) {
 
       {['degrees', 'years', 'groups', 'cohorts', 'grading'].includes(current.id) && <AcademicStructure key={current.id} tab={current.id} embedded />}
       {current.id === 'teachers' && <Assignments user={user} tab="teachers" embedded />}
-      {current.id === 'students' && (
-        <>
-          <div className="tabs" role="tablist">
-            <button type="button" role="tab" className="tab" aria-selected={studentsView === 'groups'} onClick={() => setStudentsView('groups')}>1 · Por grupo</button>
-            <button type="button" role="tab" className="tab" aria-selected={studentsView === 'classes'} onClick={() => setStudentsView('classes')}>2 · Por clase</button>
-            <button type="button" role="tab" className="tab" aria-selected={studentsView === 'students'} onClick={() => setStudentsView('students')}>Por alumno</button>
-          </div>
-          <Assignments key={studentsView} user={user} tab={studentsView} embedded />
-        </>
-      )}
+      {current.id === 'students' && <Assignments user={user} tab="students" embedded />}
       {current.id === 'timetable' && <TemplateEditor user={user} />}
     </div>
   )

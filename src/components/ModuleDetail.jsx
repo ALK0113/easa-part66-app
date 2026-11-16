@@ -8,6 +8,7 @@ import Icon from './Icon.jsx'
 import { canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 import { StudentPracticeResult, StudentPracticeSessions } from './SessionAttendance.jsx'
+import UpcomingSessions from './UpcomingSessions.jsx'
 
 // Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
@@ -26,6 +27,7 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   const [tlbs, setTLBs] = useState([])
   const [defects, setDefects] = useState([])
   const [videos, setVideos] = useState([])
+  const [theoryCount, setTheoryCount] = useState(null)
   const [selectedPractice, setSelectedPractice] = useState(null)
   const [section, setSection] = useState('resumen')
   // Qué abrir al saltar a una pestaña (una práctica, un TLB o el formulario de TLB nuevo)
@@ -44,13 +46,14 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [moduleResult, practiceResult, studentModuleResult, teacherModuleResult, tlbResult, videoResult] = await Promise.all([
+      const [moduleResult, practiceResult, studentModuleResult, teacherModuleResult, tlbResult, videoResult, theoryResult] = await Promise.all([
         supabase.from('modules').select('id,name,description,color').eq('id', moduleId).maybeSingle(),
         bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours').eq('module_id', moduleId).order('date')),
         supabase.from('student_modules').select('student_id').eq('module_id', moduleId),
         supabase.from('teacher_modules').select('profile_id').eq('module_id', moduleId),
         bySchool(supabase.from('tlbs').select('id,practice_id,module_id,aircraft,registration,msn,date,teacher_name,published,crs').eq('module_id', moduleId).order('date', { ascending: false })),
         bySchool(supabase.from('videos').select('id,module_id,ata,title,youtube_url').eq('module_id', moduleId).order('ata')),
+        bySchool(supabase.from('theory_classes').select('id', { count: 'exact', head: true }).eq('module_id', moduleId)),
       ])
       if (cancelled) return
       const baseError = moduleResult.error || practiceResult.error
@@ -88,11 +91,12 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
       setTLBs(tlbResult.data || [])
       setDefects(defectResult.data || [])
       setVideos(videoResult.data || [])
+      setTheoryCount(theoryResult.error ? null : theoryResult.count ?? 0)
       setLoading(false)
     }
     load()
     const unsubscribe = subscribeToTables(
-      ['modules', 'practices', 'student_modules', 'teacher_modules', 'students', 'profiles', 'practice_records', 'tlbs', 'defects', 'videos'],
+      ['modules', 'practices', 'student_modules', 'teacher_modules', 'students', 'profiles', 'practice_records', 'tlbs', 'defects', 'videos', 'theory_classes'],
       load,
       `module-detail-${moduleId}`,
     )
@@ -220,11 +224,10 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   }
 
   const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
-  const todayKey = new Date().toLocaleDateString('sv-SE')
-  const upcomingPractices = practices.filter((practice) => String(practice.date || '') >= todayKey)
   // Módulo → (submódulos) → clases teóricas y clases prácticas. El Task Log Book es una subcategoría
   // de las clases prácticas (sección «tlb» dentro de la pestaña Práctica).
-  const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría'], ['practicas', `Práctica · ${practices.length}`], ['videos', `Vídeos · ${videos.length}`], ...(usesPracticePage ? [['alumnos', `Alumnos · ${students.length}`]] : [])]
+  // El número de cada pestaña va en pequeño junto al nombre
+  const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría', theoryCount], ['practicas', 'Práctica', practices.length], ['videos', 'Vídeos', videos.length], ...(usesPracticePage ? [['alumnos', 'Alumnos', students.length]] : [])]
   const inPractices = section === 'practicas' || section === 'tlb'
   const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
@@ -253,7 +256,7 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
       <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
       <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
     </section>
-    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={(id === 'practicas' ? inPractices : section === id) ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}</button>)}</nav>
+    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label, count]) => <button key={id} aria-current={(id === 'practicas' ? inPractices : section === id) ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}{count != null && <span className="ml-1.5 text-xs font-normal tabular-nums text-muted">{count}</span>}</button>)}</nav>
 
     {inPractices && (
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Task Log Book">
@@ -268,8 +271,10 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
 
     {section === 'resumen' && <div className="grid gap-5 lg:grid-cols-2">
       <section className="card p-3 lg:col-span-2">
-        <div className="flex items-center justify-between px-3 pb-1 pt-2"><h3 className="font-semibold text-ink">Próximas prácticas</h3>{practices.length > 0 && <button className="link" onClick={() => setSection('practicas')}>Ver todas</button>}</div>
-        {upcomingPractices.length ? <ul>{upcomingPractices.slice(0, 5).map(practiceRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">{practices.length ? 'No hay prácticas próximas.' : 'No hay prácticas asociadas.'}</p>}
+        <div className="flex items-center justify-between px-3 pb-1 pt-2"><h3 className="font-semibold text-ink">Próximas sesiones</h3></div>
+        <UpcomingSessions moduleId={moduleId} user={user}
+          onOpenPractice={(id) => { const practice = practices.find((item) => item.id === id); if (practice) openPractice(practice); else setSection('practicas') }}
+          onOpenTheory={() => setSection('teoria')} />
       </section>
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Profesores</h3>{teachers.length ? <ul className="space-y-3">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">{(teacher.full_name || 'P')[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-ink">{teacher.full_name || 'Profesor'}</span><span className="block truncate text-xs text-muted">{teacher.email || ''}</span></span></li>)}</ul> : <p className="text-sm text-muted">No hay profesores asociados.</p>}</section>
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
@@ -279,7 +284,7 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
     {section === 'alumnos' && usesPracticePage && (
       <section className="card p-5">
         <h3 className="font-semibold text-ink">Alumnos del módulo</h3>
-        <p className="mb-4 mt-0.5 text-xs text-muted">Añade o quita alumnos de la clase de este módulo. Pueden ser de cualquier curso del centro; nunca de otro centro.</p>
+        <p className="mb-4 mt-0.5 text-xs text-muted">Quién cursa este módulo: los alumnos del grupo y los que vienen de otros cursos.</p>
         <Suspense fallback={tabFallback}><ModuleStudents moduleId={moduleId} user={user} /></Suspense>
       </section>
     )}
