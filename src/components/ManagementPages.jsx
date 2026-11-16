@@ -606,7 +606,7 @@ export function MyDataPage({ user }) {
   </div>
 }
 
-const GRADE_STATUS = { aprobado: ['Aprobado', 'bg-success-soft text-success'], suspendido: ['Suspendido', 'bg-danger-soft text-danger'], cursando: ['Pendiente', ''] }
+const GRADE_STATUS = { aprobado: ['Aprobado', 'bg-success-soft text-success'], suspendido: ['Suspendido', 'bg-danger-soft text-danger'], cursando: ['Pendiente', ''], convalidado: ['Convalidado', 'bg-accent-soft text-accent-strong'], exento: ['Exento', 'bg-accent-soft text-accent-strong'], baja: ['No cursa', 'text-muted'] }
 
 // Notas por curso escolar: el actual primero.
 function MyGrades({ grades }) {

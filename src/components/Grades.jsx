@@ -11,8 +11,8 @@ import Icon from './Icon.jsx'
 // Teoría: nota con la escala de la escuela. Práctica: Apto / No apto. Se guarda sola.
 
 const classKey = (groupId, degreeModuleId) => `${groupId}|${degreeModuleId}`
-const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg-danger-soft text-danger' }
-const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente' }
+const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg-danger-soft text-danger', convalidado: 'bg-accent-soft text-accent-strong', exento: 'bg-accent-soft text-accent-strong', baja: 'bg-subtle text-muted' }
+const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente', convalidado: 'Convalidado', exento: 'Exento', baja: 'No cursa' }
 
 // initialClass: { group_id, degree_module_id } al llegar desde «Mis grupos» (se abre esa hoja directamente)
 export default function Grades({ user, initialClass = null }) {

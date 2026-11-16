@@ -26,7 +26,7 @@ export default function ProfileManagement({ user }) {
   const isAdmin = user.role === ROLES.ADMIN
   // Admin con una escuela elegida: solo los perfiles de esa escuela
   const { filterId, schoolId: currentSchoolId } = useSchool()
-  // El supervisor solo gestiona alumnos y profesores; admin y supervisores se gestionan en Escuelas
+  // El supervisor solo gestiona alumnos y profesores; admin y supervisores se gestionan en Centros
   const canManage = (profile) => isAdmin || profile.role === ROLES.STUDENT || profile.role === ROLES.TEACHER
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -385,7 +385,7 @@ export default function ProfileManagement({ user }) {
                   <p className="mt-1 text-xs font-medium text-danger">Administrador: acceso total a todas las escuelas.</p>
                 )}
                 {editingProfile.role === ROLES.SUPERVISOR && editingProfile.id !== user.id && (
-                  <p className="mt-1 text-xs text-muted">Los supervisores se nombran y se quitan en Escuelas.</p>
+                  <p className="mt-1 text-xs text-muted">Los supervisores se nombran y se quitan en Centros.</p>
                 )}
               </div>
 

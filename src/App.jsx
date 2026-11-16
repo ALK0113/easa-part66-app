@@ -182,7 +182,7 @@ function App() {
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'students': return <StudentList />
+      case 'students': return <StudentList user={user} />
       case 'practices': return <PracticeList user={user} initialModuleId={intentFor('practices')?.module_id} initialPracticeId={intentFor('practices')?.practice_id} onClearInitial={clearIntent} onCreateTLB={(prefill) => goWith('tlb', prefill)} />
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} initialCreate={intentFor('tlb')} onClearInitialCreate={clearIntent} />
       case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
@@ -221,7 +221,7 @@ function App() {
     settings: 'Configuración',
     mydata: 'Mis datos',
     progress: 'Mi progreso',
-    schools: 'Escuelas',
+    schools: 'Centros',
     structure: 'Escuela',
     timetable: user.role === ROLES.STUDENT ? 'Mi horario' : 'Horario',
     grades: 'Notas',

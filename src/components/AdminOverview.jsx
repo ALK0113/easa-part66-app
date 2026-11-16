@@ -42,7 +42,7 @@ export default function AdminOverview({ user, setActivePage, openSetup }) {
   }
   const totalPending = Object.values(pending).reduce((total, value) => total + value, 0)
   const totals = [
-    ['Escuelas', schools.length, 'school'],
+    ['Centros', schools.length, 'school'],
     ['Alumnos', sum('students'), 'users'],
     ['Profesores', sum('teachers'), 'idcard'],
     ['Solicitudes pendientes', totalPending, 'clock'],
@@ -72,10 +72,10 @@ export default function AdminOverview({ user, setActivePage, openSetup }) {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-ink">Escuelas</h3>
+          <h3 className="font-semibold text-ink">Centros</h3>
           <button type="button" className="link" onClick={() => setActivePage('schools')}>Gestionar escuelas</button>
         </div>
-        {!schools.length && <div className="card empty">Aún no hay escuelas. Créalas en Escuelas.</div>}
+        {!schools.length && <div className="card empty">Aún no hay centros. Créalos en Centros.</div>}
         <div className="grid gap-3 md:grid-cols-2">
           {schools.map((school) => {
             const item = stats[school.id]

@@ -1,24 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import { ROLES } from '../lib/roles.js'
-import Icon from './Icon.jsx'
 import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { WEEKDAYS } from '../lib/schedule.js'
-import ClassStudents from './ClassStudents.jsx'
+import Enrollment from './Enrollment.jsx'
 
 // Asignaciones del curso escolar actual:
-//  - Grupos: matricular a todo un grupo en módulos del grado.
-//  - Clases: los alumnos de un grupo + módulo; se añaden sueltos de cualquier curso del centro.
-//  - Alumnos: grupo, módulos y cuenta de acceso de cada alumno.
+//  - Alumnos: matrícula «grupo + excepciones» (src/components/Enrollment.jsx).
 //  - Profesores: qué módulo imparte cada profesor y a qué grupos.
 
 const TABS = [
-  { id: 'groups', label: 'Grupos' },
-  { id: 'classes', label: 'Clases' },
   { id: 'students', label: 'Alumnos' },
   { id: 'teachers', label: 'Profesores' },
 ]
@@ -37,7 +32,7 @@ function useAssignmentData(schoolId) {
     let active = true
     async function load() {
       try {
-        const yearResult = await supabase.from('academic_years').select('id,name').eq('school_id', schoolId).eq('is_current', true).maybeSingle()
+        const yearResult = await supabase.from('academic_years').select('id,name,starts_on').eq('school_id', schoolId).eq('is_current', true).maybeSingle()
         if (yearResult.error) throw yearResult.error
         const year = yearResult.data
         const [degrees, modules, students, members, links] = await Promise.all([
@@ -50,8 +45,8 @@ function useAssignmentData(schoolId) {
         const yearData = year
           ? await Promise.all([
             supabase.from('class_groups').select('id,degree_id,level,name').eq('academic_year_id', year.id).order('level').order('name'),
-            supabase.from('enrollments').select('student_id,group_id,level').eq('academic_year_id', year.id),
-            supabase.from('module_enrollments').select('id,student_id,degree_module_id,group_id,is_carryover,theory_grade,practical_result').eq('academic_year_id', year.id),
+            supabase.from('enrollments').select('student_id,group_id,level,status,left_on').eq('academic_year_id', year.id),
+            supabase.from('module_enrollments').select('id,student_id,degree_module_id,group_id,is_carryover,theory_grade,practical_result,status,joined_on,left_on').eq('academic_year_id', year.id),
             supabase.from('teaching_assignments').select('id,profile_id,degree_module_id,group_id'),
           ])
           : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
@@ -91,7 +86,7 @@ function useAssignmentData(schoolId) {
 // tab + embedded: la página «Escuela» elige la sección y pone sus propios pasos
 export default function Assignments({ user, tab: fixedTab = null, embedded = false }) {
   const { schoolId } = useSchool()
-  const [ownTab, setTab] = useState('groups')
+  const [ownTab, setTab] = useState('students')
   const tab = fixedTab || ownTab
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -138,270 +133,8 @@ export default function Assignments({ user, tab: fixedTab = null, embedded = fal
         <div className="card empty"><p className="font-medium text-ink-soft">No hay curso escolar actual</p><p className="mt-1">Créalo en Escuela → Curso escolar.</p></div>
       )}
 
-      {data?.year && tab === 'groups' && <GroupsTab data={data} run={run} busy={busy} />}
-      {data?.year && tab === 'classes' && <ClassesTab data={data} reload={reload} />}
-      {data?.year && tab === 'students' && <StudentsTab data={data} run={run} busy={busy} />}
+      {data?.year && tab === 'students' && <Enrollment data={data} run={run} busy={busy} />}
       {data?.year && tab === 'teachers' && <TeachersTab data={data} run={run} busy={busy} />}
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Grupos                                                              */
-/* ------------------------------------------------------------------ */
-
-function GroupsTab({ data, run, busy }) {
-  const [groupId, setGroupId] = useState(data.groups[0]?.id || '')
-  const [selected, setSelected] = useState([])
-  const group = data.groups.find((item) => item.id === groupId)
-  const degree = data.degrees.find((item) => item.id === group?.degree_id)
-  const members = data.enrollments.filter((enrollment) => enrollment.group_id === groupId).map((enrollment) => enrollment.student_id)
-  const modules = [...(degree?.degree_modules || [])].sort(sortModules)
-  const enrolledCount = (degreeModuleId) => data.moduleEnrollments.filter((item) => item.degree_module_id === degreeModuleId && members.includes(item.student_id)).length
-
-  function chooseGroup(id) {
-    setGroupId(id)
-    setSelected([])
-  }
-
-  async function enroll(event) {
-    event.preventDefault()
-    const ok = await run(
-      () => supabase.rpc('admin_enroll_group', { p_group_id: groupId, p_degree_module_ids: selected }),
-      (result) => `Hecho: ${result?.added ?? 0} matrícula(s) nueva(s) en ${groupLabel(group)}.`,
-    )
-    if (ok) setSelected([])
-  }
-
-  if (!data.groups.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p><p className="mt-1">Créalos en Escuela → Grupos.</p></div>
-
-  return (
-    <form className="card space-y-5 p-5 md:p-6" onSubmit={enroll}>
-      <div>
-        <h3 className="font-semibold text-ink">Matricular un grupo en módulos</h3>
-        <p className="mt-1 text-sm text-muted">Todos los alumnos del grupo cursarán los módulos marcados. Lo que ya cursan se mantiene.</p>
-      </div>
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Grupo">
-        {data.groups.map((item) => (
-          <button key={item.id} type="button" role="radio" aria-checked={item.id === groupId} onClick={() => chooseGroup(item.id)}
-            className={`rounded-xl border px-4 py-2 text-sm font-semibold ${item.id === groupId ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
-            {groupLabel(item)}
-          </button>
-        ))}
-      </div>
-      <p className="text-sm text-muted">{members.length} {members.length === 1 ? 'alumno' : 'alumnos'} en {groupLabel(group)}</p>
-
-      {modules.length === 0 ? <p className="text-sm text-muted">El grado {degree?.code} aún no tiene módulos. Añádelos en Escuela → Grado y módulos.</p> : (
-        <fieldset className="grid gap-2 sm:grid-cols-2" disabled={busy}>
-          <legend className="sr-only">Módulos</legend>
-          {modules.map((item) => {
-            const count = enrolledCount(item.id)
-            const complete = members.length > 0 && count === members.length
-            return (
-              <label key={item.id} className={`choice ${item.level === group?.level ? '' : 'opacity-70'}`}>
-                <input type="checkbox" disabled={complete} checked={complete || selected.includes(item.id)}
-                  onChange={(event) => setSelected((current) => (event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id)))} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{moduleTitle(item, data.moduleNames)}</span>
-                  <span className="text-xs text-muted">{KIND_LABEL[item.kind]} · {levelLabel(item.level)}</span>
-                </span>
-                <span className="text-xs tabular-nums text-muted">{count}/{members.length}</span>
-              </label>
-            )
-          })}
-        </fieldset>
-      )}
-      <div className="flex justify-end">
-        <button type="submit" className="btn-primary" disabled={busy || !selected.length || !members.length}>Matricular {selected.length ? `(${selected.length})` : ''}</button>
-      </div>
-    </form>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Clases: grupo + módulo                                              */
-/* ------------------------------------------------------------------ */
-
-function ClassesTab({ data, reload }) {
-  const [groupId, setGroupId] = useState(data.groups[0]?.id || '')
-  const [moduleId, setModuleId] = useState('')
-  const group = data.groups.find((item) => item.id === groupId)
-  const degree = data.degrees.find((item) => item.id === group?.degree_id)
-  // Primero los módulos del curso del grupo; después el resto del grado
-  const modules = [...(degree?.degree_modules || [])].sort((a, b) => (a.level === group?.level ? 0 : 1) - (b.level === group?.level ? 0 : 1) || sortModules(a, b))
-  const activeModule = modules.find((item) => item.id === moduleId) || modules[0]
-  const count = (degreeModuleId) => data.moduleEnrollments.filter((item) => item.group_id === groupId && item.degree_module_id === degreeModuleId).length
-  const teacherOf = (degreeModuleId) => data.teaching.filter((item) => item.group_id === groupId && item.degree_module_id === degreeModuleId)
-    .map((item) => data.teachers.find((teacher) => teacher.id === item.profile_id)?.full_name).filter(Boolean).join(', ')
-
-  if (!data.groups.length) return <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p><p className="mt-1">Créalos en Escuela → Grupos.</p></div>
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Grupo">
-        {data.groups.map((item) => (
-          <button key={item.id} type="button" role="radio" aria-checked={item.id === groupId} onClick={() => { setGroupId(item.id); setModuleId('') }}
-            className={`rounded-xl border px-4 py-2 text-sm font-semibold ${item.id === groupId ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
-            {groupLabel(item)}
-          </button>
-        ))}
-      </div>
-
-      {modules.length === 0 ? <p className="card empty">El grado {degree?.code} aún no tiene módulos. Añádelos en Escuela → Grado y módulos.</p> : (
-        <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          <section className="card max-h-[70vh] overflow-y-auto p-1.5">
-            <ul>
-              {modules.map((item) => (
-                <li key={item.id}>
-                  <button type="button" onClick={() => setModuleId(item.id)}
-                    className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm ${item.id === activeModule?.id ? 'bg-accent-soft font-medium text-accent-strong' : 'text-ink-soft hover:bg-subtle'}`}>
-                    <span className="min-w-0">
-                      <span className="block truncate">{item.module_id} · {KIND_LABEL[item.kind]}</span>
-                      <span className="block truncate text-xs font-normal text-muted">{levelLabel(item.level)}{teacherOf(item.id) ? ` · ${teacherOf(item.id)}` : ''}</span>
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted">{count(item.id)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-          {activeModule && (
-            <section className="card space-y-3 self-start p-5 md:p-6">
-              <div>
-                <h3 className="font-semibold text-ink">{groupLabel(group)} · {moduleTitle(activeModule, data.moduleNames)}</h3>
-                <p className="mt-0.5 text-sm text-muted">{KIND_LABEL[activeModule.kind]} · alumnos de cualquier curso del centro. La asistencia, las prácticas y las notas de esta clase usan esta lista.</p>
-              </div>
-              <ClassStudents key={`${groupId}-${activeModule.id}`} groupId={groupId} degreeModuleId={activeModule.id} onChanged={reload} />
-            </section>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Alumnos                                                             */
-/* ------------------------------------------------------------------ */
-
-function StudentsTab({ data, run, busy }) {
-  const [studentId, setStudentId] = useState('')
-  const [query, setQuery] = useState('')
-  const enrollmentByStudent = useMemo(() => Object.fromEntries(data.enrollments.map((item) => [item.student_id, item])), [data.enrollments])
-  const groupById = useMemo(() => Object.fromEntries(data.groups.map((group) => [group.id, group])), [data.groups])
-
-  const matches = data.students.filter((student) => {
-    const text = query.trim().toLowerCase()
-    return !text || student.name?.toLowerCase().includes(text) || String(student.student_number || '').includes(text)
-  })
-  const student = data.students.find((item) => item.id === studentId)
-  const enrollment = enrollmentByStudent[studentId]
-  const group = groupById[enrollment?.group_id]
-  const degree = data.degrees.find((item) => item.id === group?.degree_id) || data.degrees[0]
-  const mine = data.moduleEnrollments.filter((item) => item.student_id === studentId)
-  const linkedProfile = data.links.find((link) => link.student_id === studentId)?.profile_id || ''
-
-  // Cambiar de grupo: se cambia la matrícula del curso actual (sus módulos le siguen al grupo nuevo)
-  function changeGroup(newGroupId) {
-    const target = groupById[newGroupId]
-    if (!target) return
-    run(() => supabase.rpc('manager_move_student', { p_student_id: studentId, p_group_id: newGroupId }), `${student.name} pasa a ${groupLabel(target)}.`)
-  }
-
-  function toggleModule(item, checked) {
-    const current = mine.find((entry) => entry.degree_module_id === item.id)
-    if (checked) {
-      if (!enrollment) return
-      run(() => supabase.from('module_enrollments').insert({ student_id: studentId, degree_module_id: item.id, academic_year_id: data.year.id, group_id: enrollment.group_id }))
-    } else if (current) {
-      run(() => supabase.from('module_enrollments').delete().eq('id', current.id))
-    }
-  }
-
-  // Un módulo se puede cursar con otro grupo (p. ej. un alumno de 1º que hace M11 con 2ºA)
-  function changeModuleGroup(item, newGroupId) {
-    run(() => supabase.rpc('class_set_student', { p_group_id: newGroupId, p_degree_module_id: item.id, p_student_id: studentId, p_in: true }),
-      `${student.name} cursa ${item.module_id} con ${groupLabel(groupById[newGroupId])}.`)
-  }
-
-  function linkAccount(profileId) {
-    run(() => supabase.rpc('admin_link_student_profile', { p_student_id: studentId, p_profile_id: profileId || null }), profileId ? 'Cuenta vinculada.' : 'Cuenta desvinculada.')
-  }
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-      <section className="card flex max-h-[70vh] flex-col overflow-hidden">
-        <div className="relative border-b border-line p-3">
-          <Icon name="search" size={16} className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-faint" />
-          <input type="search" className="input pl-9" placeholder="Buscar alumno…" value={query} onChange={(event) => setQuery(event.target.value)} />
-        </div>
-        <ul className="flex-1 overflow-y-auto p-1.5">
-          {matches.map((item) => (
-            <li key={item.id}>
-              <button type="button" onClick={() => setStudentId(item.id)}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm ${item.id === studentId ? 'bg-accent-soft font-medium text-accent-strong' : 'text-ink-soft hover:bg-subtle'}`}>
-                <span className="truncate">{item.name}</span>
-                <span className="shrink-0 text-xs text-muted">{groupLabel(groupById[enrollmentByStudent[item.id]?.group_id]) === '—' ? '' : groupLabel(groupById[enrollmentByStudent[item.id]?.group_id])}</span>
-              </button>
-            </li>
-          ))}
-          {!matches.length && <li className="px-3 py-6 text-center text-sm text-muted">Sin resultados</li>}
-        </ul>
-      </section>
-
-      {!student ? (
-        <div className="card empty self-start"><p className="font-medium text-ink-soft">Elige un alumno</p><p className="mt-1">Verás su grupo, sus módulos y su cuenta de acceso.</p></div>
-      ) : (
-        <section className="card space-y-5 self-start p-5 md:p-6">
-          <div>
-            <h3 className="text-lg font-semibold text-ink">{student.name}</h3>
-            <p className="text-sm text-muted">Nº {student.student_number || '—'}</p>
-          </div>
-
-          <label className="field max-w-xs">Grupo
-            <select className="input" value={enrollment?.group_id || ''} disabled={busy} onChange={(event) => changeGroup(event.target.value)}>
-              {!enrollment && <option value="">Sin grupo</option>}
-              {data.groups.map((item) => <option key={item.id} value={item.id}>{groupLabel(item)}</option>)}
-            </select>
-          </label>
-
-          <fieldset disabled={busy || !enrollment}>
-            <legend className="mb-2 text-sm font-medium text-ink-soft">Módulos que cursa este curso</legend>
-            {!enrollment && <p className="mb-2 text-sm text-muted">Asígnale un grupo para poder matricularlo en módulos.</p>}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {[...(degree?.degree_modules || [])].sort(sortModules).map((item) => {
-                const entry = mine.find((row) => row.degree_module_id === item.id)
-                const graded = entry && (entry.theory_grade != null || entry.practical_result)
-                return (
-                  <label key={item.id} className="choice" title={graded ? 'Tiene nota: no se puede quitar' : undefined}>
-                    <input type="checkbox" checked={Boolean(entry)} disabled={graded} onChange={(event) => toggleModule(item, event.target.checked)} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{moduleTitle(item, data.moduleNames)}</span>
-                      <span className="text-xs text-muted">
-                        {KIND_LABEL[item.kind]} · {levelLabel(item.level)}
-                        {entry?.is_carryover && <span className="text-warn"> · Arrastrado</span>}
-                      </span>
-                    </span>
-                    {entry && (
-                      <select className="input h-8 w-auto py-0 text-xs" aria-label={`Grupo con el que cursa ${item.module_id}`} title="Grupo con el que cursa este módulo" value={entry.group_id} disabled={busy}
-                        onChange={(event) => changeModuleGroup(item, event.target.value)}>
-                        {data.groups.filter((option) => option.degree_id === degree?.id).map((option) => <option key={option.id} value={option.id}>con {groupLabel(option)}</option>)}
-                      </select>
-                    )}
-                  </label>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          <label className="field max-w-md">Cuenta de acceso
-            <select className="input" value={linkedProfile} disabled={busy} onChange={(event) => linkAccount(event.target.value)}>
-              <option value="">Sin vincular</option>
-              {data.studentAccounts.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email} · {profile.email}</option>)}
-            </select>
-          </label>
-        </section>
-      )}
     </div>
   )
 }

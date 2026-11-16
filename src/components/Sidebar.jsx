@@ -23,7 +23,7 @@ const sections = [
     id: 'admin',
     label: 'Administración',
     items: [
-      { id: 'schools', label: 'Escuelas', icon: 'school' },
+      { id: 'schools', label: 'Centros', icon: 'school' },
       { id: 'setup', label: 'Escuela', icon: 'layers' },
       { id: 'teachers', label: 'Perfiles', icon: 'idcard' },
       { id: 'reports', label: 'Informes', icon: 'chart' },

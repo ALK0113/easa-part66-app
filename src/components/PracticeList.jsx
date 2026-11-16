@@ -416,7 +416,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
         <details className="card group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
             <span><span className="font-semibold text-ink">Alumnos de la clase</span> <span className="text-sm text-muted">· {enrolled.length}</span></span>
-            <span className="flex items-center gap-1 text-xs font-medium text-accent"><Icon name="plus" size={14} />Añadir o quitar</span>
+            <span className="flex items-center gap-1 text-xs font-medium text-accent">{isManager(user.role) ? <><Icon name="plus" size={14} />Añadir o ver</> : 'Ver lista'}</span>
           </summary>
           <div className="border-t border-line p-5">
             <ModuleStudents moduleId={selectedPractice.module_id} user={user} onChanged={() => setReloadKey((value) => value + 1)} />

@@ -21,9 +21,9 @@ function parseSupabaseError(err) {
   const detail = err?.details
   switch (code) {
     case 'P0001': return { message: 'No tienes permisos para esta acción' }
-    case 'P0002': return { message: detail === 'school_not_found' ? 'Escuela no encontrada' : 'Recurso no encontrado' }
+    case 'P0002': return { message: detail === 'school_not_found' ? 'Centro no encontrado' : 'Recurso no encontrado' }
     case '22023': return { message: detail === 'name_required' ? 'El nombre es obligatorio' : detail === 'color_must_be_hex' ? 'Color inválido (formato #RRGGBB)' : 'Datos inválidos', field: detail === 'name_required' ? 'name' : undefined }
-    case '23505': return { message: detail === 'name_already_exists' ? 'Ya existe una escuela con este nombre' : 'Conflicto de datos', field: detail === 'name_already_exists' ? 'name' : undefined }
+    case '23505': return { message: detail === 'name_already_exists' ? 'Ya existe un centro con este nombre' : 'Conflicto de datos', field: detail === 'name_already_exists' ? 'name' : undefined }
     default: return { message: getSupabaseErrorMessage(err) || 'Error desconocido' }
   }
 }
@@ -32,7 +32,7 @@ function generateId() {
   return Math.random().toString(36).substring(2, 11)
 }
 
-function exportToCSV(schools, filename = 'escuelas') {
+function exportToCSV(schools, filename = 'centros') {
   const headers = ['ID', 'Nombre', 'Dirección', 'Ciudad', 'Teléfono', 'Email', 'Color', 'Alumnos', 'Profesores', 'Supervisores']
   const rows = schools.map(s => [
     s.school_id, s.school_name, s.school_address || '', s.school_city || '',
@@ -288,7 +288,7 @@ export default function SchoolManagement({ user }) {
           p_school_id: data.school_id,
           p_brand_color: createForm.brand_color,
         })
-        if (brandError) addToast('error', `Escuela creada, pero el color no se guardó: ${parseSupabaseError(brandError).message}`)
+        if (brandError) addToast('error', `Centro creado, pero el color no se guardó: ${parseSupabaseError(brandError).message}`)
       }
 
       // La escuela nace con su supervisor (recibe una invitación por correo)
@@ -300,12 +300,12 @@ export default function SchoolManagement({ user }) {
         if (supError) {
           let message = 'No se pudo crear el supervisor.'
           try { message = (await supError.context.json())?.error || message } catch { /* sin cuerpo */ }
-          addToast('error', `Escuela creada, pero el supervisor no: ${message} Créalo desde «Supervisores».`)
+          addToast('error', `Centro creado, pero el supervisor no: ${message} Créalo desde «Supervisores».`)
         } else {
-          addToast('success', `Escuela creada. Invitación enviada a ${supervisorEmail}`)
+          addToast('success', `Centro creado. Invitación enviada a ${supervisorEmail}`)
         }
       } else {
-        addToast('success', 'Escuela creada correctamente')
+        addToast('success', 'Centro creado correctamente')
       }
       setCreateModalOpen(false)
       reloadSchools()
@@ -336,7 +336,7 @@ export default function SchoolManagement({ user }) {
         p_email: editForm.email.trim() || null,
       })
       if (error) throw error
-      addToast('success', 'Escuela actualizada')
+      addToast('success', 'Centro actualizado')
       setEditModalOpen(false)
       reloadSchools()
       await loadSchools()
@@ -459,7 +459,7 @@ export default function SchoolManagement({ user }) {
   if (!isAdmin) {
     return (
       <div className="p-8 text-center">
-        <p className="text-lg font-semibold text-danger">Solo los administradores pueden gestionar escuelas</p>
+        <p className="text-lg font-semibold text-danger">Solo los administradores pueden gestionar centros</p>
       </div>
     )
   }
@@ -485,7 +485,7 @@ export default function SchoolManagement({ user }) {
       {/* Header */}
       <div className="page-intro">
         <div>
-          <h2>Escuelas</h2>
+          <h2>Centros</h2>
           <p>{schools.length} {schools.length === 1 ? 'centro' : 'centros'} · colores de marca y supervisores</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -493,7 +493,7 @@ export default function SchoolManagement({ user }) {
             <Icon name="download" size={16} />CSV
           </button>
           <button type="button" onClick={openCreateModal} className={buttonPrimary}>
-            <Icon name="plus" size={16} />Nueva escuela
+            <Icon name="plus" size={16} />Nuevo centro
           </button>
         </div>
       </div>
@@ -501,14 +501,14 @@ export default function SchoolManagement({ user }) {
       {/* Selector de Escuela */}
 <div className="card p-5">
   <label className="mb-1.5 block text-sm font-medium text-ink-soft">
-    Escuela activa
+    Centro activo
   </label>
   <select
     value={activeSchoolId || ''}
     onChange={(e) => handleSetActiveSchool(e.target.value || null)}
     className={inputClass}
   >
-    <option value="">No hay escuela</option>
+    <option value="">No hay centro</option>
     {schools.map(s => (
       <option key={s.school_id} value={s.school_id}>
         {s.school_name}
@@ -517,7 +517,7 @@ export default function SchoolManagement({ user }) {
   </select>
   {activeSchoolId && (
     <p className="mt-2 text-xs text-muted">
-      Los acentos de la aplicación usan el color de esta escuela.
+      Los acentos de la aplicación usan el color de este centro.
     </p>
   )}
 </div>
@@ -564,14 +564,14 @@ export default function SchoolManagement({ user }) {
 
       {/* Contenido Principal */}
       {loading ? (
-        <div className="py-16 text-center text-sm text-muted">Cargando escuelas…</div>
+        <div className="py-16 text-center text-sm text-muted">Cargando centros…</div>
       ) : filteredAndSortedSchools.length === 0 ? (
         <div className="card empty">
           <p className="font-medium text-ink-soft">
-            {debouncedSearch ? 'Sin resultados' : 'No hay escuelas registradas'}
+            {debouncedSearch ? 'Sin resultados' : 'No hay centros registrados'}
           </p>
           <p className="mt-1">
-            {debouncedSearch ? 'Prueba con otros términos de búsqueda.' : 'Crea la primera con «Nueva escuela».'}
+            {debouncedSearch ? 'Prueba con otros términos de búsqueda.' : 'Crea el primero con «Nuevo centro».'}
           </p>
         </div>
       ) : (
@@ -650,10 +650,10 @@ export default function SchoolManagement({ user }) {
 
       {/* Modal Crear */}
       {createModalOpen && (
-        <Modal onClose={() => setCreateModalOpen(false)} title="Nueva escuela">
+        <Modal onClose={() => setCreateModalOpen(false)} title="Nuevo centro">
           <form className="space-y-4" onSubmit={handleCreate} noValidate>
             <FormField label="Nombre" required error={createErrors.name}>
-              <input className={inputClass} value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Escuela Ejemplo" maxLength={200} />
+              <input className={inputClass} value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Centro Ejemplo" maxLength={200} />
             </FormField>
             <FormField label="Dirección">
               <input className={inputClass} value={createForm.address} onChange={e => setCreateForm({ ...createForm, address: e.target.value })} placeholder="Calle 123" />
@@ -667,11 +667,11 @@ export default function SchoolManagement({ user }) {
               </FormField>
             </div>
             <FormField label="Email" error={createErrors.email}>
-              <input type="email" className={inputClass} value={createForm.email} onChange={e => setCreateForm({ ...createForm, email: e.target.value })} placeholder="info@escuela.com" />
+              <input type="email" className={inputClass} value={createForm.email} onChange={e => setCreateForm({ ...createForm, email: e.target.value })} placeholder="info@centro.com" />
             </FormField>
             <fieldset className="space-y-3 rounded-xl border border-line p-3">
               <legend className="px-1 text-sm font-semibold text-ink-soft">Supervisor (opcional)</legend>
-              <p className="text-xs text-muted">Recibirá una invitación por correo y podrá poner en marcha la escuela. También puedes nombrarlo después.</p>
+              <p className="text-xs text-muted">Recibirá una invitación por correo y podrá poner en marcha el centro. También puedes nombrarlo después.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <FormField label="Nombre" error={createErrors.supervisor_name}>
                   <input className={inputClass} value={createForm.supervisor_name} onChange={e => setCreateForm({ ...createForm, supervisor_name: e.target.value })} maxLength={100} autoComplete="off" />
@@ -802,9 +802,9 @@ export default function SchoolManagement({ user }) {
             </div>
             <div className="border-t border-line pt-4">
               <h4 className="mb-1 text-sm font-semibold text-ink-soft">Nombrar supervisor</h4>
-              <p className="mb-2 text-xs text-muted">Elige un profesor de esta escuela. Podrá gestionar sus usuarios, estructura, asignaciones y notas.</p>
+              <p className="mb-2 text-xs text-muted">Elige un profesor de este centro. Podrá gestionar sus usuarios, estructura, asignaciones y notas.</p>
               {supervisorCandidates.length === 0 ? (
-                <p className="text-sm text-muted">No hay profesores en esta escuela</p>
+                <p className="text-sm text-muted">No hay profesores en este centro</p>
               ) : (
                 <form className="flex gap-2" onSubmit={handleAssign}>
                   <select className={inputClass} value={assignForm.profileId} onChange={e => setAssignForm({ profileId: e.target.value })} required>
@@ -821,7 +821,7 @@ export default function SchoolManagement({ user }) {
             </div>
             <div className="border-t border-line pt-4">
               <h4 className="mb-1 text-sm font-semibold text-ink-soft">Crear supervisor nuevo</h4>
-              <p className="mb-2 text-xs text-muted">Para una escuela que empieza: recibirá una invitación por correo para elegir su contraseña.</p>
+              <p className="mb-2 text-xs text-muted">Para un centro que empieza: recibirá una invitación por correo para elegir su contraseña.</p>
               <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleCreateSupervisor}>
                 <input className={inputClass} placeholder="Nombre completo" value={newSupervisor.full_name} onChange={e => setNewSupervisor({ ...newSupervisor, full_name: e.target.value })} required maxLength={100} />
                 <input className={inputClass} type="email" placeholder="correo@escuela.com" value={newSupervisor.email} onChange={e => setNewSupervisor({ ...newSupervisor, email: e.target.value })} required />

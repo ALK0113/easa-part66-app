@@ -101,7 +101,7 @@ export function AttendanceSheet({ session, onRoster, onSaved }) {
       {error && <p role="alert" className="notice-error mx-5 mb-3">{error}</p>}
       {cancelled && <p className="notice mx-5 mb-3">Sesión cancelada: no se pasa lista.</p>}
       {rows === null && !error && <p className="px-5 pb-5 text-sm text-muted">Cargando lista…</p>}
-      {rows?.length === 0 && <p className="px-5 pb-5 text-sm text-muted">{session.recovery ? 'Esta recuperación no tiene alumnos.' : 'No hay alumnos en esta clase. Se añaden en Escuela → Alumnos → Por clase.'}</p>}
+      {rows?.length === 0 && <p className="px-5 pb-5 text-sm text-muted">{session.recovery ? 'Esta recuperación no tiene alumnos.' : 'No hay alumnos en esta clase. Se matriculan en Escuela → Alumnos.'}</p>}
       {rows?.length > 0 && (
         <ul className="divide-y divide-line border-t border-line">
           {rows.map((row) => (
