@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
-import { isManager, teachesLikeProfessor } from '../lib/roles.js'
+import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { compareCodes, outcomeLabel, useModuleStructure } from '../lib/curriculum.js'
 import { SESSION_FIELDS, saveSessions, sessionErrors, useFreeModuleSessions, useModuleAssignments } from '../lib/practiceSessions.js'
-import { HoursStatus, SessionsCard, SessionsEditor } from './PracticeSessions.jsx'
+import { HoursStatus, SessionsEditor } from './PracticeSessions.jsx'
+import { ClassSessions, SessionPage } from './SessionAttendance.jsx'
 import Assessments from './Assessments.jsx'
 import Icon from './Icon.jsx'
-import Modal from './Modal.jsx'
 
 const NONE = 'sin'
 
@@ -21,6 +21,7 @@ export default function TheoryClassList({ user, moduleId }) {
   const [teaches, setTeaches] = useState(false)
   const [filter, setFilter] = useState('')
   const [selectedId, setSelectedId] = useState(null)
+  const [openSessionId, setOpenSessionId] = useState(null)
   const [form, setForm] = useState(null)
   const [linksDraft, setLinksDraft] = useState([])
   const [sessionDraft, setSessionDraft] = useState([])
@@ -61,6 +62,7 @@ export default function TheoryClassList({ user, moduleId }) {
   const subById = useMemo(() => new Map(submodules.map((sub) => [sub.id, sub])), [submodules])
   const outcomeOf = (id) => outcomes.find((outcome) => outcome.id === id)
   const sessionsOf = (id) => sessions.filter((session) => session.theory_class_id === id)
+  const unscheduled = (classes || []).filter((item) => !sessions.some((session) => session.theory_class_id === item.id)).length
   const linksOf = (id) => links.filter((link) => link.theory_class_id === id)
   const visible = (classes || []).filter((item) => !filter || (filter === NONE ? !item.submodule_id : item.submodule_id === filter))
   // Agrupadas por submódulo (en orden 11.1, 11.2…), al final las que no tienen
@@ -72,6 +74,7 @@ export default function TheoryClassList({ user, moduleId }) {
 
   function openForm(item = null) {
     setMessage('')
+    window.scrollTo({ top: 0 })
     setForm(item
       ? { id: item.id, title: item.title, submodule_id: item.submodule_id || '', learning_outcome_id: item.learning_outcome_id || '', hours: item.hours ?? '', comments: item.comments || '' }
       : { title: '', submodule_id: filter && filter !== NONE ? filter : '', learning_outcome_id: '', hours: '', comments: '' })
@@ -82,6 +85,7 @@ export default function TheoryClassList({ user, moduleId }) {
   async function save(event) {
     event.preventDefault()
     if (!schoolId) { setMessage('Elige una escuela en el selector de arriba.'); return }
+    if (!sessionDraft.length) { setMessage(formAssignments?.length === 0 ? 'Este módulo no tiene clase en el horario: asígnalo a un grupo y profesor en «Escuela» para programar sus sesiones.' : 'Programa al menos una sesión en el horario: todas las clases se imparten en sesiones con control de asistencia.'); return }
     const invalidSession = sessionErrors(sessionDraft)
     if (invalidSession) { setMessage(invalidSession); return }
     const badLink = linksDraft.find((link) => !/^https?:\/\//i.test(link.url.trim()) || !link.title.trim())
@@ -92,7 +96,7 @@ export default function TheoryClassList({ user, moduleId }) {
         title: form.title.trim(),
         submodule_id: form.submodule_id || null,
         learning_outcome_id: form.learning_outcome_id || null,
-        hours: form.hours === '' ? null : Number(form.hours),
+        hours: Number(form.hours),
         comments: form.comments.trim() || null,
       }
       let classId = form.id
@@ -135,82 +139,12 @@ export default function TheoryClassList({ user, moduleId }) {
 
   if (classes === null) return <p className="text-sm text-muted">Cargando clases teóricas…</p>
 
-  const selected = classes.find((item) => item.id === selectedId)
-  if (selected) {
-    const sub = subById.get(selected.submodule_id)
-    const outcome = outcomeOf(selected.learning_outcome_id)
-    return (
-      <div className="space-y-5">
-        <button type="button" className="back-link" onClick={() => setSelectedId(null)}>← Clases teóricas</button>
-        <section className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm text-muted">{[moduleId, sub && `${sub.code} ${sub.name}`].filter(Boolean).join(' · ')}</p>
-            <h2 className="mt-1 text-2xl font-semibold text-ink">{selected.title}</h2>
-            {outcome && <p className="mt-2 text-sm text-ink-soft"><span className="badge bg-accent-soft text-accent-strong">{outcomeLabel(outcome)}</span> {outcome.description}</p>}
-          </div>
-          {canEdit && <div className="flex gap-2"><button type="button" className="btn-secondary" onClick={() => openForm(selected)}><Icon name="edit" size={16} />Editar</button><button type="button" className="btn-ghost text-danger" onClick={() => remove(selected)}><Icon name="trash" size={16} /></button></div>}
-        </section>
-        {message && <p role="status" className="notice">{message}</p>}
-        {selected.comments && <section className="card p-5"><h3 className="mb-2 text-sm font-semibold text-ink">Comentarios</h3><p className="whitespace-pre-line text-sm leading-relaxed text-ink-soft">{selected.comments}</p></section>}
-        <section className="card p-5">
-          <h3 className="mb-2 text-sm font-semibold text-ink">Presentaciones</h3>
-          {linksOf(selected.id).length ? (
-            <ul className="space-y-1.5">
-              {linksOf(selected.id).map((link) => <li key={link.id}><a className="link inline-flex items-center gap-1.5 text-sm" href={link.url} target="_blank" rel="noopener noreferrer"><Icon name="link" size={14} />{link.title}</a></li>)}
-            </ul>
-          ) : <p className="text-sm text-muted">Sin presentaciones.</p>}
-        </section>
-        <SessionsCard sessions={sessionsOf(selected.id)} requiredHours={selected.hours} />
-        <Assessments user={user} schoolId={schoolId || selected.school_id} moduleId={moduleId} theoryClassId={selected.id} outcomes={outcomes} canEdit={canEdit} />
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">{classes.length} {classes.length === 1 ? 'clase teórica' : 'clases teóricas'}</p>
-        {canEdit && <button type="button" className="btn-primary" onClick={() => openForm()}><Icon name="plus" size={16} />Nueva clase teórica</button>}
-      </div>
-      {submodules.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Submódulo">
-          {[['', 'Todos'], ...[...submodules].sort((a, b) => compareCodes(a.code, b.code)).map((sub) => [sub.id, sub.code]), [NONE, 'Sin submódulo']].map(([id, label]) => (
-            <button key={id || 'all'} type="button" role="radio" aria-checked={filter === id} onClick={() => setFilter(id)}
-              className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${filter === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>{label}</button>
-          ))}
-        </div>
-      )}
-      {message && <p role="status" className="notice">{message}</p>}
-      {groups.map(([key, items]) => {
-        const sub = subById.get(key)
-        return (
-          <section key={key}>
-            <h3 className="mb-1.5 text-xs font-semibold text-muted">{sub ? `${sub.code} · ${sub.name}` : 'Sin submódulo'}</h3>
-            <div className="space-y-2">
-              {items.map((item) => {
-                const outcome = outcomeOf(item.learning_outcome_id)
-                return (
-                  <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className="card flex w-full items-center gap-4 p-4 text-left transition-shadow hover:shadow-lift">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-ink">{item.title}</span>
-                      <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">
-                        {outcome && <span className="badge py-0">{outcomeLabel(outcome)}</span>}
-                        {linksOf(item.id).length > 0 && <span>{linksOf(item.id).length} presentación{linksOf(item.id).length === 1 ? '' : 'es'}</span>}
-                        {item.hours ? <span>· <HoursStatus compact sessions={sessionsOf(item.id)} requiredHours={item.hours} /></span> : null}
-                      </span>
-                    </span>
-                    <Icon name="next" size={16} className="text-faint" />
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-        )
-      })}
-      {visible.length === 0 && <p className="card empty">{classes.length ? 'No hay clases en este submódulo.' : 'Este módulo aún no tiene clases teóricas.'}</p>}
-
-      {form && (
-        <Modal title={form.id ? 'Editar clase teórica' : 'Nueva clase teórica'} onClose={() => setForm(null)} wide>
+  // Edición en la misma página (sin ventana)
+  if (form) return (
+    <div className="fade-in space-y-5">
+      <button type="button" className="back-link" onClick={() => setForm(null)}>← {form.id ? classes.find((item) => item.id === form.id)?.title || 'Clase teórica' : 'Clases teóricas'}</button>
+      <section className="card p-6">
+        <h2 className="mb-5 text-xl font-semibold text-ink">{form.id ? 'Editar clase teórica' : 'Nueva clase teórica'}</h2>
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={save}>
             <label className="field sm:col-span-2">Título<input className="input" required maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label>
             <label className="field">Submódulo
@@ -239,14 +173,96 @@ export default function TheoryClassList({ user, moduleId }) {
               </div>
               <button type="button" className="btn-ghost mt-1 min-h-[34px] px-2 text-xs text-accent" onClick={() => setLinksDraft([...linksDraft, { title: '', url: '' }])}><Icon name="plus" size={14} />Añadir enlace</button>
             </div>
-            <label className="field">Horas de la clase<input className="input" type="number" min="0" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} /></label>
+            <label className="field">Horas de la clase<input className="input" type="number" min="0.5" step="0.5" required value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} /></label>
             <div className="hidden sm:block" />
             <SessionsEditor sessions={sessionDraft} onChange={setSessionDraft} assignments={formAssignments} freeSessions={freeSessions} requiredHours={form.hours} />
             {message && <p role="alert" className="notice-error sm:col-span-2">{message}</p>}
             <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="btn-secondary" onClick={() => setForm(null)}>Cancelar</button><button className="btn-primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
           </form>
-        </Modal>
+      </section>
+    </div>
+  )
+
+  const selected = classes.find((item) => item.id === selectedId)
+  if (selected) {
+    const classSessions = sessionsOf(selected.id)
+    const openSession = classSessions.find((session) => session.id === openSessionId)
+    if (openSession) {
+      return <SessionPage session={openSession} index={classSessions.indexOf(openSession)} className={selected.title} canEdit={canEdit} onBack={() => setOpenSessionId(null)} onChanged={load} onRemoved={async () => { setOpenSessionId(null); await load() }} />
+    }
+    const sub = subById.get(selected.submodule_id)
+    const outcome = outcomeOf(selected.learning_outcome_id)
+    return (
+      <div className="space-y-5">
+        <button type="button" className="back-link" onClick={() => { setSelectedId(null); setOpenSessionId(null) }}>← Clases teóricas</button>
+        <section className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-muted">{[moduleId, sub && `${sub.code} ${sub.name}`].filter(Boolean).join(' · ')}</p>
+            <h2 className="mt-1 text-2xl font-semibold text-ink">{selected.title}</h2>
+            {outcome && <p className="mt-2 text-sm text-ink-soft"><span className="badge bg-accent-soft text-accent-strong">{outcomeLabel(outcome)}</span> {outcome.description}</p>}
+          </div>
+          {canEdit && <div className="flex gap-2"><button type="button" className="btn-secondary" onClick={() => openForm(selected)}><Icon name="edit" size={16} />Editar</button><button type="button" className="btn-ghost text-danger" onClick={() => remove(selected)}><Icon name="trash" size={16} /></button></div>}
+        </section>
+        {message && <p role="status" className="notice">{message}</p>}
+        {selected.comments && <section className="card p-5"><h3 className="mb-2 text-sm font-semibold text-ink">Comentarios</h3><p className="whitespace-pre-line text-sm leading-relaxed text-ink-soft">{selected.comments}</p></section>}
+        <section className="card p-5">
+          <h3 className="mb-2 text-sm font-semibold text-ink">Presentaciones</h3>
+          {linksOf(selected.id).length ? (
+            <ul className="space-y-1.5">
+              {linksOf(selected.id).map((link) => <li key={link.id}><a className="link inline-flex items-center gap-1.5 text-sm" href={link.url} target="_blank" rel="noopener noreferrer"><Icon name="link" size={14} />{link.title}</a></li>)}
+            </ul>
+          ) : <p className="text-sm text-muted">Sin presentaciones.</p>}
+        </section>
+        <ClassSessions onOpenSession={setOpenSessionId} sessions={sessionsOf(selected.id)} requiredHours={selected.hours} canEdit={canEdit} isStudent={user.role === ROLES.STUDENT} editHint={canEdit ? 'Pulsa «Editar» para añadir sus sesiones.' : ''} owner={{ theory_class_id: selected.id }} moduleId={moduleId} user={user} onSessionsChanged={load} />
+        <Assessments user={user} schoolId={schoolId || selected.school_id} moduleId={moduleId} theoryClassId={selected.id} outcomes={outcomes} canEdit={canEdit} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">{classes.length} {classes.length === 1 ? 'clase teórica' : 'clases teóricas'}</p>
+        {canEdit && <button type="button" className="btn-primary" onClick={() => openForm()}><Icon name="plus" size={16} />Nueva clase teórica</button>}
+      </div>
+      {submodules.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Submódulo">
+          {[['', 'Todos'], ...[...submodules].sort((a, b) => compareCodes(a.code, b.code)).map((sub) => [sub.id, sub.code]), [NONE, 'Sin submódulo']].map(([id, label]) => (
+            <button key={id || 'all'} type="button" role="radio" aria-checked={filter === id} onClick={() => setFilter(id)}
+              className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${filter === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>{label}</button>
+          ))}
+        </div>
       )}
+      {message && <p role="status" className="notice">{message}</p>}
+      {unscheduled > 0 && <p className="notice-error">{unscheduled === 1 ? '1 clase sin programar en el horario.' : `${unscheduled} clases sin programar en el horario.`}{canEdit ? ' Edítalas para añadir sus sesiones.' : ''}</p>}
+      {groups.map(([key, items]) => {
+        const sub = subById.get(key)
+        return (
+          <section key={key}>
+            <h3 className="mb-1.5 text-xs font-semibold text-muted">{sub ? `${sub.code} · ${sub.name}` : 'Sin submódulo'}</h3>
+            <div className="space-y-2">
+              {items.map((item) => {
+                const outcome = outcomeOf(item.learning_outcome_id)
+                return (
+                  <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className="card flex w-full items-center gap-4 p-4 text-left transition-shadow hover:shadow-lift">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-ink">{item.title}</span>
+                      <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">
+                        {outcome && <span className="badge py-0">{outcomeLabel(outcome)}</span>}
+                        {linksOf(item.id).length > 0 && <span>{linksOf(item.id).length} presentación{linksOf(item.id).length === 1 ? '' : 'es'}</span>}
+                        {sessionsOf(item.id).length ? <span>· <HoursStatus compact sessions={sessionsOf(item.id)} requiredHours={item.hours} /> · {sessionsOf(item.id).length} {sessionsOf(item.id).length === 1 ? 'sesión' : 'sesiones'}</span> : <span className="font-medium text-danger">Sin programar</span>}
+                      </span>
+                    </span>
+                    <Icon name="next" size={16} className="text-faint" />
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
+      {visible.length === 0 && <p className="card empty">{classes.length ? 'No hay clases en este submódulo.' : 'Este módulo aún no tiene clases teóricas.'}</p>}
+
     </div>
   )
 }

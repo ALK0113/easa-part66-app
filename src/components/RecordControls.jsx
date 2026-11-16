@@ -47,14 +47,14 @@ export function EvaluationControl({ value, onChange, disabled }) {
 }
 
 // Fila de alumno con sus dos controles; se apila en móvil.
-export function StudentRecordRow({ student, record, canEdit = true, busy, onAttendance, onEvaluation, meta }) {
+export function StudentRecordRow({ student, record, canEdit = true, attendanceLocked = false, busy, onAttendance, onEvaluation, meta }) {
   return (
     <li className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
       <div className="min-w-[160px] flex-1">
         <p className="font-medium text-ink">{student.name}</p>
         <p className="mt-0.5 text-xs text-muted">{meta}</p>
       </div>
-      <AttendanceControl value={record.attendance} disabled={!canEdit || busy} onChange={onAttendance} />
+      <AttendanceControl value={record.attendance} disabled={!canEdit || busy || attendanceLocked} onChange={onAttendance} />
       <EvaluationControl value={record.evaluation} disabled={!canEdit || busy} onChange={onEvaluation} />
     </li>
   )
