@@ -132,30 +132,3 @@ export function SessionsEditor({ sessions, onChange, assignments, freeSessions =
     </div>
   )
 }
-
-// Lista de solo lectura en el detalle de la práctica
-export function SessionsCard({ sessions, requiredHours }) {
-  return (
-    <section className="card p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold text-ink">Sesiones</h3>
-        <HoursStatus sessions={sessions} requiredHours={requiredHours} />
-      </div>
-      {sessions.length === 0
-        ? <p className="text-sm text-muted">Sin sesiones programadas. Edita la práctica para añadirlas.</p>
-        : <ul className="divide-y divide-line">
-          {sessions.map((session, index) => (
-            <li key={session.id} className="flex gap-4 py-2.5 text-sm">
-              <span className="w-24 shrink-0 text-muted">Sesión {index + 1}</span>
-              <span className="min-w-0 flex-1">
-                <span className={`block ${session.status === 'cancelada' ? 'text-muted line-through' : 'text-ink'}`}>
-                  {new Date(`${session.date}T00:00`).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} · {time(session.start_time)}–{time(session.end_time)} · {formatHours(sessionHours(session))} h
-                </span>
-                {session.note && <span className="mt-0.5 block whitespace-pre-line text-xs text-muted">{session.note}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>}
-    </section>
-  )
-}

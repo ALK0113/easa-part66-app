@@ -6,7 +6,7 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { WEEKDAYS, addDays, fetchSessions, parseISODate, startOfWeek, time, toISODate } from '../lib/schedule.js'
-import { AttendanceControl, EvaluationControl } from './RecordControls.jsx'
+import { AttendanceSheet } from './SessionAttendance.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportSchedule from './ImportSchedule.jsx'
@@ -222,61 +222,25 @@ function WeekView({ user }) {
 function SessionDetail({ session, user, onClose, onChanged }) {
   const assignment = session.teaching_assignments
   const canEdit = isManager(user.role) || assignment.profile_id === user.id
-  const [roster, setRoster] = useState(null)
   const [ownStatus, setOwnStatus] = useState(undefined)
   const [practices, setPractices] = useState([])
-  // Evaluación de la práctica unida a la clase (Apto / No apto), en la misma pantalla que la lista
-  const [evaluations, setEvaluations] = useState({})
+  const [theoryClasses, setTheoryClasses] = useState([])
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ date: session.date, start_time: time(session.start_time), end_time: time(session.end_time), room: session.room || '', note: session.note || '', practice_id: session.practice_id || '' })
+  const [form, setForm] = useState({ date: session.date, start_time: time(session.start_time), end_time: time(session.end_time), room: session.room || '', note: session.note || '', content: session.theory_class_id ? `t:${session.theory_class_id}` : session.practice_id ? `p:${session.practice_id}` : '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const cancelled = session.status === 'cancelada'
 
-  const loadRoster = useCallback(async () => {
-    const { data, error: rosterError } = await supabase.rpc('session_roster', { p_session_id: session.id })
-    if (rosterError) setError(getSupabaseErrorMessage(rosterError))
-    else setRoster(data || [])
-  }, [session.id])
-
   useEffect(() => {
     let active = true
     if (canEdit) {
-      supabase.rpc('session_roster', { p_session_id: session.id }).then(({ data, error: rosterError }) => {
-        if (!active) return
-        if (rosterError) setError(getSupabaseErrorMessage(rosterError))
-        else setRoster(data || [])
-      })
       supabase.from('practices').select('id,title,date').eq('module_id', assignment.degree_modules?.module_id).order('date').then(({ data }) => { if (active) setPractices(data || []) })
+      supabase.from('theory_classes').select('id,title').eq('module_id', assignment.degree_modules?.module_id).order('created_at').then(({ data }) => { if (active) setTheoryClasses(data || []) })
     } else {
-      supabase.from('session_attendance').select('status').eq('session_id', session.id).maybeSingle().then(({ data }) => { if (active) setOwnStatus(data?.status || null) })
+      supabase.from('session_attendance').select('status,evaluation,comment').eq('session_id', session.id).maybeSingle().then(({ data }) => { if (active) setOwnStatus(data || null) })
     }
     return () => { active = false }
   }, [canEdit, session.id, assignment.degree_modules?.module_id])
-
-  useEffect(() => {
-    if (!canEdit || !session.practice_id || !roster?.length) return undefined
-    let active = true
-    supabase.from('practice_records').select('student_id,evaluation').eq('practice_id', session.practice_id)
-      .in('student_id', roster.map((row) => row.student_id))
-      .then(({ data }) => { if (active) setEvaluations(Object.fromEntries((data || []).map((row) => [row.student_id, row.evaluation]))) })
-    return () => { active = false }
-  }, [canEdit, session.practice_id, roster])
-
-  async function evaluate(studentId, evaluation) {
-    const previous = evaluations[studentId]
-    setEvaluations((current) => ({ ...current, [studentId]: evaluation || null }))
-    const { error: saveError } = await supabase.rpc('set_evaluation', { p_student_id: studentId, p_practice_id: session.practice_id, p_evaluation: evaluation || null })
-    if (saveError) { setError(getSupabaseErrorMessage(saveError)); setEvaluations((current) => ({ ...current, [studentId]: previous })) }
-  }
-
-  async function mark(studentIds, status) {
-    setBusy(true)
-    setRoster((current) => current.map((row) => (studentIds.includes(row.student_id) ? { ...row, status: status || null } : row)))
-    const { error: saveError } = await supabase.rpc('set_session_attendance', { p_session_id: session.id, p_student_ids: studentIds, p_status: status || null })
-    if (saveError) { setError(getSupabaseErrorMessage(saveError)); await loadRoster() }
-    setBusy(false)
-  }
 
   async function update(values, close = false) {
     setBusy(true)
@@ -297,7 +261,6 @@ function SessionDetail({ session, user, onClose, onChanged }) {
 
   const longDate = parseISODate(session.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
   const dateText = longDate.charAt(0).toUpperCase() + longDate.slice(1)
-  const marked = roster?.filter((row) => row.status).length || 0
   const linkedPractice = practices.find((practice) => practice.id === session.practice_id)
 
   return (
@@ -309,40 +272,22 @@ function SessionDetail({ session, user, onClose, onChanged }) {
       {cancelled && <p className="notice mt-3">Esta clase está cancelada.</p>}
       {session.note && !editing && <p className="mt-3 text-sm text-ink-soft">{session.note}</p>}
       {session.theory_classes?.title && !editing && <p className="mt-2 text-sm text-ink-soft">Clase teórica: {session.theory_classes.title}</p>}
-      {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}{canEdit ? ' · la lista y la evaluación se guardan también en la práctica' : ''}</p>}
+      {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}{canEdit ? ' · Apto / No apto por sesión; la nota general se pone en la práctica' : ''}</p>}
       {error && <p role="alert" className="notice-error mt-3">{error}</p>}
 
       {!canEdit && ownStatus !== undefined && (
-        <p className="mt-4 text-sm text-ink-soft">Tu asistencia: <strong className="text-ink">{{ P: 'Presente', L: 'Tarde', A: 'Falta' }[ownStatus] || 'sin registrar'}</strong></p>
+        <div className="mt-4 space-y-1 text-sm text-ink-soft">
+          <p>Tu asistencia: <strong className="text-ink">{{ P: 'Presente', L: 'Tarde', A: 'Falta' }[ownStatus?.status] || 'sin registrar'}</strong></p>
+          {ownStatus?.evaluation && <p>Evaluación de la sesión: <strong className={ownStatus.evaluation === 'Apto' ? 'text-success' : 'text-danger'}>{ownStatus.evaluation === 'Apto' ? 'Apto' : 'No apto'}</strong></p>}
+          {ownStatus?.comment && <p className="whitespace-pre-line">Comentario: {ownStatus.comment}</p>}
+        </div>
       )}
 
       {canEdit && !editing && (
         <>
-          <section className="mt-5">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-ink">Asistencia <span className="font-normal text-muted">{roster ? `${marked}/${roster.length}` : ''}</span></h3>
-              {roster?.length > 0 && !cancelled && (
-                <button type="button" className="btn-ghost text-sm" disabled={busy} onClick={() => mark(roster.filter((row) => !row.status).map((row) => row.student_id), 'P')}>
-                  <Icon name="check" size={16} />Resto presentes
-                </button>
-              )}
-            </div>
-            {roster === null && <p className="text-sm text-muted">Cargando lista…</p>}
-            {roster?.length === 0 && <p className="text-sm text-muted">No hay alumnos en esta clase. Se añaden en Escuela → Alumnos → Por clase.</p>}
-            {roster?.length > 0 && (
-              <ul className="divide-y divide-line rounded-xl border border-line">
-                {roster.map((row) => (
-                  <li key={row.student_id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                    <span className="min-w-0 truncate text-sm text-ink">{row.name}</span>
-                    <span className="flex flex-wrap items-center justify-end gap-2">
-                      <AttendanceControl value={row.status} disabled={busy || cancelled} onChange={(status) => mark([row.student_id], status === row.status ? null : status)} />
-                      {session.practice_id && <EvaluationControl value={evaluations[row.student_id]} disabled={cancelled} onChange={(value) => evaluate(row.student_id, value)} />}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <div className="mt-5">
+            <AttendanceSheet session={session} />
+          </div>
           <div className="mt-5 flex flex-wrap justify-between gap-2">
             <div className="flex gap-2">
               <button type="button" className="btn-secondary" onClick={() => setEditing(true)}><Icon name="edit" size={16} />Cambiar</button>
@@ -354,18 +299,19 @@ function SessionDetail({ session, user, onClose, onChanged }) {
       )}
 
       {canEdit && editing && (
-        <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); update({ ...form, room: form.room || null, note: form.note || null, practice_id: form.practice_id || null }, true) }}>
+        <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); { const { content, ...values } = form; update({ ...values, room: form.room || null, note: form.note || null, practice_id: content.startsWith('p:') ? content.slice(2) : null, theory_class_id: content.startsWith('t:') ? content.slice(2) : null }, true) } }}>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="field">Día<input className="input" type="date" required value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></label>
             <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
             <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
           </div>
           <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
-          {practices.length > 0 && (
-            <label className="field">Práctica de esta clase
-              <select className="input" value={form.practice_id} onChange={(event) => setForm({ ...form, practice_id: event.target.value })}>
+          {(practices.length > 0 || theoryClasses.length > 0) && (
+            <label className="field">Clase que se imparte en esta sesión
+              <select className="input" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })}>
                 <option value="">Ninguna</option>
-                {practices.map((practice) => <option key={practice.id} value={practice.id}>{practice.title}</option>)}
+                {theoryClasses.length > 0 && <optgroup label="Clases teóricas">{theoryClasses.map((item) => <option key={item.id} value={`t:${item.id}`}>{item.title}</option>)}</optgroup>}
+                {practices.length > 0 && <optgroup label="Clases prácticas">{practices.map((practice) => <option key={practice.id} value={`p:${practice.id}`}>{practice.title}</option>)}</optgroup>}
               </select>
             </label>
           )}

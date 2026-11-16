@@ -7,7 +7,7 @@ import { isManager } from './roles.js'
 // Sesiones de una clase práctica o teórica. Son clases del horario (class_sessions con practice_id
 // o theory_class_id), así que lo que se programa aquí aparece en el calendario y viceversa.
 
-export const SESSION_FIELDS = 'id,teaching_assignment_id,slot_id,date,start_time,end_time,note,status,practice_id,theory_class_id'
+export const SESSION_FIELDS = 'id,teaching_assignment_id,slot_id,date,start_time,end_time,note,status,practice_id,theory_class_id,recovery'
 
 const minutes = (value) => {
   const [h, m] = String(value || '').split(':').map(Number)
@@ -16,7 +16,8 @@ const minutes = (value) => {
 
 // Horas de una sesión (las canceladas no cuentan)
 export const sessionHours = (session) => (session.status === 'cancelada' ? 0 : Math.max(0, minutes(session.end_time) - minutes(session.start_time)) / 60)
-export const totalSessionHours = (sessions) => sessions.reduce((sum, session) => sum + sessionHours(session), 0)
+// Las sesiones de recuperación no suman horas a la clase
+export const totalSessionHours = (sessions) => sessions.reduce((sum, session) => sum + (session.recovery ? 0 : sessionHours(session)), 0)
 export const formatHours = (value) => (Number.isInteger(value) ? String(value) : value.toFixed(1).replace('.', ','))
 
 // Clases (grupo + profesor) que imparten el módulo este curso: a una de ellas pertenece cada sesión
@@ -28,7 +29,7 @@ export function useModuleAssignments(moduleId, user) {
     let active = true
     let query = supabase
       .from('teaching_assignments')
-      .select('id,profile_id,profiles(full_name,email),class_groups!inner(level,name,academic_years!inner(is_current,school_id)),degree_modules!inner(module_id)')
+      .select('id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups!inner(level,name,academic_years!inner(is_current,school_id)),degree_modules!inner(module_id)')
       .eq('degree_modules.module_id', moduleId)
       .eq('class_groups.academic_years.is_current', true)
     if (filterId) query = query.eq('class_groups.academic_years.school_id', filterId)

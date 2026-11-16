@@ -7,11 +7,13 @@ import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
 import { canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
+import { StudentPracticeResult, StudentPracticeSessions } from './SessionAttendance.jsx'
 
 // Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
 const TLBList = lazy(() => import('./TLBList.jsx'))
 const VideoList = lazy(() => import('./VideoList.jsx'))
+const ModuleStudents = lazy(() => import('./ModuleStudents.jsx'))
 const TheoryClassList = lazy(() => import('./TheoryClassList.jsx'))
 const tabFallback = <div className="flex min-h-[20vh] items-center justify-center text-sm text-muted">Cargando…</div>
 
@@ -69,7 +71,7 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
           ? bySchool(supabase.from('profiles').select(filterId ? 'id,full_name,email,school_profiles!inner(school_id)' : 'id,full_name,email').in('id', teacherIds).order('full_name'), 'school_profiles.school_id')
           : Promise.resolve({ data: [], error: null }),
         practiceIds.length
-          ? supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation').in('practice_id', practiceIds)
+          ? supabase.from('practice_records').select('student_id,practice_id,attendance,evaluation,comment').in('practice_id', practiceIds)
           : Promise.resolve({ data: [], error: null }),
         tlbIds.length
           ? supabase.from('defects').select('id,tlb_id,defect_number,ata,pirep,defect_description').in('tlb_id', tlbIds).order('defect_number')
@@ -180,8 +182,12 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="users" size={14} className="text-faint" />{students.length} alumnos</span>
         </div>
       </section>
-      <RecordSummary items={[['Presentes', counts.P, 'bg-success'], ['Tarde', counts.L, 'bg-warn'], ['Faltas', counts.A, 'bg-danger'], ['Aptos', `${counts.apto}/${students.length}`, 'bg-accent']]} />
-      <section className="card overflow-hidden">
+      {!canEdit && <>
+        <StudentPracticeResult record={practiceRecords[0]} />
+        <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} />
+      </>}
+      {canEdit && <RecordSummary items={[['Presentes', counts.P, 'bg-success'], ['Tarde', counts.L, 'bg-warn'], ['Faltas', counts.A, 'bg-danger'], ['Aptos', `${counts.apto}/${students.length}`, 'bg-accent']]} />}
+      {canEdit && <section className="card overflow-hidden">
         <div className="px-5 pb-3 pt-5">
           <h3 className="font-semibold text-ink">Asistencia y evaluación</h3>
           <p className="mt-0.5 text-xs text-muted">{canEdit ? 'Se guarda al instante y se sincroniza con otras sesiones.' : 'Solo lectura.'}</p>
@@ -202,7 +208,7 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
           ))}
         </ul>
         {students.length === 0 && <p className="empty">No hay alumnos matriculados en este módulo.</p>}
-      </section>
+      </section>}
       <section className="card p-3">
         <div className="flex items-center justify-between px-3 pb-1 pt-2">
           <h3 className="font-semibold text-ink">Task Log Book de la práctica</h3>
@@ -218,16 +224,21 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   const upcomingPractices = practices.filter((practice) => String(practice.date || '') >= todayKey)
   // Módulo → (submódulos) → clases teóricas y clases prácticas. El Task Log Book es una subcategoría
   // de las clases prácticas (sección «tlb» dentro de la pestaña Práctica).
-  const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría'], ['practicas', `Práctica · ${practices.length}`], ['videos', `Vídeos · ${videos.length}`]]
+  const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría'], ['practicas', `Práctica · ${practices.length}`], ['videos', `Vídeos · ${videos.length}`], ...(usesPracticePage ? [['alumnos', `Alumnos · ${students.length}`]] : [])]
   const inPractices = section === 'practicas' || section === 'tlb'
   const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
       <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-ink">{practice.title}</span>
+          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+          <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>
+        {!canEdit && (() => {
+          const evaluation = recordsForPractice(practice.id)[0]?.evaluation
+          return <span className={`badge ${evaluation === 'Apto' ? 'bg-success-soft text-success' : evaluation === 'No Apto' ? 'bg-danger-soft text-danger' : 'text-faint'}`}>{evaluation === 'Apto' ? 'Apto' : evaluation === 'No Apto' ? 'No apto' : 'Pendiente'}</span>
+        })()}
         <span className="text-right text-sm text-muted">{formatDate(practice.date)}{practice.start_time ? <span className="block text-xs text-faint">{String(practice.start_time).slice(0, 5)}</span> : null}</span>
         <Icon name="next" size={16} className="text-faint" />
       </button>
@@ -265,6 +276,13 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
     </div>}
 
     {section === 'teoria' && <Suspense fallback={tabFallback}><TheoryClassList key={`th-${moduleId}`} user={user} moduleId={moduleId} /></Suspense>}
+    {section === 'alumnos' && usesPracticePage && (
+      <section className="card p-5">
+        <h3 className="font-semibold text-ink">Alumnos del módulo</h3>
+        <p className="mb-4 mt-0.5 text-xs text-muted">Añade o quita alumnos de la clase de este módulo. Pueden ser de cualquier curso del centro; nunca de otro centro.</p>
+        <Suspense fallback={tabFallback}><ModuleStudents moduleId={moduleId} user={user} /></Suspense>
+      </section>
+    )}
 
     {section === 'practicas' && usesPracticePage && <Suspense fallback={tabFallback}><PracticeList key={`p-${moduleId}`} user={user} moduleId={moduleId} initialPracticeId={practiceToOpen} onClearInitial={() => setPracticeToOpen(null)} onCreateTLB={createTLB} /></Suspense>}
     {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
