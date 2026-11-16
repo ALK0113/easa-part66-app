@@ -12,6 +12,7 @@ import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
 const TLBList = lazy(() => import('./TLBList.jsx'))
 const VideoList = lazy(() => import('./VideoList.jsx'))
+const TheoryClassList = lazy(() => import('./TheoryClassList.jsx'))
 const tabFallback = <div className="flex min-h-[20vh] items-center justify-center text-sm text-muted">Cargando…</div>
 
 export default function ModuleDetail({ moduleId, user, onBack }) {
@@ -215,7 +216,11 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
   const todayKey = new Date().toLocaleDateString('sv-SE')
   const upcomingPractices = practices.filter((practice) => String(practice.date || '') >= todayKey)
-  const tabs = [['resumen', 'Resumen'], ['practicas', `Prácticas · ${practices.length}`], ['tlb', `TLB · ${tlbs.length}`], ['videos', `Vídeos · ${videos.length}`]]
+  // Módulo → (submódulos) → clases teóricas y clases prácticas. El Task Log Book es una subcategoría
+  // de las clases prácticas (sección «tlb» dentro de la pestaña Práctica).
+  const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría'], ['practicas', `Práctica · ${practices.length}`], ['videos', `Vídeos · ${videos.length}`]]
+  const inPractices = section === 'practicas' || section === 'tlb'
+  const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
       <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openPractice(practice)}>
@@ -237,7 +242,18 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
       <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
       <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
     </section>
-    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}</button>)}</nav>
+    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={(id === 'practicas' ? inPractices : section === id) ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}</button>)}</nav>
+
+    {inPractices && (
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Task Log Book">
+        {practiceViews.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}
+            className={`rounded-xl border px-3.5 py-1.5 text-sm font-medium ${section === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+    )}
 
     {section === 'resumen' && <div className="grid gap-5 lg:grid-cols-2">
       <section className="card p-3 lg:col-span-2">
@@ -247,6 +263,8 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Profesores</h3>{teachers.length ? <ul className="space-y-3">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">{(teacher.full_name || 'P')[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-ink">{teacher.full_name || 'Profesor'}</span><span className="block truncate text-xs text-muted">{teacher.email || ''}</span></span></li>)}</ul> : <p className="text-sm text-muted">No hay profesores asociados.</p>}</section>
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
     </div>}
+
+    {section === 'teoria' && <Suspense fallback={tabFallback}><TheoryClassList key={`th-${moduleId}`} user={user} moduleId={moduleId} /></Suspense>}
 
     {section === 'practicas' && usesPracticePage && <Suspense fallback={tabFallback}><PracticeList key={`p-${moduleId}`} user={user} moduleId={moduleId} initialPracticeId={practiceToOpen} onClearInitial={() => setPracticeToOpen(null)} onCreateTLB={createTLB} /></Suspense>}
     {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
