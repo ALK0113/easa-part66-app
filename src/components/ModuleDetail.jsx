@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { useSchool } from '../contexts/useSchool.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
-import { isManager, teachesLikeProfessor } from '../lib/roles.js'
-import { youtubeId } from '../lib/youtube.js'
+import { canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 
-export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCreateTLB, onNewPractice, onNewVideo }) {
+// Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
+const PracticeList = lazy(() => import('./PracticeList.jsx'))
+const TLBList = lazy(() => import('./TLBList.jsx'))
+const VideoList = lazy(() => import('./VideoList.jsx'))
+const tabFallback = <div className="flex min-h-[20vh] items-center justify-center text-sm text-muted">Cargando…</div>
+
+export default function ModuleDetail({ moduleId, user, onBack }) {
   const [module, setModule] = useState(null)
   const [practices, setPractices] = useState([])
   const [students, setStudents] = useState([])
@@ -20,6 +25,10 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
   const [videos, setVideos] = useState([])
   const [selectedPractice, setSelectedPractice] = useState(null)
   const [section, setSection] = useState('resumen')
+  // Qué abrir al saltar a una pestaña (una práctica, un TLB o el formulario de TLB nuevo)
+  const [practiceToOpen, setPracticeToOpen] = useState(null)
+  const [tlbToOpen, setTlbToOpen] = useState(null)
+  const [tlbToCreate, setTlbToCreate] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -88,10 +97,18 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
   }, [moduleId, user.id, bySchool, filterId])
 
   const canEdit = isManager(user.role) || teachesLikeProfessor(user.role)
+  // El personal usa la página completa de prácticas; el alumno, la vista de solo lectura de aquí
+  const usesPracticePage = canAccessPage('practices', user.role)
+  const openTLB = (tlbId) => { setSelectedPractice(null); setTlbToOpen(tlbId); setSection('tlb') }
+  const createTLB = (prefill) => { setSelectedPractice(null); setTlbToCreate(prefill); setSection('tlb') }
+  const openPractice = (practice) => {
+    if (usesPracticePage) setPracticeToOpen(practice.id)
+    else setSelectedPractice(practice)
+    setSection('practicas')
+  }
   const recordsForPractice = (practiceId) => records.filter((record) => record.practice_id === practiceId)
   const getRecord = (studentId, practiceId) => records.find((record) => record.student_id === String(studentId) && record.practice_id === practiceId) || {}
   const tlbForPractice = (practiceId) => tlbs.filter((tlb) => tlb.practice_id === practiceId)
-  const getPractice = (practiceId) => practices.find((practice) => practice.id === practiceId)
   const defectsForTLB = (tlbId) => defects.filter((defect) => defect.tlb_id === tlbId)
 
   async function saveAttendance(student, practice, value) {
@@ -131,7 +148,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
   const runSave = async (save) => { setBusy(true); await save(); setBusy(false) }
   const tlbRow = (tlb, title) => (
     <li key={tlb.id}>
-      <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => onOpenTLB(tlb.id)}>
+      <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openTLB(tlb.id)}>
         <Icon name="clipboard" className="text-faint" />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-ink">{title}</span>
@@ -188,7 +205,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
       <section className="card p-3">
         <div className="flex items-center justify-between px-3 pb-1 pt-2">
           <h3 className="font-semibold text-ink">Task Log Book de la práctica</h3>
-          {canEdit && onCreateTLB && <button type="button" className="btn-secondary h-9" onClick={() => onCreateTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
+          {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => createTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
         </div>
         {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
       </section>
@@ -201,7 +218,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
   const tabs = [['resumen', 'Resumen'], ['practicas', `Prácticas · ${practices.length}`], ['tlb', `TLB · ${tlbs.length}`], ['videos', `Vídeos · ${videos.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
-      <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => { setSelectedPractice(practice); setSection('practicas') }}>
+      <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
@@ -220,7 +237,7 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
       <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
       <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
     </section>
-    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null) }}>{label}</button>)}</nav>
+    <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}</button>)}</nav>
 
     {section === 'resumen' && <div className="grid gap-5 lg:grid-cols-2">
       <section className="card p-3 lg:col-span-2">
@@ -231,12 +248,11 @@ export default function ModuleDetail({ moduleId, user, onBack, onOpenTLB, onCrea
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
     </div>}
 
-    {canEdit && section === 'practicas' && onNewPractice && <div className="flex justify-end"><button type="button" className="btn-primary" onClick={onNewPractice}><Icon name="plus" size={16} />Nueva práctica en {module.id}</button></div>}
-    {canEdit && section === 'videos' && onNewVideo && <div className="flex justify-end"><button type="button" className="btn-primary" onClick={onNewVideo}><Icon name="plus" size={16} />Añadir vídeo a {module.id}</button></div>}
-    {section === 'practicas' && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
+    {section === 'practicas' && usesPracticePage && <Suspense fallback={tabFallback}><PracticeList key={`p-${moduleId}`} user={user} moduleId={moduleId} initialPracticeId={practiceToOpen} onClearInitial={() => setPracticeToOpen(null)} onCreateTLB={createTLB} /></Suspense>}
+    {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
 
-    {section === 'tlb' && <section className="card p-3">{tlbs.length ? <ul>{tlbs.map((tlb) => tlbRow(tlb, `${getPractice(tlb.practice_id)?.title || tlb.practice_id} · ${tlb.aircraft} (${tlb.registration})`))}</ul> : <p className="empty">No hay TLB asociados.</p>}</section>}
+    {section === 'tlb' && <Suspense fallback={tabFallback}><TLBList key={`t-${moduleId}`} user={user} moduleId={moduleId} initialTlbId={tlbToOpen} onClearInitialTlb={() => setTlbToOpen(null)} initialCreate={tlbToCreate} onClearInitialCreate={() => setTlbToCreate(null)} /></Suspense>}
 
-    {section === 'videos' && <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{videos.map((video) => <article key={video.id} className="card overflow-hidden"><div className="relative aspect-video bg-ink"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${youtubeId(video.youtube_url)}`} title={video.title} loading="lazy" allowFullScreen /></div><div className="p-4"><h3 className="font-medium text-ink">{video.title}</h3><span className="badge mt-2">{video.ata}</span></div></article>)}{videos.length === 0 && <p className="card empty sm:col-span-2 xl:col-span-3">No hay vídeos en este módulo.</p>}</section>}
+    {section === 'videos' && <Suspense fallback={tabFallback}><VideoList key={`v-${moduleId}`} user={user} moduleId={moduleId} /></Suspense>}
   </div>
 }

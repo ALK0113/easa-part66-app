@@ -7,6 +7,8 @@ import Modal from './Modal.jsx'
 import Icon from './Icon.jsx'
 import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import CloseYear from './CloseYear.jsx'
+import ImportModules from './ImportModules.jsx'
+import Holidays from './Holidays.jsx'
 
 // Estructura académica de una escuela: grados y sus módulos, grupos por curso escolar,
 // promociones, cursos escolares y escala de calificación.
@@ -42,7 +44,7 @@ function useSchoolStructure(schoolId) {
           supabase.from('degrees').select('id,code,name,created_at,degree_modules(id,module_id,kind,level,hours)').eq('school_id', schoolId).order('created_at'),
           supabase.from('academic_years').select('id,name,starts_on,ends_on,is_current').eq('school_id', schoolId).order('starts_on', { ascending: false }),
           supabase.from('cohorts').select('id,name,degree_id,students(count)').eq('school_id', schoolId).order('name', { ascending: false }),
-          supabase.from('modules').select('id,name').order('id'),
+          supabase.from('modules').select('id,name,school_id').order('id'),
           supabase.from('schools').select('id,name,grade_max,pass_mark').eq('id', schoolId).maybeSingle(),
         ])
         const failed = [degrees, years, cohorts, modules, school].find((result) => result.error)
@@ -116,7 +118,7 @@ export default function AcademicStructure({ tab: fixedTab = null, embedded = fal
       {error && <p role="alert" className="notice-error">{error}</p>}
       {!data && !error && <p className="text-sm text-muted">Cargando…</p>}
 
-      {data && tab === 'degrees' && <DegreesTab data={data} schoolId={schoolId} run={run} />}
+      {data && tab === 'degrees' && <DegreesTab data={data} schoolId={schoolId} run={run} reload={reload} notify={setNotice} />}
       {data && tab === 'groups' && <GroupsTab data={data} run={run} />}
       {data && tab === 'cohorts' && <CohortsTab data={data} schoolId={schoolId} run={run} />}
       {data && tab === 'years' && <YearsTab data={data} schoolId={schoolId} run={run} reload={reload} notify={setNotice} />}
@@ -129,8 +131,9 @@ export default function AcademicStructure({ tab: fixedTab = null, embedded = fal
 /* Grados y módulos                                                    */
 /* ------------------------------------------------------------------ */
 
-function DegreesTab({ data, schoolId, run }) {
+function DegreesTab({ data, schoolId, run, reload, notify }) {
   const [editingDegree, setEditingDegree] = useState(null) // {} nuevo · degree editar
+  const [importingDegree, setImportingDegree] = useState(null) // grado al que se importan módulos
   const [editingModule, setEditingModule] = useState(null) // { degree, item? }
   const moduleName = useMemo(() => Object.fromEntries(data.modules.map((mod) => [mod.id, mod.name])), [data.modules])
 
@@ -183,15 +186,21 @@ function DegreesTab({ data, schoolId, run }) {
               <div>
                 <h3 className="text-lg font-semibold text-ink">{degree.code}</h3>
                 {degree.name && <p className="text-sm text-muted">{degree.name}</p>}
+                {degree.degree_modules.some((item) => item.hours != null) && (() => {
+                  // Total del grado: lo calcula la aplicación a partir de las horas de cada módulo
+                  const sum = (kind) => degree.degree_modules.filter((item) => !kind || item.kind === kind).reduce((acc, item) => acc + (item.hours || 0), 0)
+                  return <p className="mt-1 text-xs tabular-nums text-muted">Total {sum()} h · {sum('teoria')} teoría · {sum('practica')} práctica</p>
+                })()}
               </div>
               <div className="flex gap-2">
                 <button type="button" className="btn-ghost" onClick={() => setEditingDegree(degree)}><Icon name="edit" size={16} />Editar</button>
+                <button type="button" className="btn-ghost" onClick={() => setImportingDegree(degree)}><Icon name="upload" size={16} />Importar</button>
                 <button type="button" className="btn-secondary" onClick={() => setEditingModule({ degree })}><Icon name="plus" size={16} />Módulo</button>
               </div>
             </header>
 
             {levels.length === 0 ? (
-              <p className="mt-4 text-sm text-muted">Sin módulos todavía.</p>
+              <p className="mt-4 text-sm text-muted">Sin módulos todavía. Añádelos uno a uno o impórtalos todos de un archivo CSV o JSON.</p>
             ) : (
               <div className="mt-4 space-y-4">
                 {levels.map((level) => (
@@ -221,6 +230,15 @@ function DegreesTab({ data, schoolId, run }) {
 
       {editingDegree && (
         <DegreeForm degree={editingDegree} onSave={saveDegree} onDelete={editingDegree.id ? () => deleteDegree(editingDegree) : null} onClose={() => setEditingDegree(null)} />
+      )}
+      {importingDegree && (
+        <ImportModules
+          degree={importingDegree}
+          modules={data.modules}
+          schoolId={schoolId}
+          onClose={() => setImportingDegree(null)}
+          onDone={(text) => { setImportingDegree(null); notify({ error: false, text }); reload() }}
+        />
       )}
       {editingModule && (
         <DegreeModuleForm
@@ -543,10 +561,16 @@ function YearsTab({ data, schoolId, run, reload, notify }) {
 
   async function save(form) {
     const values = { name: form.name.trim(), starts_on: form.starts_on, ends_on: form.ends_on }
-    const ok = editing.id
-      ? await run(supabase.from('academic_years').update(values).eq('id', editing.id), 'Curso escolar guardado.')
-      : await run(supabase.from('academic_years').insert({ ...values, school_id: schoolId }), 'Curso escolar creado.')
-    if (ok) setEditing(null)
+    if (editing.id) {
+      if (await run(supabase.from('academic_years').update(values).eq('id', editing.id), 'Curso escolar guardado.')) setEditing(null)
+      return
+    }
+    // Al crearlo, la ficha sigue abierta para añadir sus festivos y vacaciones
+    const { data: created, error: createError } = await supabase.from('academic_years').insert({ ...values, school_id: schoolId }).select('id,name,starts_on,ends_on,is_current').single()
+    if (createError) { notify({ error: true, text: friendlyError(createError) }); return }
+    notify({ error: false, text: 'Curso escolar creado. Añade ahora sus festivos y vacaciones.' })
+    reload()
+    setEditing(created)
   }
 
   async function makeCurrent(year) {
@@ -588,6 +612,7 @@ function YearsTab({ data, schoolId, run, reload, notify }) {
               <span className="font-medium text-ink">{year.name}</span>
               {year.is_current && <span className="badge bg-success-soft text-success">Actual</span>}
               <span className="ml-auto text-sm text-muted">{formatDay(year.starts_on)} – {formatDay(year.ends_on)}</span>
+              <span className="text-xs text-faint">Fechas, festivos y vacaciones ›</span>
             </button>
           </li>
         ))}
@@ -598,13 +623,17 @@ function YearsTab({ data, schoolId, run, reload, notify }) {
       </div>
 
       {editing && (
-        <Modal title={editing.id ? `Curso ${editing.name}` : 'Nuevo curso escolar'} onClose={() => setEditing(null)}>
+        <Modal title={editing.id ? `Curso ${editing.name}` : 'Nuevo curso escolar'} onClose={() => setEditing(null)} wide>
           <YearForm
+            key={editing.id || 'new'}
             year={editing}
             onSave={save}
             onMakeCurrent={editing.id && !editing.is_current ? () => makeCurrent(editing) : null}
             onDelete={editing.id && !editing.is_current ? () => remove(editing) : null}
           />
+          {editing.id
+            ? <div className="mt-5"><Holidays key={editing.id} year={editing} /></div>
+            : <p className="mt-4 text-sm text-muted">Al crearlo podrás añadir aquí sus festivos y vacaciones.</p>}
         </Modal>
       )}
     </div>

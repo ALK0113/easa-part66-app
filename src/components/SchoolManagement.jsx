@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/useTheme.js'
 import { COLOR_PRESETS, DEFAULT_BRAND_COLOR } from '../lib/theme.js'
 import { downloadCsv } from '../lib/download.js'
 import { ROLES } from '../lib/roles.js'
+import { useSchool } from '../contexts/useSchool.js'
 
 const ITEMS_PER_PAGE = 6
 const DEBOUNCE_DELAY = 300
@@ -59,6 +60,7 @@ function isValidHexColor(color) {
 export default function SchoolManagement({ user }) {
   const { setPrimaryColor } = useTheme()
   const isAdmin = user?.role === ROLES.ADMIN
+  const { reloadSchools } = useSchool()
 
   const [schools, setSchools] = useState([])
   const [supervisorCandidates, setSupervisorCandidates] = useState([])
@@ -282,10 +284,11 @@ export default function SchoolManagement({ user }) {
 
       // Actualizar color si es diferente al por defecto
       if (createForm.brand_color && createForm.brand_color !== DEFAULT_BRAND_COLOR && data) {
-        await supabase.rpc('admin_update_school_brand', {
+        const { error: brandError } = await supabase.rpc('admin_update_school_brand', {
           p_school_id: data.school_id,
           p_brand_color: createForm.brand_color,
         })
+        if (brandError) addToast('error', `Escuela creada, pero el color no se guardó: ${parseSupabaseError(brandError).message}`)
       }
 
       // La escuela nace con su supervisor (recibe una invitación por correo)
@@ -305,6 +308,7 @@ export default function SchoolManagement({ user }) {
         addToast('success', 'Escuela creada correctamente')
       }
       setCreateModalOpen(false)
+      reloadSchools()
       await loadSchools()
     } catch (err) {
       const { message, field } = parseSupabaseError(err)
@@ -323,7 +327,7 @@ export default function SchoolManagement({ user }) {
 
     setEditing(true)
     try {
-      await supabase.rpc('admin_update_school', {
+      const { error } = await supabase.rpc('admin_update_school', {
         p_school_id: editForm.id,
         p_name: editForm.name.trim(),
         p_address: editForm.address.trim() || null,
@@ -331,8 +335,10 @@ export default function SchoolManagement({ user }) {
         p_phone: editForm.phone.trim() || null,
         p_email: editForm.email.trim() || null,
       })
+      if (error) throw error
       addToast('success', 'Escuela actualizada')
       setEditModalOpen(false)
+      reloadSchools()
       await loadSchools()
     } catch (err) {
       const { message, field } = parseSupabaseError(err)
@@ -358,12 +364,14 @@ export default function SchoolManagement({ user }) {
 
     setSavingColor(true)
     try {
-      await supabase.rpc('admin_update_school_brand', {
+      const { error } = await supabase.rpc('admin_update_school_brand', {
         p_school_id: colorEditingSchool.school_id,
         p_brand_color: color,
       })
+      if (error) throw error
       addToast('success', `Color actualizado para "${colorEditingSchool.school_name}"`)
       setColorModalOpen(false)
+      reloadSchools()
       await loadSchools()
     } catch (err) {
       addToast('error', parseSupabaseError(err).message)

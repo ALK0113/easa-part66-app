@@ -187,7 +187,7 @@ function App() {
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} initialCreate={intentFor('tlb')} onClearInitialCreate={clearIntent} />
       case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
-      case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} onOpenTLB={(tlbId) => { setSelectedTlbId(tlbId); setActivePage('tlb') }} onCreateTLB={(prefill) => goWith('tlb', prefill)} onNewPractice={() => goWith('practices', { module_id: selectedModuleId })} onNewVideo={() => goWith('videos', { module_id: selectedModuleId })} />
+      case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} />
       // Estructura académica y Asignaciones viven ahora dentro de «Escuela» (los accesos antiguos siguen llevando allí)
       case 'setup': case 'structure': case 'assignments': return <SchoolSetup user={user} step={setupStep} onStep={setSetupStep} />
       case 'mygroups': return <TeacherGroups user={user} onOpenGrades={(groupId, degreeModuleId) => goWith('grades', { group_id: groupId, degree_module_id: degreeModuleId })} />

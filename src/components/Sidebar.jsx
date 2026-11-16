@@ -4,6 +4,7 @@ import { useSchool } from '../contexts/useSchool.js'
 
 // Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
 // Agrupado por uso: lo diario arriba, la administración abajo.
+// Prácticas, Task Log Book y Vídeos no tienen entrada propia: se ven dentro de cada módulo.
 const sections = [
   {
     id: 'daily',
@@ -12,10 +13,7 @@ const sections = [
       { id: 'timetable', label: 'Horario', icon: 'calendar' },
       { id: 'modules', label: 'Módulos', icon: 'book' },
       { id: 'progress', label: 'Mi progreso', icon: 'chart' },
-      { id: 'practices', label: 'Prácticas', icon: 'wrench' },
       { id: 'grades', label: 'Notas', icon: 'grade' },
-      { id: 'tlb', label: 'Task Log Book', icon: 'clipboard' },
-      { id: 'videos', label: 'Vídeos', icon: 'play' },
       { id: 'students', label: 'Alumnos', icon: 'users' },
       { id: 'mygroups', label: 'Mis grupos', icon: 'link' },
       { id: 'aircraft', label: 'Aviones', icon: 'plane' },
@@ -35,9 +33,12 @@ const sections = [
 ]
 
 
+// Páginas que cuelgan de «Módulos»: al estar en ellas se resalta esa entrada
+const MODULE_PAGES = ['module-detail', 'practices', 'tlb', 'videos']
+
 export default function Sidebar({ activePage, setActivePage, user, onLogout, isOpen, onClose }) {
   const { isAdmin, schools, schoolId, setSchoolId } = useSchool()
-  const isActive = (id) => activePage === id || (activePage === 'module-detail' && id === 'modules')
+  const isActive = (id) => activePage === id || (id === 'modules' && MODULE_PAGES.includes(activePage))
 
   const navButton = (item) => (
     <button

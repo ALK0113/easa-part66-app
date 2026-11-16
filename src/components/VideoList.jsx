@@ -9,7 +9,8 @@ import { teachesLikeProfessor } from '../lib/roles.js'
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
-export default function VideoList({ user, initialModuleId = null, onClearInitial }) {
+// Con moduleId se muestra dentro de un módulo: solo sus vídeos
+export default function VideoList({ user, moduleId = null, initialModuleId = null, onClearInitial }) {
   const { filterId } = useSchool()
   const [videos, setVideos] = useState([])
   const [modules, setModules] = useState([])
@@ -55,7 +56,7 @@ export default function VideoList({ user, initialModuleId = null, onClearInitial
   }, [user.id, user.role, filterId])
 
   const canEditVideo = (video) => user.role === 'admin' || (teachesLikeProfessor(user.role) && teacherModules.includes(video.module_id))
-  const visibleVideos = videos.filter((video) => !teachesLikeProfessor(user.role) || teacherModules.includes(video.module_id))
+  const visibleVideos = videos.filter((video) => (!teachesLikeProfessor(user.role) || teacherModules.includes(video.module_id)) && (!moduleId || video.module_id === moduleId))
   const visibleModules = teachesLikeProfessor(user.role) ? modules.filter((module) => teacherModules.includes(module.id)) : modules
   const atas = [...new Set(visibleVideos.map((video) => video.ata).filter(Boolean))].sort()
   const filteredVideos = visibleVideos.filter((video) => {
@@ -71,9 +72,9 @@ export default function VideoList({ user, initialModuleId = null, onClearInitial
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al terminar de cargar
   }, [loading, initialModuleId])
 
-  function openForm(video = null, moduleId = null) {
+  function openForm(video = null, targetModuleId = null) {
     setEditing(video)
-    setForm(video ? { module_id: video.module_id, ata: video.ata, title: video.title, youtube_url: video.youtube_url } : { module_id: moduleId || visibleModules[0]?.id || '', ata: '', title: '', youtube_url: '' })
+    setForm(video ? { module_id: video.module_id, ata: video.ata, title: video.title, youtube_url: video.youtube_url } : { module_id: targetModuleId || moduleId || visibleModules[0]?.id || '', ata: '', title: '', youtube_url: '' })
     setMessage('')
     setFormOpen(true)
   }
@@ -106,7 +107,9 @@ export default function VideoList({ user, initialModuleId = null, onClearInitial
   if (error) return <div role="alert" className="notice-error">Error al cargar vídeos: {error}</div>
 
   return <div className="space-y-5">
-    <div className="page-intro"><div><h2>Vídeos formativos</h2><p>{filteredVideos.length} {filteredVideos.length === 1 ? 'vídeo' : 'vídeos'}</p></div>{user.role !== 'alumno' && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo vídeo</button>}</div>
+    {moduleId
+      ? <div className="flex items-center justify-between gap-3"><p className="text-sm text-muted">{filteredVideos.length} {filteredVideos.length === 1 ? 'vídeo' : 'vídeos'}</p>{user.role !== 'alumno' && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo vídeo</button>}</div>
+      : <div className="page-intro"><div><h2>Vídeos formativos</h2><p>{filteredVideos.length} {filteredVideos.length === 1 ? 'vídeo' : 'vídeos'}</p></div>{user.role !== 'alumno' && <button className={buttonClass} onClick={() => openForm()}><Icon name="plus" size={16} />Nuevo vídeo</button>}</div>}
     <section>
       <div className="grid gap-2 sm:grid-cols-[2fr_1fr]"><div className="relative"><Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input className={`${inputClass} pl-9`} placeholder="Buscar vídeo…" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className={inputClass} value={filterAta} onChange={(event) => setFilterAta(event.target.value)}><option value="">Todos los ATA</option>{atas.map((ata) => <option key={ata}>{ata}</option>)}</select></div>
       {message && !formOpen && <p role="status" className="notice mt-3">{message}</p>}
@@ -114,9 +117,9 @@ export default function VideoList({ user, initialModuleId = null, onClearInitial
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filteredVideos.map((video) => <article key={video.id} className="card overflow-hidden">
       <div className="relative aspect-video bg-ink"><iframe className="absolute inset-0 h-full w-full border-0" src={`https://www.youtube-nocookie.com/embed/${youtubeId(video.youtube_url)}`} title={video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
-      <div className="p-4"><div className="flex items-start justify-between gap-3"><h3 className="line-clamp-2 text-sm font-medium text-ink">{video.title}</h3>{canEditVideo(video) && <div className="-mr-1.5 -mt-1 flex shrink-0 text-muted"><button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${video.title}`} onClick={() => openForm(video)}><Icon name="edit" size={16} /></button><button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${video.title}`} onClick={() => deleteVideo(video)}><Icon name="trash" size={16} /></button></div>}</div><div className="mt-2.5 flex flex-wrap gap-1.5"><span className="badge">{video.module_id}</span>{video.ata && <span className="badge">{video.ata}</span>}</div></div>
+      <div className="p-4"><div className="flex items-start justify-between gap-3"><h3 className="line-clamp-2 text-sm font-medium text-ink">{video.title}</h3>{canEditVideo(video) && <div className="-mr-1.5 -mt-1 flex shrink-0 text-muted"><button className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" aria-label={`Editar ${video.title}`} onClick={() => openForm(video)}><Icon name="edit" size={16} /></button><button className="rounded-lg p-1.5 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${video.title}`} onClick={() => deleteVideo(video)}><Icon name="trash" size={16} /></button></div>}</div><div className="mt-2.5 flex flex-wrap gap-1.5">{!moduleId && <span className="badge">{video.module_id}</span>}{video.ata && <span className="badge">{video.ata}</span>}</div></div>
     </article>)}</div>
-    {filteredVideos.length === 0 && <p className="card empty">No hay vídeos que coincidan con los filtros.</p>}
+    {filteredVideos.length === 0 && <p className="card empty">{moduleId && !search && !filterAta ? 'Este módulo aún no tiene vídeos.' : 'No hay vídeos que coincidan con los filtros.'}</p>}
 
     {formOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section role="dialog" aria-modal="true" aria-label={editing ? 'Editar vídeo' : 'Nuevo vídeo'} className="fade-in w-full max-w-xl rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl"><h2 className="mb-5 text-lg font-semibold text-ink">{editing ? 'Editar vídeo' : 'Nuevo vídeo'}</h2><form className="space-y-4" onSubmit={saveVideo}>
       <label className="field">Módulo<select className={inputClass} value={form.module_id} onChange={(event) => setForm({ ...form, module_id: event.target.value })} required>{visibleModules.map((module) => <option key={module.id} value={module.id}>{module.id} · {module.name}</option>)}</select></label>
