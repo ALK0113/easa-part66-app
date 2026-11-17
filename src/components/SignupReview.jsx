@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import Modal from './Modal.jsx'
+import { isManager } from '../lib/roles.js'
 
 // Revisión de un alta por la coordinación: datos, curso y módulos (alumno) o módulo + grupo (profesor), todo editable.
 // Aprobar crea la ficha y la matrícula del alumno (con su grupo) o las asignaciones del profesor.
@@ -14,8 +15,10 @@ const PERSONAL = [
 ]
 const pairKey = (pair) => `${pair.degree_module_id}|${pair.group_id}`
 
-export default function SignupReview({ request, onClose, onDone }) {
+export default function SignupReview({ request, user, onClose, onDone }) {
   const isStudent = request.role !== 'profesor'
+  // El profesor revisa altas de alumnos y solo asigna grupos donde da clase; el ajuste de módulos es de coordinación
+  const manager = isManager(user.role)
   const initial = request.form || {}
   const [form, setForm] = useState(() => ({
     full_name: initial.full_name || '', dni: initial.dni || '', birth_year: initial.birth_year || '', phone: initial.phone || '',
@@ -25,6 +28,7 @@ export default function SignupReview({ request, onClose, onDone }) {
   const [modules, setModules] = useState(null)
   const [groups, setGroups] = useState([])
   const [groupId, setGroupId] = useState('')
+  const [myGroups, setMyGroups] = useState(null)
   const [extraGroups, setExtraGroups] = useState({})
   const [mode, setMode] = useState(null)
   const [reason, setReason] = useState('')
@@ -37,20 +41,24 @@ export default function SignupReview({ request, onClose, onDone }) {
     Promise.all([
       supabase.from('degree_modules').select('id,module_id,kind,level,degree_id,degrees!inner(code,school_id),modules(name)').eq('degrees.school_id', request.school_id).order('level').order('module_id'),
       supabase.from('class_groups').select('id,level,name,degree_id,academic_years!inner(is_current,school_id)').eq('academic_years.is_current', true).eq('academic_years.school_id', request.school_id).order('level').order('name'),
-    ]).then(([moduleResult, groupResult]) => {
+      manager ? Promise.resolve({ data: null }) : supabase.from('teaching_assignments').select('group_id').eq('profile_id', user.id),
+    ]).then(([moduleResult, groupResult, ownResult]) => {
       if (!active) return
+      const own = ownResult.data ? new Set(ownResult.data.map((row) => row.group_id)) : null
       setModules(moduleResult.data || [])
       setGroups(groupResult.data || [])
+      setMyGroups(own)
     })
     return () => { active = false }
-  }, [request.school_id])
+  }, [request.school_id, manager, user.id])
 
   const levels = useMemo(() => [...new Set((modules || []).map((item) => item.level))].sort(), [modules])
-  const levelGroups = groups.filter((group) => group.level === Number(form.level))
-  const chosenGroup = groupId || (levelGroups.length === 1 ? levelGroups[0].id : '')
+  const levelGroups = groups.filter((group) => group.level === Number(form.level) && (!myGroups || myGroups.has(group.id)))
+  // '' = asignar más tarde
+  const chosenGroup = groupId === 'later' ? '' : groupId || (levelGroups.length === 1 ? levelGroups[0].id : '')
   const homeGroup = groups.find((group) => group.id === chosenGroup)
   // Módulos marcados de otro curso o grado: con qué grupo los cursa
-  const offLevel = (modules || []).filter((item) => form.module_ids.includes(item.id) && homeGroup && !(item.level === homeGroup.level && item.degree_id === homeGroup.degree_id))
+  const offLevel = manager ? (modules || []).filter((item) => form.module_ids.includes(item.id) && homeGroup && !(item.level === homeGroup.level && item.degree_id === homeGroup.degree_id)) : []
 
   const toggleModule = (id) => setForm({ ...form, module_ids: form.module_ids.includes(id) ? form.module_ids.filter((item) => item !== id) : [...form.module_ids, id] })
   const togglePair = (pair) => {
@@ -60,7 +68,6 @@ export default function SignupReview({ request, onClose, onDone }) {
 
   async function act(action) {
     if (action === 'reject' && !window.confirm(`¿Rechazar la solicitud de ${form.full_name || request.email}? No podrá entrar.`)) return
-    if (action === 'approve' && isStudent && !chosenGroup) { setError('Elige el grupo del alumno.'); return }
     setBusy(true)
     setError('')
     const { error: reviewError } = await supabase.rpc('review_signup', {
@@ -104,12 +111,14 @@ export default function SignupReview({ request, onClose, onDone }) {
               </select>
             </label>
             <label className="field text-sm">Grupo
-              <select className="input" value={chosenGroup} onChange={(event) => setGroupId(event.target.value)}>
-                <option value="">{levelGroups.length ? 'Elige grupo…' : 'No hay grupos de ese curso'}</option>
+              <select className="input" value={groupId === 'later' ? 'later' : chosenGroup || 'later'} onChange={(event) => setGroupId(event.target.value)}>
+                <option value="later">Asignar más tarde</option>
                 {levelGroups.map((group) => <option key={group.id} value={group.id}>{groupLabel(group)}</option>)}
               </select>
             </label>
           </div>
+          {!chosenGroup && <p className="text-xs text-muted">Sin grupo: al aprobar, el alumno podrá entrar y se le asigna el grupo más tarde en Escuela → Alumnos.</p>}
+          {!manager && chosenGroup && <p className="text-xs text-muted">Se matricula con su grupo; el ajuste de módulos sueltos lo revisa la coordinación.</p>}
           {levels.map((level) => (
             <div key={level}>
               <p className="mb-1 text-xs font-medium text-faint">{level}º curso</p>

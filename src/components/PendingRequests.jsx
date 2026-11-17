@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { ROLES, isManager } from '../lib/roles.js'
+import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import SignupReview from './SignupReview.jsx'
 
-// Solicitudes de alta para la coordinación (y admin). Cada persona rellena su ficha tras confirmar el correo;
+// Solicitudes de alta: coordinación y admin ven todas; el profesorado, las de alumnos de su escuela.
+// Cada persona rellena su ficha tras confirmar el correo;
 // aquí se revisa: rojo = se registra como profesor (confirmar), ámbar = alumno en un curso distinto de 1º (verificar).
 // Las que aún se están rellenando salen aparte y atenuadas. `schoolId` (admin) limita la lista a esa escuela.
 const FLAG = {
@@ -14,6 +15,7 @@ const FLAG = {
 export default function PendingRequests({ user, schoolId = null }) {
   const [requests, setRequests] = useState([])
   const [open, setOpen] = useState(null)
+  const canReview = isManager(user.role) || teachesLikeProfessor(user.role)
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('list_signup_requests')
@@ -22,15 +24,15 @@ export default function PendingRequests({ user, schoolId = null }) {
   }, [schoolId])
 
   useEffect(() => {
-    if (!isManager(user.role)) return undefined
+    if (!canReview) return undefined
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
     load()
     // Las altas llegan sin aviso: se revisa cada minuto mientras el panel está abierto
     const timer = setInterval(load, 60000)
     return () => clearInterval(timer)
-  }, [load, user.role])
+  }, [load, canReview])
 
-  if (!isManager(user.role) || !requests.length) return null
+  if (!canReview || !requests.length) return null
   const sent = requests.filter((request) => request.form?.status === 'enviado')
   const waiting = requests.filter((request) => request.form?.status !== 'enviado')
 
@@ -60,14 +62,15 @@ export default function PendingRequests({ user, schoolId = null }) {
         <h3 className="font-semibold text-ink">Solicitudes de alta {sent.length > 0 && <span className="badge ml-1">{sent.length}</span>}</h3>
         <p className="mt-1 text-sm text-muted">Revisa los datos y los módulos de cada persona: corrige lo que haga falta y apruébala, o devuélvela con un motivo.</p>
       </div>
-      {sent.length > 0 && <ul className="px-2 pb-2">{sent.map((request) => row(request, false))}</ul>}
+      {/* Con más de dos, la lista se desplaza para no ocupar todo el inicio */}
+      {sent.length > 0 && <ul className="max-h-[8.5rem] overflow-y-auto overscroll-contain px-2 pb-2">{sent.map((request) => row(request, false))}</ul>}
       {waiting.length > 0 && (
         <div className="px-2 pb-3">
           <p className="px-3 pb-1 text-xs font-medium text-faint">Todavía no la han enviado</p>
-          <ul>{waiting.map((request) => row(request, true))}</ul>
+          <ul className="max-h-[8.5rem] overflow-y-auto overscroll-contain">{waiting.map((request) => row(request, true))}</ul>
         </div>
       )}
-      {open && <SignupReview request={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load() }} />}
+      {open && <SignupReview request={open} user={user} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load() }} />}
     </section>
   )
 }
