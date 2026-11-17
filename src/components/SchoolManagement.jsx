@@ -33,7 +33,7 @@ function generateId() {
 }
 
 function exportToCSV(schools, filename = 'centros') {
-  const headers = ['ID', 'Nombre', 'Dirección', 'Ciudad', 'Teléfono', 'Email', 'Color', 'Alumnos', 'Profesores', 'Supervisores']
+  const headers = ['ID', 'Nombre', 'Dirección', 'Ciudad', 'Teléfono', 'Email', 'Color', 'Alumnos', 'Profesores', 'Coordinadores']
   const rows = schools.map(s => [
     s.school_id, s.school_name, s.school_address || '', s.school_city || '',
     s.school_phone || '', s.school_email || '', s.brand_color || '',
@@ -215,7 +215,7 @@ export default function SchoolManagement({ user }) {
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Email inválido'
     // Supervisor opcional al crear: si se rellena uno de los dos campos, hacen falta ambos
     if (form.supervisor_email !== undefined && (form.supervisor_email.trim() || form.supervisor_name.trim())) {
-      if (!form.supervisor_name.trim()) errors.supervisor_name = 'Nombre del supervisor obligatorio'
+      if (!form.supervisor_name.trim()) errors.supervisor_name = 'Nombre del coordinador obligatorio'
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.supervisor_email.trim())) errors.supervisor_email = 'Email inválido'
     }
     return errors
@@ -298,9 +298,9 @@ export default function SchoolManagement({ user }) {
           body: { email: supervisorEmail, full_name: createForm.supervisor_name.trim(), role: 'supervisor', school_id: data.school_id },
         })
         if (supError) {
-          let message = 'No se pudo crear el supervisor.'
+          let message = 'No se pudo crear el coordinador.'
           try { message = (await supError.context.json())?.error || message } catch { /* sin cuerpo */ }
-          addToast('error', `Centro creado, pero el supervisor no: ${message} Créalo desde «Supervisores».`)
+          addToast('error', `Centro creado, pero el coordinador no: ${message} Créalo desde «Coordinadores».`)
         } else {
           addToast('success', `Centro creado. Invitación enviada a ${supervisorEmail}`)
         }
@@ -390,7 +390,7 @@ export default function SchoolManagement({ user }) {
         p_school_id: selectedSchool.school_id,
       })
       if (error) throw error
-      addToast('success', 'Supervisor nombrado correctamente')
+      addToast('success', 'Coordinador nombrado correctamente')
       setAssignForm({ profileId: '' })
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
@@ -419,7 +419,7 @@ export default function SchoolManagement({ user }) {
         },
       })
       if (error) {
-        let message = 'No se pudo crear el supervisor.'
+        let message = 'No se pudo crear el coordinador.'
         try { message = (await error.context.json())?.error || message } catch { /* sin cuerpo */ }
         throw new Error(message)
       }
@@ -435,7 +435,7 @@ export default function SchoolManagement({ user }) {
 
   async function handleRemoveSupervisor(supervisor) {
     if (!selectedSchool) return
-    if (!window.confirm(`¿Quitar a ${supervisor.full_name} como supervisor? Su rol cambiará a profesor.`)) return
+    if (!window.confirm(`¿Quitar a ${supervisor.full_name} como coordinador? Su rol cambiará a profesor.`)) return
     setRemoving(supervisor.profile_id)
     try {
       const { error } = await supabase.rpc('admin_remove_supervisor', {
@@ -443,7 +443,7 @@ export default function SchoolManagement({ user }) {
         p_profile_id: supervisor.profile_id,
       })
       if (error) throw error
-      addToast('success', 'Supervisor retirado correctamente')
+      addToast('success', 'Coordinador retirado correctamente')
       await Promise.all([
         loadSchoolSupervisors(selectedSchool.school_id),
         loadSupervisorCandidates(selectedSchool.school_id),
@@ -486,7 +486,7 @@ export default function SchoolManagement({ user }) {
       <div className="page-intro">
         <div>
           <h2>Centros</h2>
-          <p>{schools.length} {schools.length === 1 ? 'centro' : 'centros'} · colores de marca y supervisores</p>
+          <p>{schools.length} {schools.length === 1 ? 'centro' : 'centros'} · colores de marca y coordinadores</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => exportToCSV(filteredAndSortedSchools)} className={buttonSecondary}>
@@ -600,7 +600,7 @@ export default function SchoolManagement({ user }) {
                     <div className="-mr-1.5 -mt-1 flex text-muted">
                       <button type="button" onClick={() => openColorModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Color de marca" aria-label={`Color de ${school.school_name}`}><Icon name="sun" size={16} /></button>
                       <button type="button" onClick={() => openEditModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Editar" aria-label={`Editar ${school.school_name}`}><Icon name="edit" size={16} /></button>
-                      <button type="button" onClick={() => openAssignModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Supervisores" aria-label={`Supervisores de ${school.school_name}`}><Icon name="users" size={16} /></button>
+                      <button type="button" onClick={() => openAssignModal(school)} className="rounded-lg p-1.5 hover:bg-subtle hover:text-ink" title="Coordinadores" aria-label={`Coordinadores de ${school.school_name}`}><Icon name="users" size={16} /></button>
                     </div>
                   </div>
 
@@ -621,7 +621,7 @@ export default function SchoolManagement({ user }) {
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-semibold text-ink">{school.total_supervisors}</div>
-                      <div className="text-xs text-muted">Supervisores</div>
+                      <div className="text-xs text-muted">Coordinadores</div>
                     </div>
                   </div>
                 </div>
@@ -670,7 +670,7 @@ export default function SchoolManagement({ user }) {
               <input type="email" className={inputClass} value={createForm.email} onChange={e => setCreateForm({ ...createForm, email: e.target.value })} placeholder="info@centro.com" />
             </FormField>
             <fieldset className="space-y-3 rounded-xl border border-line p-3">
-              <legend className="px-1 text-sm font-semibold text-ink-soft">Supervisor (opcional)</legend>
+              <legend className="px-1 text-sm font-semibold text-ink-soft">Coordinador (opcional)</legend>
               <p className="text-xs text-muted">Recibirá una invitación por correo y podrá poner en marcha el centro. También puedes nombrarlo después.</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <FormField label="Nombre" error={createErrors.supervisor_name}>
@@ -773,13 +773,13 @@ export default function SchoolManagement({ user }) {
 
       {/* Modal Supervisores */}
       {assignModalOpen && selectedSchool && (
-        <Modal onClose={() => setAssignModalOpen(false)} title={`Supervisores: ${selectedSchool.school_name}`} size="lg">
+        <Modal onClose={() => setAssignModalOpen(false)} title={`Coordinadores: ${selectedSchool.school_name}`} size="lg">
           <div className="space-y-4">
             <JoinCode schoolId={selectedSchool.school_id} />
             <div className="border-t border-line pt-4">
               <h4 className="mb-2 text-sm font-semibold text-ink-soft">Asignados ({schoolSupervisors.length})</h4>
               {schoolSupervisors.length === 0 ? (
-                <p className="text-sm text-muted bg-subtle p-3 rounded-lg">Sin supervisores asignados</p>
+                <p className="text-sm text-muted bg-subtle p-3 rounded-lg">Sin coordinadores asignados</p>
               ) : (
                 <div className="space-y-2">
                   {schoolSupervisors.map(sup => (
@@ -801,7 +801,7 @@ export default function SchoolManagement({ user }) {
               )}
             </div>
             <div className="border-t border-line pt-4">
-              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Nombrar supervisor</h4>
+              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Nombrar coordinador</h4>
               <p className="mb-2 text-xs text-muted">Elige un profesor de este centro. Podrá gestionar sus usuarios, estructura, asignaciones y notas.</p>
               {supervisorCandidates.length === 0 ? (
                 <p className="text-sm text-muted">No hay profesores en este centro</p>
@@ -820,7 +820,7 @@ export default function SchoolManagement({ user }) {
               )}
             </div>
             <div className="border-t border-line pt-4">
-              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Crear supervisor nuevo</h4>
+              <h4 className="mb-1 text-sm font-semibold text-ink-soft">Crear coordinador nuevo</h4>
               <p className="mb-2 text-xs text-muted">Para un centro que empieza: recibirá una invitación por correo para elegir su contraseña.</p>
               <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleCreateSupervisor}>
                 <input className={inputClass} placeholder="Nombre completo" value={newSupervisor.full_name} onChange={e => setNewSupervisor({ ...newSupervisor, full_name: e.target.value })} required maxLength={100} />

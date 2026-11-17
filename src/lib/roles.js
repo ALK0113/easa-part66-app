@@ -4,7 +4,7 @@ export const ALL_ROLES = Object.values(ROLES)
 
 export const ROLE_LABELS = {
   [ROLES.ADMIN]: 'Administración',
-  [ROLES.SUPERVISOR]: 'Supervisor',
+  [ROLES.SUPERVISOR]: 'Coordinador',
   [ROLES.TEACHER]: 'Profesor',
   [ROLES.STUDENT]: 'Alumno',
 }
