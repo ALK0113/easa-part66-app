@@ -28,7 +28,7 @@ const ModulesPage = lazy(() => loadManagementPages().then((mod) => ({ default: m
 const SchoolSetup = lazy(() => import('./components/SchoolSetup.jsx'))
 const TeacherGroups = lazy(() => import('./components/TeacherGroups.jsx'))
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
-const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
+const Bulletins = lazy(() => import('./components/Bulletins.jsx'))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
 const StudentDashboard = lazy(() => import('./components/StudentDashboard.jsx'))
 const StudentHome = lazy(() => import('./components/StudentHome.jsx'))
@@ -194,7 +194,7 @@ function App() {
       case 'mygroups': return <TeacherGroups user={user} onOpenGrades={(groupId, degreeModuleId) => goWith('grades', { group_id: groupId, degree_module_id: degreeModuleId })} />
       case 'teachers': return <ProfileManagement user={user} />
       case 'aircraft': return <AircraftPage user={user} />
-      case 'reports': return <ReportsPage />
+      case 'reports': return <Bulletins />
       case 'settings': return <SettingsPage user={user} />
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyProgress user={user} />
@@ -218,7 +218,7 @@ function App() {
     mygroups: 'Mis grupos',
     teachers: 'Perfiles',
     aircraft: 'Aviones',
-    reports: 'Informes',
+    reports: 'Boletines',
     settings: 'Configuración',
     mydata: 'Mis datos',
     progress: 'Mi progreso',

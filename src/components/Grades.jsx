@@ -6,13 +6,16 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { isManager } from '../lib/roles.js'
 import Icon from './Icon.jsx'
+import { FINAL, createPdf, drawClassSheet, fetchClassAttendance, fetchSchoolForPdf, finishPdf, gradeFor, loadLogo, pdfFileName, periodInfo } from '../lib/bulletin.js'
 
-// Notas del curso actual por clase (módulo + grupo).
-// Teoría: nota con la escala de la escuela. Práctica: Apto / No apto. Se guarda sola.
+// Notas del curso actual por clase (módulo + grupo) y por evaluación (1ª, 2ª… o la final).
+// Teoría: nota con la escala de la escuela. Práctica: Apto / No apto. Cada nota lleva un comentario opcional. Se guarda sola.
 
+const DEFAULT_SCALE = { grade_max: 100, pass_mark: 75 }
 const classKey = (groupId, degreeModuleId) => `${groupId}|${degreeModuleId}`
 const STATUS_STYLE = { aprobado: 'bg-success-soft text-success', suspendido: 'bg-danger-soft text-danger', convalidado: 'bg-accent-soft text-accent-strong', exento: 'bg-accent-soft text-accent-strong', baja: 'bg-subtle text-muted' }
 const STATUS_LABEL = { aprobado: 'Aprobado', suspendido: 'Suspendido', cursando: 'Pendiente', convalidado: 'Convalidado', exento: 'Exento', baja: 'No cursa' }
+const PERIOD_STATUS_STYLE = { Aprobado: STATUS_STYLE.aprobado, Suspendido: STATUS_STYLE.suspendido, Convalidado: STATUS_STYLE.convalidado, Exento: STATUS_STYLE.exento, 'No cursa': STATUS_STYLE.baja }
 
 // initialClass: { group_id, degree_module_id } al llegar desde «Mis grupos» (se abre esa hoja directamente)
 export default function Grades({ user, initialClass = null }) {
@@ -23,6 +26,9 @@ export default function Grades({ user, initialClass = null }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState({})
+  const [periods, setPeriods] = useState([])
+  const [period, setPeriod] = useState(FINAL)
+  const [exporting, setExporting] = useState(false)
 
   // Clases que puede calificar: las suyas (profesor) o todas las que tienen alumnos (administración)
   useEffect(() => {
@@ -33,24 +39,24 @@ export default function Grades({ user, initialClass = null }) {
         if (isAdmin) {
           const { data, error: loadError } = await supabase
             .from('module_enrollments')
-            .select('group_id,degree_module_id,class_groups(level,name),degree_modules(module_id,kind),academic_years!inner(is_current,school_id,schools(grade_max,pass_mark))')
+            .select('group_id,degree_module_id,class_groups(level,name),degree_modules(module_id,kind),academic_years!inner(id,name,starts_on,ends_on,is_current,school_id,schools(grade_max,pass_mark))')
             .eq('academic_years.is_current', true)
             .match(filterId ? { 'academic_years.school_id': filterId } : {})
           if (loadError) throw loadError
           const seen = new Map()
           ;(data || []).forEach((row) => {
             const key = classKey(row.group_id, row.degree_module_id)
-            if (!seen.has(key)) seen.set(key, { key, groupId: row.group_id, degreeModuleId: row.degree_module_id, group: row.class_groups, module: row.degree_modules, scale: row.academic_years?.schools })
+            if (!seen.has(key)) seen.set(key, { key, groupId: row.group_id, degreeModuleId: row.degree_module_id, group: row.class_groups, module: row.degree_modules, scale: row.academic_years?.schools, year: row.academic_years })
           })
           list = [...seen.values()]
         } else {
           const { data, error: loadError } = await supabase
             .from('teaching_assignments')
-            .select('group_id,degree_module_id,class_groups!inner(level,name,academic_years!inner(is_current,schools(grade_max,pass_mark))),degree_modules(module_id,kind)')
+            .select('group_id,degree_module_id,class_groups!inner(level,name,academic_years!inner(id,name,starts_on,ends_on,is_current,school_id,schools(grade_max,pass_mark))),degree_modules(module_id,kind)')
             .eq('profile_id', user.id)
             .eq('class_groups.academic_years.is_current', true)
           if (loadError) throw loadError
-          list = (data || []).map((row) => ({ key: classKey(row.group_id, row.degree_module_id), groupId: row.group_id, degreeModuleId: row.degree_module_id, group: row.class_groups, module: row.degree_modules, scale: row.class_groups?.academic_years?.schools }))
+          list = (data || []).map((row) => ({ key: classKey(row.group_id, row.degree_module_id), groupId: row.group_id, degreeModuleId: row.degree_module_id, group: row.class_groups, module: row.degree_modules, scale: row.class_groups?.academic_years?.schools, year: row.class_groups?.academic_years }))
         }
         list.sort((a, b) => a.module.module_id.localeCompare(b.module.module_id) || b.module.kind.localeCompare(a.module.kind) || groupLabel(a.group).localeCompare(groupLabel(b.group)))
         if (!active) return
@@ -66,14 +72,34 @@ export default function Grades({ user, initialClass = null }) {
   }, [isAdmin, user.id, filterId])
 
   const current = classes?.find((item) => item.key === selected)
-  const scale = current?.scale || { grade_max: 100, pass_mark: 75 }
+  const scale = current?.scale || DEFAULT_SCALE
+  const yearId = current?.year?.id
+
+  // Evaluaciones del curso de la clase elegida
+  useEffect(() => {
+    if (!yearId) return undefined
+    let active = true
+    const load = () => supabase.from('evaluation_periods').select('id,name,position,starts_on,ends_on').eq('academic_year_id', yearId).order('position')
+      .then(({ data }) => {
+        if (!active) return
+        const list = data || []
+        setPeriods(list)
+        setPeriod((value) => (value === FINAL || list.some((item) => item.id === value) ? value : FINAL))
+      })
+    load()
+    const unsubscribe = subscribeToTables(['evaluation_periods'], load, `grades-periods-${yearId}`)
+    return () => { active = false; unsubscribe() }
+  }, [yearId])
+  const isFinal = period === FINAL
+  const selectedPeriod = periodInfo(periods.find((item) => item.id === period), current?.year)
+  const periodGrade = (row) => (row.period_grades || []).find((item) => item.period_id === period)
 
   useEffect(() => {
     if (!current) return undefined
     let active = true
     supabase
       .from('module_enrollments')
-      .select('id,student_id,is_carryover,theory_grade,practical_result,status,students(name,student_number),academic_years!inner(is_current)')
+      .select('id,student_id,is_carryover,theory_grade,practical_result,status,grade_comment,degree_modules(module_id,kind),period_grades(period_id,theory_grade,practical_result,comment),students(name,student_number),academic_years!inner(is_current)')
       .eq('group_id', current.groupId)
       .eq('degree_module_id', current.degreeModuleId)
       .eq('academic_years.is_current', true)
@@ -100,14 +126,73 @@ export default function Grades({ user, initialClass = null }) {
     return true
   }
 
+  // Nota de una evaluación: se envían nota, resultado y comentario juntos
+  async function savePeriod(row, values) {
+    const previous = periodGrade(row)
+    const merged = { theory_grade: previous?.theory_grade ?? null, practical_result: previous?.practical_result ?? null, comment: previous?.comment ?? null, ...values }
+    setSaving((state) => ({ ...state, [row.id]: true }))
+    const { data, error: saveError } = await supabase.rpc('set_period_grade', {
+      p_period_id: period,
+      p_module_enrollment_id: row.id,
+      p_theory_grade: merged.theory_grade,
+      p_practical_result: merged.practical_result,
+      p_comment: merged.comment,
+    })
+    setSaving((state) => ({ ...state, [row.id]: false }))
+    if (saveError) { setError(getSupabaseErrorMessage(saveError)); return false }
+    setError('')
+    const saved = data?.id ? data : null
+    setRows((list) => list.map((item) => (item.id === row.id
+      ? { ...item, period_grades: [...(item.period_grades || []).filter((entry) => entry.period_id !== period), ...(saved ? [saved] : [])] }
+      : item)))
+    return true
+  }
+
+  async function saveComment(row, text) {
+    if (!isFinal) return savePeriod(row, { comment: text || null })
+    setSaving((state) => ({ ...state, [row.id]: true }))
+    const { error: saveError } = await supabase.rpc('set_module_grade_comment', { p_module_enrollment_id: row.id, p_comment: text })
+    setSaving((state) => ({ ...state, [row.id]: false }))
+    if (saveError) { setError(getSupabaseErrorMessage(saveError)); return false }
+    setError('')
+    setRows((list) => list.map((item) => (item.id === row.id ? { ...item, grade_comment: text || null } : item)))
+    return true
+  }
+
+  // Hoja de notas de la asignatura en PDF (lo que «saca» el profesor de su clase)
+  async function downloadPdf() {
+    if (!current || !rows?.length) return
+    setExporting(true)
+    try {
+      const school = await fetchSchoolForPdf(current.year.school_id)
+      const [logo, attendance, pdf] = await Promise.all([
+        loadLogo(school),
+        fetchClassAttendance({ groupId: current.groupId, degreeModuleId: current.degreeModuleId, from: selectedPeriod.from, to: selectedPeriod.to }),
+        createPdf(),
+      ])
+      const moduleLabel = `${current.module.module_id} ${KIND_LABEL[current.module.kind]}`
+      drawClassSheet(pdf.doc, pdf.autoTable, {
+        school, logo, year: current.year, period: selectedPeriod, moduleLabel, groupLabel: groupLabel(current.group),
+        teacher: isAdmin ? '' : user.name, rows, attendance, scale: { grade_max: Number(scale.grade_max), pass_mark: Number(scale.pass_mark) },
+      })
+      finishPdf(pdf.doc, school, `Notas ${moduleLabel} · ${groupLabel(current.group)}`)
+      pdf.doc.save(pdfFileName('Notas', current.module.module_id, KIND_LABEL[current.module.kind], groupLabel(current.group), selectedPeriod.name))
+    } catch (err) {
+      setError(getSupabaseErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const summary = useMemo(() => {
     const list = rows || []
+    const statuses = list.map((row) => gradeFor(row, period, scale).status)
     return {
       total: list.length,
-      passed: list.filter((row) => row.status === 'aprobado').length,
-      failed: list.filter((row) => row.status === 'suspendido').length,
+      passed: statuses.filter((status) => status === 'Aprobado').length,
+      failed: statuses.filter((status) => status === 'Suspendido').length,
     }
-  }, [rows])
+  }, [rows, period, scale])
 
   if (classes === null && !error) return <p className="text-sm text-muted">Cargando…</p>
 
@@ -116,7 +201,7 @@ export default function Grades({ user, initialClass = null }) {
       <div className="page-intro">
         <div>
           <h2>Notas</h2>
-          <p>Teoría sobre {Number(scale.grade_max)} (aprueba con {Number(scale.pass_mark)}). Práctica: Apto o No apto. Se guarda sola.</p>
+          <p>Teoría sobre {Number(scale.grade_max)} (aprueba con {Number(scale.pass_mark)}). Práctica: Apto o No apto. Cada nota puede llevar un comentario, que sale en el boletín. Se guarda sola.</p>
         </div>
       </div>
 
@@ -139,27 +224,53 @@ export default function Grades({ user, initialClass = null }) {
           </div>
 
           {current && (
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Evaluación">
+              <span className="mr-1 text-sm text-muted">Evaluación</span>
+              {[...periods.map((item) => ({ id: item.id, name: item.name })), { id: FINAL, name: 'Final' }].map((item) => (
+                <button key={item.id} type="button" role="radio" aria-checked={item.id === period} onClick={() => setPeriod(item.id)}
+                  className={`rounded-full border px-3 py-1 text-sm ${item.id === period ? 'border-accent bg-accent-soft font-semibold text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
+                  {item.name}
+                </button>
+              ))}
+              {periods.length === 0 && <span className="text-xs text-faint">Las evaluaciones se crean en Escuela → Curso escolar.</span>}
+            </div>
+          )}
+
+          {current && (
             <section className="card overflow-hidden">
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
                 <h3 className="font-semibold text-ink">{current.module.module_id} · {KIND_LABEL[current.module.kind]} · {groupLabel(current.group)}</h3>
-                <p className="text-sm text-muted">{summary.passed} aprobados · {summary.failed} suspendidos · {summary.total - summary.passed - summary.failed} pendientes</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-muted">{summary.passed} aprobados · {summary.failed} suspendidos · {summary.total - summary.passed - summary.failed} sin nota</p>
+                  <button type="button" className="btn-secondary min-h-[34px] px-3 text-sm" onClick={downloadPdf} disabled={exporting || !rows?.length}>
+                    <Icon name="download" size={15} />{exporting ? 'Preparando…' : 'Descargar PDF'}
+                  </button>
+                </div>
               </header>
               {rows === null && <p className="empty">Cargando…</p>}
               {rows?.length === 0 && <p className="empty">No hay alumnos en esta clase.</p>}
               {rows?.length > 0 && (
                 <ul className="divide-y divide-line">
-                  {rows.map((row) => (
-                    <li key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
-                      <div className="min-w-[160px] flex-1">
-                        <p className="font-medium text-ink">{row.students?.name || 'Alumno'}</p>
-                        <p className="text-xs text-muted">Nº {row.students?.student_number || '—'}{row.is_carryover ? ' · Arrastrado' : ''}</p>
-                      </div>
-                      {current.module.kind === 'teoria'
-                        ? <GradeInput row={row} max={Number(scale.grade_max)} busy={saving[row.id]} onSave={(value) => save(row, { theory_grade: value })} />
-                        : <PracticalInput value={row.practical_result} busy={saving[row.id]} onChange={(value) => save(row, { practical_result: value })} />}
-                      <span className={`badge w-24 justify-center ${STATUS_STYLE[row.status] || ''}`}>{STATUS_LABEL[row.status] || 'Pendiente'}</span>
-                    </li>
-                  ))}
+                  {rows.map((row) => {
+                    const values = isFinal ? row : (periodGrade(row) || {})
+                    const status = isFinal ? null : gradeFor(row, period, scale).status
+                    const saveGrade = (changes) => (isFinal ? save(row, changes) : savePeriod(row, changes))
+                    return (
+                      <li key={`${row.id}-${period}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+                        <div className="min-w-[160px] flex-1">
+                          <p className="font-medium text-ink">{row.students?.name || 'Alumno'}</p>
+                          <p className="text-xs text-muted">Nº {row.students?.student_number || '—'}{row.is_carryover ? ' · Arrastrado' : ''}</p>
+                        </div>
+                        {current.module.kind === 'teoria'
+                          ? <GradeInput initial={values.theory_grade} max={Number(scale.grade_max)} busy={saving[row.id]} onSave={(value) => saveGrade({ theory_grade: value })} />
+                          : <PracticalInput value={values.practical_result} busy={saving[row.id]} onChange={(value) => saveGrade({ practical_result: value })} />}
+                        {isFinal
+                          ? <span className={`badge w-24 justify-center ${STATUS_STYLE[row.status] || ''}`}>{STATUS_LABEL[row.status] || 'Pendiente'}</span>
+                          : <span className={`badge w-24 justify-center ${PERIOD_STATUS_STYLE[status] || ''}`}>{status}</span>}
+                        <CommentInput initial={isFinal ? row.grade_comment : values.comment} busy={saving[row.id]} onSave={(text) => saveComment(row, text)} />
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </section>
@@ -170,8 +281,8 @@ export default function Grades({ user, initialClass = null }) {
   )
 }
 
-function GradeInput({ row, max, busy, onSave }) {
-  const [value, setValue] = useState(row.theory_grade == null ? '' : String(Number(row.theory_grade)))
+function GradeInput({ initial, max, busy, onSave }) {
+  const [value, setValue] = useState(initial == null ? '' : String(Number(initial)))
   const lastSaved = useRef(value)
 
   async function commit() {
@@ -213,5 +324,27 @@ function PracticalInput({ value, busy, onChange }) {
         )
       })}
     </div>
+  )
+}
+
+// Comentario de la nota: se guarda al salir del campo y sale en el boletín
+function CommentInput({ initial, busy, onSave }) {
+  const [value, setValue] = useState(initial || '')
+  const lastSaved = useRef(initial || '')
+
+  async function commit() {
+    const text = value.trim()
+    if (text === lastSaved.current) return
+    if (await onSave(text)) lastSaved.current = text
+    else setValue(lastSaved.current)
+  }
+
+  return (
+    <label className="w-full text-sm">
+      <span className="sr-only">Comentario</span>
+      <input className="input h-9 w-full text-sm" maxLength={2000} placeholder="Comentario para el boletín (opcional)" value={value} disabled={busy}
+        onChange={(event) => setValue(event.target.value)} onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+    </label>
   )
 }

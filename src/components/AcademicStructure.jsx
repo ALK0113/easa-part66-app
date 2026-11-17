@@ -9,6 +9,8 @@ import { KIND_LABEL, groupLabel, levelLabel } from '../lib/academic.js'
 import CloseYear from './CloseYear.jsx'
 import ImportModules from './ImportModules.jsx'
 import Holidays from './Holidays.jsx'
+import EvaluationPeriods from './EvaluationPeriods.jsx'
+import { logoUrl } from '../lib/bulletin.js'
 import Curriculum from './Curriculum.jsx'
 import Submodules from './Submodules.jsx'
 
@@ -20,7 +22,7 @@ const TABS = [
   { id: 'groups', label: 'Grupos' },
   { id: 'cohorts', label: 'Promociones' },
   { id: 'years', label: 'Cursos escolares' },
-  { id: 'grading', label: 'Calificación' },
+  { id: 'grading', label: 'Calificación y boletines' },
 ]
 
 
@@ -47,7 +49,7 @@ function useSchoolStructure(schoolId) {
           supabase.from('academic_years').select('id,name,starts_on,ends_on,is_current').eq('school_id', schoolId).order('starts_on', { ascending: false }),
           supabase.from('cohorts').select('id,name,degree_id,students(count)').eq('school_id', schoolId).order('name', { ascending: false }),
           supabase.from('modules').select('id,name,school_id').order('id'),
-          supabase.from('schools').select('id,name,grade_max,pass_mark').eq('id', schoolId).maybeSingle(),
+          supabase.from('schools').select('id,name,grade_max,pass_mark,logo_path,updated_at').eq('id', schoolId).maybeSingle(),
         ])
         const failed = [degrees, years, cohorts, modules, school].find((result) => result.error)
         if (failed) throw failed.error
@@ -641,7 +643,7 @@ function YearsTab({ data, schoolId, run, reload, notify }) {
             onDelete={editing.id && !editing.is_current ? () => remove(editing) : null}
           />
           {editing.id
-            ? <div className="mt-5"><Holidays key={editing.id} year={editing} /></div>
+            ? <div className="mt-5 space-y-5"><EvaluationPeriods key={`ev-${editing.id}`} year={editing} /><Holidays key={editing.id} year={editing} /></div>
             : <p className="mt-4 text-sm text-muted">Al crearlo podrás añadir aquí sus festivos y vacaciones.</p>}
         </Modal>
       )}
@@ -679,6 +681,7 @@ function GradingTab({ school, run }) {
   const presets = [{ label: '0–100 %', max: 100, pass: 75 }, { label: '0–10', max: 10, pass: 5 }]
 
   return (
+    <div className="space-y-5">
     <form className="card max-w-lg space-y-4 p-5 md:p-6" onSubmit={(event) => submit(event, form)}>
       <div>
         <h3 className="font-semibold text-ink">Nota de teoría</h3>
@@ -695,5 +698,61 @@ function GradingTab({ school, run }) {
       </div>
       <div className="flex justify-end"><button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button></div>
     </form>
+    {school && <SchoolLogo school={school} run={run} />}
+    </div>
+  )
+}
+
+const LOGO_MAX_BYTES = 200 * 1024
+
+// Logo que sale en la cabecera de boletines y hojas de notas (PNG o JPG, hasta 200 KB)
+function SchoolLogo({ school, run }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const url = logoUrl(school)
+
+  async function upload(file) {
+    setError('')
+    if (!['image/png', 'image/jpeg'].includes(file.type)) { setError('El logo tiene que ser PNG o JPG.'); return }
+    if (file.size > LOGO_MAX_BYTES) { setError(`El logo pesa ${Math.round(file.size / 1024)} KB; el máximo es 200 KB.`); return }
+    setBusy(true)
+    const path = `${school.id}/logo.${file.type === 'image/png' ? 'png' : 'jpg'}`
+    const { error: uploadError } = await supabase.storage.from('school-logos').upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' })
+    if (uploadError) { setBusy(false); setError(getSupabaseErrorMessage(uploadError)); return }
+    // Si cambia de formato, se borra el anterior para no dejar archivos sueltos
+    if (school.logo_path && school.logo_path !== path) await supabase.storage.from('school-logos').remove([school.logo_path])
+    await run(supabase.from('schools').update({ logo_path: path }).eq('id', school.id), 'Logo guardado. Saldrá en los boletines.')
+    setBusy(false)
+  }
+
+  async function removeLogo() {
+    if (!window.confirm('¿Quitar el logo? Los boletines saldrán sin él.')) return
+    setBusy(true)
+    await supabase.storage.from('school-logos').remove([school.logo_path])
+    await run(supabase.from('schools').update({ logo_path: null }).eq('id', school.id), 'Logo quitado.')
+    setBusy(false)
+  }
+
+  return (
+    <section className="card max-w-lg space-y-4 p-5 md:p-6">
+      <div>
+        <h3 className="font-semibold text-ink">Logo de los boletines</h3>
+        <p className="mt-1 text-sm text-muted">Sale en la cabecera de los boletines y de las hojas de notas. PNG o JPG de hasta 200 KB.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex h-20 w-40 items-center justify-center rounded-xl border border-dashed border-line bg-subtle/50 p-2">
+          {url ? <img src={url} alt={`Logo de ${school.name}`} className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-faint">Sin logo</span>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className={`btn-secondary cursor-pointer ${busy ? 'pointer-events-none opacity-60' : ''}`}>
+            <Icon name="upload" size={16} />{busy ? 'Guardando…' : url ? 'Cambiar' : 'Subir logo'}
+            <input type="file" accept="image/png,image/jpeg" className="sr-only" disabled={busy}
+              onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) upload(file) }} />
+          </label>
+          {url && <button type="button" className="btn-ghost text-danger" disabled={busy} onClick={removeLogo}>Quitar</button>}
+        </div>
+      </div>
+      {error && <p role="alert" className="notice-error">{error}</p>}
+    </section>
   )
 }

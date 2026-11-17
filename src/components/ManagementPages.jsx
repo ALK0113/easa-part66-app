@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { fetchSchoolModuleIds, useSchool } from '../contexts/useSchool.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
@@ -8,7 +8,7 @@ import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
-import { downloadBlob, downloadCsv } from '../lib/download.js'
+import { downloadBlob } from '../lib/download.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
 
@@ -385,132 +385,6 @@ export function AircraftPage({ user }) {
     </div>
   )
 }
-
-/* ------------------------------------------------------------------ */
-/* Informes                                                            */
-/* ------------------------------------------------------------------ */
-
-const percent = (part, total) => (total ? Math.round((part / total) * 100) : 0)
-
-export function ReportsPage() {
-  const { filterId } = useSchool()
-  // Admin con una escuela elegida: solo sus alumnos, prácticas y registros (filtrado en la base de datos)
-  const { rows: students, loading: studentsLoading, error: studentsError } = useRows('students', 'id,name,group_name,promo,school_id', { column: 'school_id', value: filterId })
-  const { rows: practices, loading: practicesLoading } = useRows('practices', 'id,module_id,title,school_id', { column: 'school_id', value: filterId })
-  const { rows: memberships, loading: membershipsLoading } = useRows('student_modules', filterId ? 'student_id,module_id,students!inner(school_id)' : 'student_id,module_id', { column: 'students.school_id', value: filterId })
-  const { rows: records, loading: recordsLoading, error: recordsError } = useRows('practice_records', filterId ? 'student_id,practice_id,attendance,evaluation,practices!inner(school_id)' : 'student_id,practice_id,attendance,evaluation', { column: 'practices.school_id', value: filterId })
-  const [promo, setPromo] = useState('')
-  const [group, setGroup] = useState('')
-  const promos = useMemo(() => [...new Set(students.map((student) => String(student.promo || '')).filter(Boolean))].sort(), [students])
-  const groups = useMemo(() => [...new Set(students.map((student) => student.group_name).filter(Boolean))].sort(), [students])
-
-  const report = useMemo(() => {
-    const modulesByStudent = new Map()
-    memberships.forEach((entry) => {
-      const key = String(entry.student_id)
-      if (!modulesByStudent.has(key)) modulesByStudent.set(key, new Set())
-      modulesByStudent.get(key).add(entry.module_id)
-    })
-    const practiceCountByModule = new Map()
-    const moduleByPractice = new Map()
-    practices.forEach((practice) => {
-      practiceCountByModule.set(practice.module_id, (practiceCountByModule.get(practice.module_id) || 0) + 1)
-      moduleByPractice.set(String(practice.id), practice.module_id)
-    })
-    const recordsByStudent = new Map()
-    records.forEach((record) => {
-      const key = String(record.student_id)
-      if (!recordsByStudent.has(key)) recordsByStudent.set(key, [])
-      recordsByStudent.get(key).push(record)
-    })
-
-    return students
-      .filter((student) => (!promo || String(student.promo || '') === promo) && (!group || student.group_name === group))
-      .map((student) => {
-        const key = String(student.id)
-        const moduleIds = modulesByStudent.get(key) || new Set()
-        const relevantCount = [...moduleIds].reduce((total, id) => total + (practiceCountByModule.get(id) || 0), 0)
-        // Solo cuentan los registros de prácticas de módulos en los que el alumno está matriculado.
-        const studentRecords = (recordsByStudent.get(key) || []).filter((record) => moduleIds.has(moduleByPractice.get(String(record.practice_id))))
-        const present = studentRecords.filter((record) => record.attendance === 'P').length
-        const late = studentRecords.filter((record) => record.attendance === 'L').length
-        const absent = studentRecords.filter((record) => record.attendance === 'A').length
-        const evaluated = studentRecords.filter((record) => record.evaluation).length
-        const apto = studentRecords.filter((record) => record.evaluation === 'Apto').length
-        return {
-          ...student, relevantCount, present, late, absent, apto, evaluated,
-          attendanceRate: percent(present + late, present + late + absent),
-          aptitudeRate: percent(apto, evaluated),
-        }
-      })
-  }, [students, practices, memberships, records, promo, group])
-
-  const classReports = useMemo(() => {
-    const classes = new Map()
-    report.forEach((student) => {
-      const key = `${student.group_name || 'Sin clase'} · ${student.promo || 'Sin promoción'}`
-      const current = classes.get(key) || { key, group: student.group_name || 'Sin clase', promo: student.promo || '—', students: 0, present: 0, late: 0, absent: 0, apto: 0, evaluated: 0 }
-      current.students += 1
-      current.present += student.present
-      current.late += student.late
-      current.absent += student.absent
-      current.apto += student.apto
-      current.evaluated += student.evaluated
-      classes.set(key, current)
-    })
-    return [...classes.values()].map((item) => ({
-      ...item,
-      attendanceRate: percent(item.present + item.late, item.present + item.late + item.absent),
-      aptitudeRate: percent(item.apto, item.evaluated),
-    }))
-  }, [report])
-
-  function exportCsv() {
-    const header = ['Nombre', 'Grupo', 'Promoción', 'Prácticas', 'Presente', 'Tarde', 'Falta', 'Aptos', '% Asistencia', '% Aptos']
-    const rows = [header, ...report.map((student) => [student.name, student.group_name, student.promo, student.relevantCount, student.present, student.late, student.absent, student.apto, `${student.attendanceRate}%`, `${student.aptitudeRate}%`])]
-    downloadCsv(rows, 'informe_easa.csv')
-  }
-
-  const loading = studentsLoading || practicesLoading || membershipsLoading || recordsLoading
-  const classHeaders = ['Clase', 'Promoción', 'Alumnos', 'P', 'T', 'F', 'Aptos', '% Asistencia', '% Aptos']
-  const studentHeaders = ['Alumno', 'Grupo', 'Promoción', 'Prácticas', 'P', 'T', 'F', 'Aptos', '% Asistencia', '% Aptos']
-
-  return <div className="space-y-5"><div className="page-intro"><div><h2>Informes</h2><p>Asistencia y evaluación por clase y por alumno.</p></div></div><section className={cardClass}>
-    <div className="mb-6 flex flex-wrap items-end justify-end gap-3">
-      <div className="flex flex-wrap gap-2">
-        <select className={`${inputClass} min-w-36`} value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todas las clases</option>{groups.map((item) => <option key={item}>{item}</option>)}</select>
-        <select className={`${inputClass} min-w-40`} value={promo} onChange={(event) => setPromo(event.target.value)}><option value="">Todas las promociones</option>{promos.map((item) => <option key={item}>{item}</option>)}</select>
-        <button className={secondaryButton} onClick={() => window.print()}>Imprimir</button>
-        <button className={primaryButton} disabled={loading || Boolean(recordsError)} onClick={exportCsv}>Exportar CSV</button>
-      </div>
-    </div>
-    <ErrorOrLoading loading={loading} error={studentsError || recordsError} />
-    <h3 className="mb-2 text-sm font-semibold text-ink-soft">Resumen por clase</h3>
-    <div className="mb-6 overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-subtle text-xs text-muted"><tr>{classHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{classReports.map((item) => <tr key={item.key} className="border-b border-line">
-          <td className="p-3 font-medium text-ink">{item.group}</td><td className="p-3">{item.promo}</td><td className="p-3">{item.students}</td>
-          <td className="p-3">{item.present}</td><td className="p-3">{item.late}</td><td className="p-3">{item.absent}</td>
-          <td className="p-3">{item.apto}/{item.evaluated}</td><td className="p-3">{item.attendanceRate}%</td><td className="p-3">{item.aptitudeRate}%</td>
-        </tr>)}</tbody>
-      </table>
-      {classReports.length === 0 && <p className="p-4 text-center text-sm text-muted">No hay datos para estos filtros.</p>}
-    </div>
-    <h3 className="mb-2 text-sm font-semibold text-ink-soft">Detalle por alumno</h3>
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-subtle text-xs text-muted"><tr>{studentHeaders.map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
-        <tbody>{report.map((student) => <tr key={student.id} className="border-b border-line hover:bg-subtle">
-          <td className="p-3 font-medium text-ink">{student.name}</td><td className="p-3">{student.group_name}</td><td className="p-3">{student.promo || '—'}</td>
-          <td className="p-3">{student.relevantCount}</td><td className="p-3">{student.present}</td><td className="p-3">{student.late}</td><td className="p-3">{student.absent}</td>
-          <td className="p-3">{student.apto}</td><td className="p-3">{student.attendanceRate}%</td><td className="p-3">{student.aptitudeRate}%</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-  </section></div>
-}
-
 /* ------------------------------------------------------------------ */
 /* Configuración: datos iniciales, backup y reseteo                    */
 /* ------------------------------------------------------------------ */

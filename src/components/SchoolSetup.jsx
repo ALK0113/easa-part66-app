@@ -15,7 +15,7 @@ const SETUP_STEPS = [
 ]
 const EXTRA_STEPS = [
   { id: 'cohorts', label: 'Promociones', hint: 'Se crean solas al matricular en 1º; aquí puedes renombrarlas o crear otras.' },
-  { id: 'grading', label: 'Calificación', hint: 'Escala de notas y nota de aprobado de la escuela.' },
+  { id: 'grading', label: 'Calificación y boletines', hint: 'Escala de notas, nota de aprobado y logo de los boletines.' },
 ]
 
 export default function SchoolSetup({ user, step, onStep }) {

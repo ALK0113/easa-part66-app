@@ -26,7 +26,7 @@ const sections = [
       { id: 'schools', label: 'Centros', icon: 'school' },
       { id: 'setup', label: 'Escuela', icon: 'layers' },
       { id: 'teachers', label: 'Perfiles', icon: 'idcard' },
-      { id: 'reports', label: 'Informes', icon: 'chart' },
+      { id: 'reports', label: 'Boletines', icon: 'chart' },
       { id: 'settings', label: 'Configuración', icon: 'settings' },
     ],
   },
