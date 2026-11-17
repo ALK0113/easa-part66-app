@@ -977,9 +977,12 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
         <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => { setSelectedTLBId(tlb.id); setMessage('') }}>
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-subtle text-muted"><Icon name="clipboard" /></span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
+            {/* Práctica a la que pertenece el TLB: módulo y nº de práctica, como en el listado de prácticas */}
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums" title="Práctica asociada">
+              <span className="font-semibold text-ink-soft">{tlb.module_id}</span><span className="mx-1.5 text-line-strong">·</span>Práctica <span className="font-semibold text-ink-soft">{tlb.practice_id}</span>
+            </span>
+            <span className="mt-0.5 block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-              {!moduleId && <span className="badge py-0">{tlb.module_id}</span>}
               <span>{tlb.aircraft} · {tlb.registration}</span>
               <span>· {formatDate(tlb.date)}</span>
               <span>· {tlbDefects.length} {tlbDefects.length === 1 ? 'defecto' : 'defectos'}</span>
