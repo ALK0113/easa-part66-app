@@ -66,8 +66,10 @@ as $function$
 declare
   v_school uuid;
   v_role text;
-  v_modules uuid[] := coalesce((select array_agg(value::uuid) from jsonb_array_elements_text(coalesce(p_data -> 'module_ids', '[]'))), '{}');
-  v_teaching jsonb := coalesce(p_data -> 'teaching', '[]');
+  -- Listas vacías o ausentes (null) cuentan como vacías
+  v_modules uuid[] := coalesce((select array_agg(value::uuid) from jsonb_array_elements_text(
+    case when jsonb_typeof(p_data -> 'module_ids') = 'array' then p_data -> 'module_ids' else '[]'::jsonb end)), '{}');
+  v_teaching jsonb := case when jsonb_typeof(p_data -> 'teaching') = 'array' then p_data -> 'teaching' else '[]'::jsonb end;
   v_year uuid;
 begin
   select sp.school_id, p.role into v_school, v_role from public.profiles p join public.school_profiles sp on sp.profile_id = p.id where p.id = p_profile_id;
