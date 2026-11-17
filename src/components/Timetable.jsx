@@ -206,6 +206,12 @@ function WeekView({ user }) {
   const gridItems = (sessions || []).map((session) => ({ id: session.id, day: days.findIndex((day) => day.date === session.date), start: time(session.start_time), end: time(session.end_time), session }))
     .filter((item) => item.day >= 0)
 
+  // Al tocar una clase se abre su página (con los datos al día tras cada cambio)
+  const openSession = open ? (sessions || []).find((session) => session.id === open.id) || open : null
+  if (openSession) {
+    return <SessionDetail asPage session={openSession} user={user} rooms={rooms} conflicts={visibleConflicts.get(openSession.id)} onClose={() => setOpen(null)} onChanged={reload} />
+  }
+
   // Arrastrar una clase en la semana cambia solo ese día
   function moveSession(item, dayIndex, start, end) {
     const { session } = item
@@ -306,7 +312,6 @@ function WeekView({ user }) {
         </div>
       )}
 
-      {open && <SessionDetail session={open} user={user} rooms={rooms} conflicts={visibleConflicts.get(open.id)} onClose={() => setOpen(null)} onChanged={reload} />}
       {creating && <OneOffForm assignments={assignments} rooms={rooms} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload() }} />}
       {conflictModal}
     </div>
@@ -317,7 +322,19 @@ function WeekView({ user }) {
 /* Detalle de una clase: pasar lista, cambiar hora o cancelar           */
 /* ------------------------------------------------------------------ */
 
-function SessionDetail({ session, user, rooms = [], conflicts, onClose, onChanged }) {
+// Página de la clase (desde la semana) o ventana: la lista, el comentario, cambiar día, hora o aula, cancelar
+function PageShell({ title, onClose, children }) {
+  return (
+    <div className="space-y-4">
+      <button type="button" className="back-link" onClick={onClose}>← Horario</button>
+      <h2 className="text-2xl font-semibold text-ink">{title}</h2>
+      <div>{children}</div>
+    </div>
+  )
+}
+
+function SessionDetail({ session, user, rooms = [], conflicts, asPage = false, onClose, onChanged }) {
+  const Shell = asPage ? PageShell : Modal
   const assignment = session.teaching_assignments
   const canEdit = isManager(user.role) || assignment.profile_id === user.id
   const [ownStatus, setOwnStatus] = useState(undefined)
@@ -363,8 +380,8 @@ function SessionDetail({ session, user, rooms = [], conflicts, onClose, onChange
   const linkedPractice = practices.find((practice) => practice.id === session.practice_id)
 
   return (
-    <Modal title={assignmentLabel(assignment)} onClose={onClose} wide>
-      <p className="-mt-1 text-sm text-muted">
+    <Shell title={assignmentLabel(assignment)} onClose={onClose} wide>
+      <p className={`${asPage ? '' : '-mt-1 '}text-sm text-muted`}>
         {dateText} · {time(session.start_time)}–{time(session.end_time)}
         {session.room ? ` · ${session.room}` : ''} · {groupLabel(assignment.class_groups)}{assignment.profiles?.full_name ? ` · ${assignment.profiles.full_name}` : ''}
       </p>
@@ -436,7 +453,7 @@ function SessionDetail({ session, user, rooms = [], conflicts, onClose, onChange
         </form>
       )}
       {conflictModal}
-    </Modal>
+    </Shell>
   )
 }
 
