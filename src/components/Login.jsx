@@ -16,7 +16,6 @@ function friendlyAuthError(error) {
 
 export default function Login({ onLoginSuccess }) {
   const [mode, setMode] = useState('login') // 'login' | 'register' | 'reset'
-  const [name, setName] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [requestedRole, setRequestedRole] = useState('alumno')
@@ -48,18 +47,17 @@ export default function Login({ onLoginSuccess }) {
   }
 
   async function register() {
-    if (!name.trim()) { setError('Introduce tu nombre completo.'); return }
     if (!(await checkJoinCode())) { setError('El código de escuela no es válido. Pídeselo a tu escuela.'); return }
     const passwordError = await validateNewPassword(password, confirmPassword)
     if (passwordError) { setError(passwordError); return }
 
-    // La cuenta queda pendiente hasta que la escuela la aprueba; el rol pedido
+    // La cuenta queda pendiente: tras confirmar el correo, la persona rellena su ficha y la coordinación la aprueba. El rol pedido
     // solo puede ser alumno o profesor (lo garantiza la base de datos).
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        data: { full_name: name.trim(), join_code: joinCode, requested_role: requestedRole },
+        data: { join_code: joinCode, requested_role: requestedRole },
         emailRedirectTo: window.location.origin,
       },
     })
@@ -70,7 +68,7 @@ export default function Login({ onLoginSuccess }) {
       return
     }
     changeMode('login')
-    setNotice(`Cuenta creada. Confirma tu correo; después ${schoolName} revisará tu solicitud.`)
+    setNotice(`Cuenta creada. Revisa tu correo para confirmarlo y después entra con tu contraseña para completar tu ficha. ${schoolName} la revisará.`)
   }
 
   async function login() {
@@ -195,12 +193,6 @@ export default function Login({ onLoginSuccess }) {
                   ))}
                 </div>
               </fieldset>
-            )}
-            {isRegister && (
-              <label className="field">
-                <span>Nombre completo</span>
-                <input className="input" type="text" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required />
-              </label>
             )}
             <label className="field">
               <span>Correo electrónico</span>
