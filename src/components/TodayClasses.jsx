@@ -110,8 +110,10 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
                   const detail = teachesLikeProfessor(user.role) ? groupLabel(assignment.class_groups) : assignment.profiles?.full_name
                   return (
                     <li key={key}>
-                      <button type="button" onClick={() => openSession(session)} style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color), borderRightColor: moduleColor(assignment.degree_modules?.modules?.color) }}
-                        className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-2.5 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>
+                      {/* Al pasar el cursor, un pastel muy suave del color del módulo */}
+                      <button type="button" onClick={() => openSession(session)}
+                        style={{ '--module': moduleColor(assignment.degree_modules?.modules?.color), borderLeftColor: 'var(--module)', borderRightColor: 'var(--module)' }}
+                        className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-2.5 text-left transition-colors duration-300 ease-out hover:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))] focus-visible:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))] ${cancelled ? 'opacity-60' : ''}`}>
                         <span className={`w-14 shrink-0 text-sm tabular-nums ${live ? 'font-semibold text-accent-strong' : 'text-muted'}`}>{time(session.start_time)}</span>
                         <span className="min-w-0 flex-1">
                           <span className={`block truncate font-medium text-ink ${cancelled ? 'line-through' : ''}`}>
