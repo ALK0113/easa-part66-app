@@ -10,15 +10,85 @@ import { AttendanceSheet } from './SessionAttendance.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportSchedule from './ImportSchedule.jsx'
+import { ConflictConfirm, RoomSelect } from './ScheduleControls.jsx'
+import { moduleColor } from '../lib/moduleColors.js'
+import { checkConflicts, fetchTemplateConflicts, fetchWeekConflicts, roomValues, useRooms } from '../lib/scheduleTools.js'
 
 // Horario semanal. Profesor: sus clases y pasar lista. Alumno: sus clases.
-// Administración: por grupo o por profesor, y la plantilla semanal de cada grupo.
+// Administración: por grupo, profesor o aula, y la plantilla semanal de cada grupo.
+// Columnas por día; en pantalla grande se arrastra una tarjeta a otro día (la hora se cambia en su formulario).
+// Los choques (mismo profesor, aula o grupo a la misma hora) se marcan en rojo y se avisan antes de guardar.
+// Al tocar una clase con práctica vinculada se va a esa práctica; si no, a la página de la clase.
+
+const formRoom = (item) => ({ room_id: item?.room_id || '', room_new: '' })
+
+// Rejilla solo en pantalla grande (md); en el móvil, la lista por días
+function useWideScreen() {
+  const query = '(min-width: 768px)'
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const update = () => setWide(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return wide
+}
+
+// Arrastrar una tarjeta a otra columna (otro día). Pointer events: ratón y tablet. Un toque sin mover abre la clase.
+// Las columnas llevan data-day con su índice.
+function useDayDrag({ canDrag, onDrop, onOpen }) {
+  const [drag, setDrag] = useState(null)
+  const bind = (item, dayIndex) => ({
+    onPointerDown: (event) => {
+      if (event.button !== 0) return
+      if (canDrag(item)) event.currentTarget.setPointerCapture(event.pointerId)
+      setDrag({ item, from: dayIndex, x: event.clientX, y: event.clientY, moved: false, over: null, draggable: canDrag(item) })
+    },
+    onPointerMove: (event) => {
+      if (!drag?.draggable) return
+      if (!drag.moved && Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) < 8) return
+      const column = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-day]')
+      const over = column ? Number(column.dataset.day) : null
+      if (!drag.moved || over !== drag.over) setDrag({ ...drag, moved: true, over })
+    },
+    onPointerUp: () => {
+      const current = drag
+      setDrag(null)
+      if (!current) return
+      if (!current.moved) onOpen(item)
+      else if (current.over !== null && current.over !== current.from) onDrop(item, current.over)
+    },
+    onPointerCancel: () => setDrag(null),
+    onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(item) } },
+  })
+  const dragging = (item) => Boolean(drag?.moved && drag.item === item)
+  const isTarget = (dayIndex) => Boolean(drag?.moved && drag.over === dayIndex && drag.over !== drag.from)
+  return { bind, dragging, isTarget, active: Boolean(drag?.moved) }
+}
+
+// Comprueba choques antes de guardar: si los hay, pide confirmación
+function useConflictGuard() {
+  const [pending, setPending] = useState(null)
+  const guard = useCallback(async (check, action, label) => {
+    const reasons = await checkConflicts(check)
+    if (!reasons.length) return action()
+    setPending({ reasons, action, label })
+    return undefined
+  }, [])
+  const modal = pending && (
+    <ConflictConfirm reasons={pending.reasons} action={pending.label}
+      onCancel={() => setPending(null)}
+      onConfirm={() => { const { action } = pending; setPending(null); action() }} />
+  )
+  return [guard, modal]
+}
 
 const assignmentLabel = (assignment) => assignment
   ? `${assignment.degree_modules?.module_id} ${KIND_LABEL[assignment.degree_modules?.kind]?.toLowerCase() || ''}`
   : ''
 
-export default function Timetable({ user }) {
+export default function Timetable({ user, onOpenPractice }) {
   const isAdmin = isManager(user.role)
   // El profesor también edita la plantilla semanal, pero solo de sus clases
   const canEditTemplate = isAdmin || teachesLikeProfessor(user.role)
@@ -39,7 +109,7 @@ export default function Timetable({ user }) {
           {isAdmin && <button type="button" role="tab" className="tab" aria-selected={tab === 'import'} onClick={() => setTab('import')}>Importar</button>}
         </div>
       )}
-      {tab === 'week' && <WeekView user={user} />}
+      {tab === 'week' && <WeekView user={user} onOpenPractice={onOpenPractice} />}
       {tab === 'template' && <TemplateEditor user={user} />}
       {tab === 'import' && isAdmin && <ImportSchedule user={user} />}
     </div>
@@ -90,7 +160,7 @@ function useCurrentAssignments(enabled, profileId) {
 /* Semana                                                              */
 /* ------------------------------------------------------------------ */
 
-function WeekView({ user }) {
+function WeekView({ user, onOpenPractice }) {
   const isAdmin = isManager(user.role)
   const canManageSessions = user.role !== ROLES.STUDENT
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
@@ -101,8 +171,14 @@ function WeekView({ user }) {
   const [open, setOpen] = useState(null)
   const [creating, setCreating] = useState(false)
   const [version, setVersion] = useState(0)
+  const [conflicts, setConflicts] = useState(new Map())
+  const [notice, setNotice] = useState(null)
   const reload = useCallback(() => setVersion((value) => value + 1), [])
   const { groups, teachers, assignments } = useCurrentAssignments(canManageSessions, isAdmin ? null : user.id)
+  const { schoolId } = useSchool()
+  const rooms = useRooms(canManageSessions ? schoolId : null)
+  const wide = useWideScreen()
+  const [guard, conflictModal] = useConflictGuard()
 
   const from = toISODate(weekStart)
   const to = toISODate(addDays(weekStart, 6))
@@ -113,7 +189,7 @@ function WeekView({ user }) {
     let active = true
     async function load() {
       try {
-        const scope = isAdmin ? (effectiveFilter.kind === 'group' ? { groupId: effectiveFilter.id } : { profileId: effectiveFilter.id }) : {}
+        const scope = isAdmin ? ({ group: { groupId: effectiveFilter.id }, teacher: { profileId: effectiveFilter.id }, room: { roomId: effectiveFilter.id } })[effectiveFilter.kind] : {}
         const result = await fetchSessions(user, from, to, scope)
         if (active) { setSessions(result.sessions); setError('') }
       } catch (err) {
@@ -124,6 +200,14 @@ function WeekView({ user }) {
     const unsubscribe = subscribeToTables(['class_sessions', 'schedule_slots'], load, `timetable-week-${user.id}`)
     return () => { active = false; unsubscribe() }
   }, [user, from, to, isAdmin, effectiveFilter?.kind, effectiveFilter?.id, version])
+
+  // Choques de la semana (profesorado y gestión)
+  useEffect(() => {
+    if (!canManageSessions || !schoolId) return undefined
+    let active = true
+    fetchWeekConflicts(schoolId, from, to).then((map) => { if (active) setConflicts(map) })
+    return () => { active = false }
+  }, [canManageSessions, schoolId, from, to, sessions])
 
   // Festivos de la semana (se ven en su día)
   const { filterId } = useSchool()
@@ -146,8 +230,41 @@ function WeekView({ user }) {
 
   const today = toISODate(new Date())
   const weekTitle = `${weekStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
-  const showTeacher = user.role === ROLES.STUDENT || (isAdmin && effectiveFilter?.kind === 'group')
-  const showGroup = user.role === ROLES.TEACHER || (isAdmin && effectiveFilter?.kind === 'teacher')
+  const showTeacher = user.role === ROLES.STUDENT || (isAdmin && effectiveFilter?.kind !== 'teacher')
+  const showGroup = user.role === ROLES.TEACHER || (isAdmin && effectiveFilter?.kind !== 'group')
+  const canEditSession = (session) => session.status !== 'cancelada' && (isAdmin || session.teaching_assignments?.profile_id === user.id)
+  const visibleConflicts = useMemo(() => new Map([...conflicts].filter(([id]) => (sessions || []).some((session) => session.id === id))), [conflicts, sessions])
+
+  // Al tocar una clase: atajo a su práctica, dentro de su módulo, si la tiene; si no, la página de la clase
+  const openClass = (session) => {
+    const moduleId = session.practices?.module_id || session.teaching_assignments?.degree_modules?.module_id
+    if (session.practice_id && moduleId && onOpenPractice) onOpenPractice(session.practice_id, moduleId)
+    else setOpen(session)
+  }
+
+  // Arrastrar una tarjeta a otro día cambia solo ese día (misma hora)
+  function moveSession(session, dayIndex) {
+    const date = days[dayIndex].date
+    const start = time(session.start_time)
+    const end = time(session.end_time)
+    guard(
+      { kind: 'session', id: session.id, assignmentId: session.teaching_assignment_id, date, start, end, roomId: session.room_id },
+      async () => {
+        const { error: moveError } = await supabase.from('class_sessions').update({ date, start_time: start, end_time: end }).eq('id', session.id)
+        if (moveError) { setNotice({ error: true, text: getSupabaseErrorMessage(moveError) }); return }
+        setNotice({ error: false, text: `${assignmentLabel(session.teaching_assignments)} movida al ${days[dayIndex].label.toLowerCase()} ${parseISODate(date).getDate()}, de ${start} a ${end}. Solo cambia ese día.` })
+        reload()
+      },
+      'Mover igualmente',
+    )
+  }
+  const dayDrag = useDayDrag({ canDrag: (session) => wide && canManageSessions && canEditSession(session), onDrop: moveSession, onOpen: openClass })
+
+  // Página de la clase (con los datos al día tras cada cambio)
+  const openSession = open ? (sessions || []).find((session) => session.id === open.id) || open : null
+  if (openSession) {
+    return <SessionDetail asPage session={openSession} user={user} rooms={rooms} conflicts={visibleConflicts.get(openSession.id)} onClose={() => setOpen(null)} onChanged={reload} />
+  }
 
   return (
     <div className="space-y-4">
@@ -163,6 +280,7 @@ function WeekView({ user }) {
             onChange={(event) => { const [kind, id] = event.target.value.split(':'); setFilter({ kind, id }) }}>
             <optgroup label="Grupos">{groups.map((group) => <option key={group.id} value={`group:${group.id}`}>{groupLabel(group)}</option>)}</optgroup>
             {teachers.length > 0 && <optgroup label="Profesores">{teachers.map((teacher) => <option key={teacher.id} value={`teacher:${teacher.id}`}>{teacher.name}</option>)}</optgroup>}
+            {rooms.length > 0 && <optgroup label="Aulas">{rooms.map((room) => <option key={room.id} value={`room:${room.id}`}>{room.name}</option>)}</optgroup>}
           </select>
         )}
         {canManageSessions && assignments.length > 0 && (
@@ -171,13 +289,18 @@ function WeekView({ user }) {
       </div>
 
       {error && <p role="alert" className="notice-error">{error}</p>}
+      {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
+      {visibleConflicts.size > 0 && (
+        <p className="notice-error">{visibleConflicts.size === 1 ? '1 clase choca' : `${visibleConflicts.size} clases chocan`} con otra esta semana (mismo profesor, aula o grupo). Están marcadas en rojo; toca una para ver con cuál.</p>
+      )}
+      {wide && sessions && canManageSessions && <p className="text-xs text-faint">Arrastra una tarjeta a otro día para moverla solo esa semana; la hora se cambia al abrirla. Para cambiarla todas las semanas, usa la plantilla semanal.</p>}
       {isAdmin && !groups.length && <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p></div>}
       {sessions === null && !error && (!isAdmin || groups.length > 0) && <p className="text-sm text-muted">Cargando…</p>}
 
       {sessions && (
         <div className="grid gap-3 md:grid-cols-5">
-          {days.map((day) => (
-            <section key={day.date} className={`card p-3 ${day.date === today ? 'ring-1 ring-accent' : ''}`}>
+          {days.map((day, dayIndex) => (
+            <section key={day.date} data-day={dayIndex} className={`card p-3 transition-shadow ${dayDrag.isTarget(dayIndex) ? 'ring-2 ring-accent' : day.date === today ? 'ring-1 ring-accent' : ''}`}>
               <h3 className="mb-2 flex items-baseline justify-between px-1">
                 <span className={`text-sm font-semibold ${day.date === today ? 'text-accent-strong' : 'text-ink'}`}>{day.label}</span>
                 <span className="text-xs text-muted">{parseISODate(day.date).getDate()}</span>
@@ -188,13 +311,17 @@ function WeekView({ user }) {
                   {day.sessions.map((session) => {
                     const assignment = session.teaching_assignments
                     const cancelled = session.status === 'cancelada'
+                    const conflict = visibleConflicts.get(session.id)
                     return (
                       <li key={session.id}>
-                        <button type="button" onClick={() => setOpen(session)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle ${cancelled ? 'border-line opacity-60' : assignment.degree_modules?.kind === 'practica' ? 'border-line border-l-2 border-l-accent' : 'border-line'}`}>
+                        <button type="button" {...dayDrag.bind(session, dayIndex)} title={conflict ? `Choque: ${conflict.join(' · ')}` : session.practice_id ? 'Ir a la práctica en su módulo' : undefined}
+                          style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}
+                          className={`w-full select-none rounded-xl border border-l-[3px] px-3 py-2 text-left transition-colors hover:bg-subtle
+                            ${conflict ? 'border-danger' : 'border-line'} ${cancelled ? 'opacity-60' : ''}
+                            ${dayDrag.dragging(session) ? 'opacity-40' : ''} ${wide && canManageSessions && canEditSession(session) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                           <span className="block text-xs tabular-nums text-muted">{time(session.start_time)}–{time(session.end_time)}{session.room ? ` · ${session.room}` : ''}</span>
-                          <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}</span>
-                          {session.theory_classes?.title && <span className="block truncate text-xs text-ink-soft">{session.theory_classes.title}</span>}
+                          <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}{conflict && <span className="ml-1 text-danger">· choque</span>}</span>
+                          {(session.theory_classes?.title || session.practices?.title) && <span className="block truncate text-xs text-ink-soft">{session.theory_classes?.title || session.practices?.title}</span>}
                           <span className="block truncate text-xs text-muted">
                             {cancelled ? 'Cancelada' : [showGroup && groupLabel(assignment.class_groups), showTeacher && (assignment.profiles?.full_name || '')].filter(Boolean).join(' · ')}
                           </span>
@@ -209,8 +336,8 @@ function WeekView({ user }) {
         </div>
       )}
 
-      {open && <SessionDetail session={open} user={user} onClose={() => setOpen(null)} onChanged={reload} />}
-      {creating && <OneOffForm assignments={assignments} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload() }} />}
+      {creating && <OneOffForm assignments={assignments} rooms={rooms} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload() }} />}
+      {conflictModal}
     </div>
   )
 }
@@ -219,16 +346,29 @@ function WeekView({ user }) {
 /* Detalle de una clase: pasar lista, cambiar hora o cancelar           */
 /* ------------------------------------------------------------------ */
 
-function SessionDetail({ session, user, onClose, onChanged }) {
+// Página de la clase (desde la semana) o ventana: la lista, el comentario, cambiar día, hora o aula, cancelar
+function PageShell({ title, onClose, children }) {
+  return (
+    <div className="space-y-4">
+      <button type="button" className="back-link" onClick={onClose}>← Horario</button>
+      <h2 className="text-2xl font-semibold text-ink">{title}</h2>
+      <div>{children}</div>
+    </div>
+  )
+}
+
+function SessionDetail({ session, user, rooms = [], conflicts, asPage = false, onClose, onChanged }) {
+  const Shell = asPage ? PageShell : Modal
   const assignment = session.teaching_assignments
   const canEdit = isManager(user.role) || assignment.profile_id === user.id
   const [ownStatus, setOwnStatus] = useState(undefined)
   const [practices, setPractices] = useState([])
   const [theoryClasses, setTheoryClasses] = useState([])
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ date: session.date, start_time: time(session.start_time), end_time: time(session.end_time), room: session.room || '', note: session.note || '', content: session.theory_class_id ? `t:${session.theory_class_id}` : session.practice_id ? `p:${session.practice_id}` : '' })
+  const [form, setForm] = useState({ date: session.date, start_time: time(session.start_time), end_time: time(session.end_time), ...formRoom(session), note: session.note || '', content: session.theory_class_id ? `t:${session.theory_class_id}` : session.practice_id ? `p:${session.practice_id}` : '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [guard, conflictModal] = useConflictGuard()
   const cancelled = session.status === 'cancelada'
 
   useEffect(() => {
@@ -264,12 +404,18 @@ function SessionDetail({ session, user, onClose, onChanged }) {
   const linkedPractice = practices.find((practice) => practice.id === session.practice_id)
 
   return (
-    <Modal title={assignmentLabel(assignment)} onClose={onClose} wide>
-      <p className="-mt-1 text-sm text-muted">
+    <Shell title={assignmentLabel(assignment)} onClose={onClose} wide>
+      <p className={`${asPage ? '' : '-mt-1 '}text-sm text-muted`}>
         {dateText} · {time(session.start_time)}–{time(session.end_time)}
         {session.room ? ` · ${session.room}` : ''} · {groupLabel(assignment.class_groups)}{assignment.profiles?.full_name ? ` · ${assignment.profiles.full_name}` : ''}
       </p>
       {cancelled && <p className="notice mt-3">Esta clase está cancelada.</p>}
+      {conflicts?.length > 0 && !cancelled && (
+        <div className="notice-error mt-3 text-sm">
+          <p className="font-medium">Choca con:</p>
+          <ul className="mt-1 list-disc pl-5">{conflicts.map((text) => <li key={text}>{text}</li>)}</ul>
+        </div>
+      )}
       {session.note && !editing && <p className="mt-3 text-sm text-ink-soft">{session.note}</p>}
       {session.theory_classes?.title && !editing && <p className="mt-2 text-sm text-ink-soft">Clase teórica: {session.theory_classes.title}</p>}
       {linkedPractice && !editing && <p className="mt-2 text-sm text-ink-soft">Práctica: {linkedPractice.title}{canEdit ? ' · Apto / No apto por sesión; la nota general se pone en la práctica' : ''}</p>}
@@ -299,13 +445,21 @@ function SessionDetail({ session, user, onClose, onChanged }) {
       )}
 
       {canEdit && editing && (
-        <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); { const { content, ...values } = form; update({ ...values, room: form.room || null, note: form.note || null, practice_id: content.startsWith('p:') ? content.slice(2) : null, theory_class_id: content.startsWith('t:') ? content.slice(2) : null }, true) } }}>
+        <form className="mt-4 space-y-4" onSubmit={(event) => {
+          event.preventDefault()
+          const values = {
+            date: form.date, start_time: form.start_time, end_time: form.end_time, ...roomValues(form), note: form.note || null,
+            practice_id: form.content.startsWith('p:') ? form.content.slice(2) : null, theory_class_id: form.content.startsWith('t:') ? form.content.slice(2) : null,
+          }
+          const roomId = form.room_id && form.room_id !== 'new' ? form.room_id : null
+          guard({ kind: 'session', id: session.id, assignmentId: session.teaching_assignment_id, date: form.date, start: form.start_time, end: form.end_time, roomId }, () => update(values, true))
+        }}>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="field">Día<input className="input" type="date" required value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></label>
             <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
             <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
           </div>
-          <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+          <RoomSelect rooms={rooms} form={form} setForm={setForm} />
           {(practices.length > 0 || theoryClasses.length > 0) && (
             <label className="field">Clase que se imparte en esta sesión
               <select className="input" value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })}>
@@ -322,22 +476,31 @@ function SessionDetail({ session, user, onClose, onChanged }) {
           </div>
         </form>
       )}
-    </Modal>
+      {conflictModal}
+    </Shell>
   )
 }
 
-function OneOffForm({ assignments, onClose, onSaved }) {
-  const [form, setForm] = useState({ teaching_assignment_id: assignments[0]?.id || '', date: toISODate(new Date()), start_time: '09:00', end_time: '10:00', room: '' })
+function OneOffForm({ assignments, rooms, onClose, onSaved }) {
+  const [form, setForm] = useState({ teaching_assignment_id: assignments[0]?.id || '', date: toISODate(new Date()), start_time: '09:00', end_time: '10:00', room_id: '', room_new: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [guard, conflictModal] = useConflictGuard()
 
-  async function save(event) {
-    event.preventDefault()
+  async function insert() {
     setBusy(true)
-    const { error: saveError } = await supabase.from('class_sessions').insert({ ...form, room: form.room || null })
+    const { error: saveError } = await supabase.from('class_sessions').insert({
+      teaching_assignment_id: form.teaching_assignment_id, date: form.date, start_time: form.start_time, end_time: form.end_time, ...roomValues(form),
+    })
     setBusy(false)
     if (saveError) setError(getSupabaseErrorMessage(saveError))
     else onSaved()
+  }
+
+  function save(event) {
+    event.preventDefault()
+    const roomId = form.room_id && form.room_id !== 'new' ? form.room_id : null
+    guard({ kind: 'session', assignmentId: form.teaching_assignment_id, date: form.date, start: form.start_time, end: form.end_time, roomId }, insert, 'Crear igualmente')
   }
 
   return (
@@ -353,10 +516,11 @@ function OneOffForm({ assignments, onClose, onSaved }) {
           <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
           <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
         </div>
-        <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+        <RoomSelect rooms={rooms} form={form} setForm={setForm} />
         {error && <p role="alert" className="notice-error">{error}</p>}
         <div className="flex justify-end"><button type="submit" className="btn-primary" disabled={busy}>Crear clase</button></div>
       </form>
+      {conflictModal}
     </Modal>
   )
 }
@@ -370,8 +534,13 @@ export function TemplateEditor({ user }) {
   const { groups: allGroups, assignments } = useCurrentAssignments(true, ownOnly ? user.id : null)
   // El profesor solo ve los grupos donde imparte
   const groups = ownOnly ? allGroups.filter((group) => assignments.some((item) => item.group_id === group.id)) : allGroups
+  const { schoolId } = useSchool()
+  const rooms = useRooms(schoolId)
+  const wide = useWideScreen()
+  const [guard, conflictModal] = useConflictGuard()
   const [groupId, setGroupId] = useState('')
   const [slots, setSlots] = useState([])
+  const [conflicts, setConflicts] = useState(new Map())
   const [editing, setEditing] = useState(null)
   const [notice, setNotice] = useState(null)
   const [version, setVersion] = useState(0)
@@ -383,7 +552,7 @@ export function TemplateEditor({ user }) {
     let active = true
     async function load() {
       const { data, error } = await supabase.from('schedule_slots')
-        .select('id,weekday,start_time,end_time,room,teaching_assignment_id,teaching_assignments!inner(group_id,profiles(full_name),degree_modules(module_id,kind))')
+        .select('id,weekday,start_time,end_time,room,room_id,teaching_assignment_id,teaching_assignments!inner(group_id,profile_id,profiles(full_name),degree_modules(module_id,kind,modules(color)))')
         .eq('teaching_assignments.group_id', activeGroup).order('weekday').order('start_time')
       if (!active) return
       if (error) setNotice({ error: true, text: getSupabaseErrorMessage(error) })
@@ -394,15 +563,42 @@ export function TemplateEditor({ user }) {
     return () => { active = false; unsubscribe() }
   }, [activeGroup, version])
 
-  async function save(form) {
-    const values = { teaching_assignment_id: form.teaching_assignment_id, weekday: Number(form.weekday), start_time: form.start_time, end_time: form.end_time, room: form.room || null }
-    const { error } = editing.id
-      ? await supabase.from('schedule_slots').update(values).eq('id', editing.id)
+  useEffect(() => {
+    if (!schoolId) return undefined
+    let active = true
+    fetchTemplateConflicts(schoolId).then((map) => { if (active) setConflicts(map) })
+    return () => { active = false }
+  }, [schoolId, slots])
+
+  async function persist(id, values, okText) {
+    const { error } = id
+      ? await supabase.from('schedule_slots').update(values).eq('id', id)
       : await supabase.from('schedule_slots').insert(values)
-    if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return }
-    setNotice({ error: false, text: 'Horario guardado. Las clases de aquí a fin de curso ya están en el calendario.' })
-    setEditing(null)
+    if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return false }
+    setNotice({ error: false, text: okText })
     setVersion((value) => value + 1)
+    return true
+  }
+
+  function save(form) {
+    const values = { teaching_assignment_id: form.teaching_assignment_id, weekday: Number(form.weekday), start_time: form.start_time, end_time: form.end_time, ...roomValues(form) }
+    const roomId = form.room_id && form.room_id !== 'new' ? form.room_id : null
+    return guard(
+      { kind: 'slot', id: editing.id || null, assignmentId: values.teaching_assignment_id, weekday: values.weekday, start: values.start_time, end: values.end_time, roomId },
+      async () => { if (await persist(editing.id, values, 'Horario guardado. Las clases de aquí a fin de curso ya están en el calendario.')) setEditing(null) },
+    )
+  }
+
+  // Arrastrar en la plantilla cambia ese hueco para el resto del curso
+  function moveSlot(slot, dayIndex) {
+    const weekday = dayIndex + 1
+    const start = time(slot.start_time)
+    const end = time(slot.end_time)
+    guard(
+      { kind: 'slot', id: slot.id, assignmentId: slot.teaching_assignment_id, weekday, start, end, roomId: slot.room_id },
+      () => persist(slot.id, { weekday }, `${assignmentLabel(slot.teaching_assignments)} pasa al ${WEEKDAYS[dayIndex].toLowerCase()} de ${start} a ${end}. Se han movido las clases de aquí a fin de curso (las que ya tienen asistencia o se cambiaron a mano se quedan como estaban).`),
+      'Mover igualmente',
+    )
   }
 
   async function remove() {
@@ -414,16 +610,19 @@ export function TemplateEditor({ user }) {
     setVersion((value) => value + 1)
   }
 
+  const slotDrag = useDayDrag({ canDrag: (slot) => wide && isMine(slot), onDrop: moveSlot, onOpen: (slot) => isMine(slot) && setEditing(slot) })
+
   if (!groups.length) {
     return (
       <div className="card empty">
         <p className="font-medium text-ink-soft">{ownOnly ? 'Aún no tienes clases asignadas este curso' : 'No hay grupos en el curso actual'}</p>
-        {ownOnly && <p className="mt-1">La supervisión te asigna los módulos y grupos; después podrás fijar aquí su horario.</p>}
+        {ownOnly && <p className="mt-1">La coordinación te asigna los módulos y grupos; después podrás fijar aquí su horario.</p>}
       </div>
     )
   }
   const isMine = (slot) => groupAssignments.some((item) => item.id === slot.teaching_assignment_id)
-
+  const groupConflicts = new Map([...conflicts].filter(([id]) => slots.some((slot) => slot.id === id)))
+  const newSlot = (weekday, start = '09:00', end = '10:00') => setEditing({ weekday, teaching_assignment_id: groupAssignments[0].id, start_time: start, end_time: end, room_id: '' })
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Grupo">
@@ -435,55 +634,67 @@ export function TemplateEditor({ user }) {
         ))}
       </div>
       {notice && <p role={notice.error ? 'alert' : 'status'} className={notice.error ? 'notice-error' : 'notice-success'}>{notice.text}</p>}
+      {groupConflicts.size > 0 && (
+        <p className="notice-error">{groupConflicts.size === 1 ? '1 clase de este grupo choca' : `${groupConflicts.size} clases de este grupo chocan`} con otra (mismo profesor, aula o grupo). Están marcadas en rojo; toca una para ver con cuál.</p>
+      )}
 
       {groupAssignments.length === 0 ? (
         <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Escuela → Profesores.</p></div>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-5">
-            {WEEKDAYS.slice(0, 5).map((label, index) => {
-              const items = slots.filter((slot) => slot.weekday === index + 1)
-              return (
-                <section key={label} className="card p-3">
-                  <h3 className="mb-2 px-1 text-sm font-semibold text-ink">{label}</h3>
-                  <ul className="space-y-1.5">
-                    {items.map((slot) => (
-                      <li key={slot.id}>
-                        <button type="button" onClick={() => setEditing(slot)} disabled={!isMine(slot)} className="w-full rounded-xl border border-line px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60">
-                          <span className="block text-xs tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}{slot.room ? ` · ${slot.room}` : ''}</span>
-                          <span className="block text-sm font-medium text-ink">{assignmentLabel(slot.teaching_assignments)}</span>
-                          <span className="block truncate text-xs text-muted">{slot.teaching_assignments.profiles?.full_name}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <button type="button" className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-xl py-1.5 text-xs text-muted hover:bg-subtle hover:text-ink"
-                    onClick={() => setEditing({ weekday: index + 1, teaching_assignment_id: groupAssignments[0].id, start_time: '09:00', end_time: '10:00', room: '' })}>
-                    <Icon name="plus" size={14} />Añadir
-                  </button>
-                </section>
-              )
-            })}
-          </div>
+        {wide && <p className="text-xs text-faint">Arrastra una tarjeta a otro día para cambiarla todas las semanas; la hora se cambia al abrirla.</p>}
+        <div className="grid gap-3 md:grid-cols-5">
+          {WEEKDAYS.slice(0, 5).map((label, index) => {
+            const items = slots.filter((slot) => slot.weekday === index + 1)
+            return (
+              <section key={label} data-day={index} className={`card p-3 transition-shadow ${slotDrag.isTarget(index) ? 'ring-2 ring-accent' : ''}`}>
+                <h3 className="mb-2 px-1 text-sm font-semibold text-ink">{label}</h3>
+                <ul className="space-y-1.5">
+                  {items.map((slot) => (
+                    <li key={slot.id}>
+                      <button type="button" {...slotDrag.bind(slot, index)} disabled={!isMine(slot)} title={groupConflicts.has(slot.id) ? `Choque: ${groupConflicts.get(slot.id).join(' · ')}` : undefined}
+                        style={{ borderLeftColor: moduleColor(slot.teaching_assignments.degree_modules?.modules?.color) }}
+                        className={`w-full select-none rounded-xl border border-l-[3px] px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60 ${groupConflicts.has(slot.id) ? 'border-danger' : 'border-line'} ${slotDrag.dragging(slot) ? 'opacity-40' : ''} ${wide && isMine(slot) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
+                        <span className="block text-xs tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}{slot.room ? ` · ${slot.room}` : ''}</span>
+                        <span className="block text-sm font-medium text-ink">{assignmentLabel(slot.teaching_assignments)}{groupConflicts.has(slot.id) && <span className="ml-1 text-danger">· choque</span>}</span>
+                        <span className="block truncate text-xs text-muted">{slot.teaching_assignments.profiles?.full_name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-xl py-1.5 text-xs text-muted hover:bg-subtle hover:text-ink" onClick={() => newSlot(index + 1)}>
+                  <Icon name="plus" size={14} />Añadir
+                </button>
+              </section>
+            )
+          })}
+        </div>
         </>
       )}
 
-      {editing && <SlotForm slot={editing} assignments={groupAssignments} onSave={save} onDelete={editing.id ? remove : null} onClose={() => setEditing(null)} />}
+      {editing && <SlotForm slot={editing} assignments={groupAssignments} rooms={rooms} conflicts={editing.id ? groupConflicts.get(editing.id) : null} onSave={save} onDelete={editing.id ? remove : null} onClose={() => setEditing(null)} />}
+      {conflictModal}
     </div>
   )
 }
 
-function SlotForm({ slot, assignments, onSave, onDelete, onClose }) {
+function SlotForm({ slot, assignments, rooms, conflicts, onSave, onDelete, onClose }) {
   const [form, setForm] = useState({
     teaching_assignment_id: slot.teaching_assignment_id,
     weekday: String(slot.weekday),
     start_time: time(slot.start_time),
     end_time: time(slot.end_time),
-    room: slot.room || '',
+    ...formRoom(slot),
   })
   const [busy, setBusy] = useState(false)
   return (
     <Modal title={slot.id ? 'Clase semanal' : 'Nueva clase semanal'} onClose={onClose}>
+      {conflicts?.length > 0 && (
+        <div className="notice-error mb-4 text-sm">
+          <p className="font-medium">Choca con:</p>
+          <ul className="mt-1 list-disc pl-5">{conflicts.map((text) => <li key={text}>{text}</li>)}</ul>
+        </div>
+      )}
       <form className="space-y-4" onSubmit={async (event) => { event.preventDefault(); setBusy(true); await onSave(form); setBusy(false) }}>
         <label className="field">Módulo y profesor
           <select className="input" value={form.teaching_assignment_id} onChange={(event) => setForm({ ...form, teaching_assignment_id: event.target.value })}>
@@ -499,7 +710,7 @@ function SlotForm({ slot, assignments, onSave, onDelete, onClose }) {
           <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
           <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
         </div>
-        <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+        <RoomSelect rooms={rooms} form={form} setForm={setForm} />
         <div className="flex items-center justify-between pt-1">
           {onDelete ? <button type="button" className="btn-ghost text-danger" onClick={onDelete}><Icon name="trash" size={16} />Quitar</button> : <span />}
           <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button>

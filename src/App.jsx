@@ -61,6 +61,8 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedModuleId, setSelectedModuleId] = useState(null)
+  // Práctica que se abre al entrar en el módulo (atajo desde el horario)
+  const [modulePracticeId, setModulePracticeId] = useState(null)
   const [selectedTlbId, setSelectedTlbId] = useState(null)
   // Lo que una página pide a otra al navegar (p. ej. «Crear TLB» desde una práctica): { page, ...datos }
   const [pageIntent, setPageIntent] = useState(null)
@@ -175,7 +177,7 @@ function App() {
   }
 
   const currentPage = canAccessPage(activePage, user.role) ? activePage : 'dashboard'
-  const openModule = (moduleId) => { setSelectedModuleId(moduleId); setActivePage('module-detail') }
+  const openModule = (moduleId, practiceId = null) => { setSelectedModuleId(moduleId); setModulePracticeId(practiceId); setActivePage('module-detail') }
   const goWith = (page, data) => { setPageIntent({ page, ...data }); setActivePage(page) }
   const openSetup = (step) => { setSetupStep(step); setActivePage('setup') }
   const intentFor = (page) => (pageIntent?.page === page ? pageIntent : null)
@@ -188,7 +190,7 @@ function App() {
       case 'tlb': return <TLBList user={user} initialTlbId={selectedTlbId} onClearInitialTlb={() => setSelectedTlbId(null)} initialCreate={intentFor('tlb')} onClearInitialCreate={clearIntent} />
       case 'videos': return <VideoList user={user} initialModuleId={intentFor('videos')?.module_id} onClearInitial={clearIntent} />
       case 'modules': return <ModulesPage user={user} onOpenModule={openModule} />
-      case 'module-detail': return <ModuleDetailPage moduleId={selectedModuleId} user={user} onBack={() => setActivePage('modules')} />
+      case 'module-detail': return <ModuleDetailPage key={`${selectedModuleId}-${modulePracticeId || ''}`} moduleId={selectedModuleId} initialPracticeId={modulePracticeId} user={user} onBack={() => setActivePage('modules')} />
       // Estructura académica y Asignaciones viven ahora dentro de «Escuela» (los accesos antiguos siguen llevando allí)
       case 'setup': case 'structure': case 'assignments': return <SchoolSetup user={user} step={setupStep} onStep={setSetupStep} />
       case 'mygroups': return <TeacherGroups user={user} onOpenGrades={(groupId, degreeModuleId) => goWith('grades', { group_id: groupId, degree_module_id: degreeModuleId })} />
@@ -199,7 +201,7 @@ function App() {
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyProgress user={user} />
       case 'schools': return <SchoolManagement user={user} />
-      case 'timetable': return <Timetable user={user} />
+      case 'timetable': return <Timetable user={user} onOpenPractice={(practiceId, moduleId) => openModule(moduleId, practiceId)} />
       case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
       default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} openSetup={openSetup} />
     }

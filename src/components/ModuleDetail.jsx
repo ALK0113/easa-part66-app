@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { useSchool } from '../contexts/useSchool.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
@@ -18,7 +18,8 @@ const ModuleStudents = lazy(() => import('./ModuleStudents.jsx'))
 const TheoryClassList = lazy(() => import('./TheoryClassList.jsx'))
 const tabFallback = <div className="flex min-h-[20vh] items-center justify-center text-sm text-muted">Cargando…</div>
 
-export default function ModuleDetail({ moduleId, user, onBack }) {
+// initialPracticeId: al llegar desde el horario se abre directamente esa práctica en la pestaña Prácticas
+export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId = null }) {
   const [module, setModule] = useState(null)
   const [practices, setPractices] = useState([])
   const [students, setStudents] = useState([])
@@ -29,9 +30,11 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   const [videos, setVideos] = useState([])
   const [theoryCount, setTheoryCount] = useState(null)
   const [selectedPractice, setSelectedPractice] = useState(null)
-  const [section, setSection] = useState('resumen')
+  const [section, setSection] = useState(initialPracticeId ? 'practicas' : 'resumen')
   // Qué abrir al saltar a una pestaña (una práctica, un TLB o el formulario de TLB nuevo)
-  const [practiceToOpen, setPracticeToOpen] = useState(null)
+  const [practiceToOpen, setPracticeToOpen] = useState(initialPracticeId)
+  // El alumno ve la práctica en la vista de lectura de aquí: se abre al cargar, una sola vez
+  const studentPracticeToOpen = useRef(canAccessPage('practices', user.role) ? null : initialPracticeId)
   const [tlbToOpen, setTlbToOpen] = useState(null)
   const [tlbToCreate, setTlbToCreate] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -85,6 +88,11 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
       if (relationError) setError(getSupabaseErrorMessage(relationError))
       setModule(moduleResult.data)
       setPractices(practiceResult.data || [])
+      if (studentPracticeToOpen.current) {
+        const practice = (practiceResult.data || []).find((item) => item.id === studentPracticeToOpen.current)
+        if (practice) setSelectedPractice(practice)
+        studentPracticeToOpen.current = null
+      }
       setStudents(studentResult.data || [])
       setTeachers(teacherResult.data || [])
       setRecords(recordResult.data || [])

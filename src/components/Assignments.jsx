@@ -8,6 +8,8 @@ import { ROLES } from '../lib/roles.js'
 import { isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { WEEKDAYS } from '../lib/schedule.js'
 import Enrollment from './Enrollment.jsx'
+import { RoomSelect } from './ScheduleControls.jsx'
+import { roomValues, useRooms } from '../lib/scheduleTools.js'
 
 // Asignaciones del curso escolar actual:
 //  - Alumnos: matrícula «grupo + excepciones» (src/components/Enrollment.jsx).
@@ -218,11 +220,13 @@ function TeachersTab({ data, run, busy }) {
 
 // Horario semanal de una clase recién asignada. Se puede saltar y ponerlo luego en Horario → Plantilla semanal.
 function QuickSlotForm({ assignment, run, busy, onDone }) {
-  const [form, setForm] = useState({ weekday: '1', start_time: '09:00', end_time: '10:00', room: '' })
+  const { schoolId } = useSchool()
+  const rooms = useRooms(schoolId)
+  const [form, setForm] = useState({ weekday: '1', start_time: '09:00', end_time: '10:00', room_id: '', room_new: '' })
   async function save(event) {
     event.preventDefault()
     const ok = await run(() => supabase.from('schedule_slots').insert({
-      teaching_assignment_id: assignment.id, weekday: Number(form.weekday), start_time: form.start_time, end_time: form.end_time, room: form.room || null,
+      teaching_assignment_id: assignment.id, weekday: Number(form.weekday), start_time: form.start_time, end_time: form.end_time, ...roomValues(form),
     }), `Horario guardado: ${assignment.label}, ${WEEKDAYS[Number(form.weekday) - 1].toLowerCase()} ${form.start_time}. Ya está en el calendario.`)
     if (ok) onDone()
   }
@@ -237,7 +241,7 @@ function QuickSlotForm({ assignment, run, busy, onDone }) {
         </label>
         <label className="field">Empieza<input className="input" type="time" required value={form.start_time} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
         <label className="field">Termina<input className="input" type="time" required value={form.end_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
-        <label className="field">Aula<input className="input" maxLength={40} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+        <RoomSelect rooms={rooms} form={form} setForm={setForm} />
       </div>
       <div className="flex justify-end gap-2">
         <button type="button" className="btn-ghost" onClick={onDone}>Ahora no</button>

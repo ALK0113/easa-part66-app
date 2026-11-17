@@ -8,6 +8,7 @@ import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
+import { MODULE_COLORS, freeModuleColor, moduleColor } from '../lib/moduleColors.js'
 import { downloadBlob } from '../lib/download.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
@@ -17,7 +18,7 @@ import Icon from './Icon.jsx'
 /* ------------------------------------------------------------------ */
 
 const STARTER_MODULE_ID = 'M11'
-const MAX_COLOR = 18
+const MAX_COLOR = MODULE_COLORS.length
 const PAGE_SIZE = 1000
 
 const cardClass = 'card p-5 md:p-6'
@@ -206,13 +207,14 @@ export function ModulesPage({ user, onOpenModule }) {
   function openForm(mod = null) {
     setEditing(mod)
     setFormOpen(true)
-    setForm(mod ? { ...mod } : { id: '', name: '', description: '', color: (modules.length % MAX_COLOR) + 1 })
+    setForm(mod ? { ...mod } : { id: '', name: '', description: '', color: freeModuleColor(new Set(modules.map((item) => Number(item.color)))) })
     notify('')
   }
 
   async function saveModule(event) {
     event.preventDefault()
-    const color = Math.min(MAX_COLOR, Math.max(1, Math.round(Number(form.color)) || 1))
+    // Sin color libre, la base de datos asigna el menos usado
+    const color = form.color ? Math.min(MAX_COLOR, Math.max(1, Math.round(Number(form.color)))) : null
     const payload = { id: form.id.trim(), name: form.name.trim(), description: form.description?.trim() || '', color }
     setBusy(true)
     try {
@@ -262,7 +264,7 @@ export function ModulesPage({ user, onOpenModule }) {
             const count = practices.filter((practice) => practice.module_id === mod.id).length
             const studentCount = studentAssignments.filter((entry) => entry.module_id === mod.id).length
             return (
-              <article key={mod.id} className="card group flex flex-col transition-shadow hover:shadow-lift">
+              <article key={mod.id} className="card group flex flex-col border-l-[3px] transition-shadow hover:shadow-lift" style={{ borderLeftColor: moduleColor(mod.color) }}>
                 <button className="flex-1 p-5 text-left" onClick={() => onOpenModule(mod.id)}>
                   <span className="badge bg-accent-soft text-accent-strong">{mod.id}</span>
                   {user.role !== ROLES.STUDENT && <span className="badge ml-1.5">{mod.school_id ? 'Escuela' : 'EASA'}</span>}
@@ -290,7 +292,25 @@ export function ModulesPage({ user, onOpenModule }) {
             <FormField label="Código" value={form.id} onChange={(id) => setForm({ ...form, id })} required disabled={Boolean(editing)} />
             <FormField label="Nombre" value={form.name} onChange={(name) => setForm({ ...form, name })} required />
             <FormField label="Descripción" value={form.description || ''} onChange={(description) => setForm({ ...form, description })} />
-            <FormField label={`Color (1-${MAX_COLOR})`} type="number" min={1} max={MAX_COLOR} value={form.color} onChange={(color) => setForm({ ...form, color })} />
+            <fieldset>
+              <legend className="mb-1.5 text-sm font-medium text-ink-soft">Color del módulo</legend>
+              <p className="mb-2 text-xs text-muted">Se ve en el horario y en las listas, y se mantiene de un curso a otro. Los colores tachados ya los usa otro módulo.</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Color del módulo">
+                {MODULE_COLORS.map((hex, index) => {
+                  const owner = modules.find((item) => Number(item.color) === index + 1 && item.id !== editing?.id)
+                  const selected = Number(form.color) === index + 1
+                  return (
+                    <button key={hex} type="button" role="radio" aria-checked={selected} disabled={Boolean(owner)}
+                      aria-label={owner ? `Color ${index + 1}, lo usa ${owner.id}` : `Color ${index + 1}`} title={owner ? `Lo usa ${owner.id}` : undefined}
+                      onClick={() => setForm({ ...form, color: index + 1 })}
+                      className={`relative h-7 w-7 rounded-full border-2 disabled:cursor-not-allowed disabled:opacity-25 ${selected ? 'border-ink ring-2 ring-ink ring-offset-1' : 'border-transparent'}`}
+                      style={{ backgroundColor: hex }}>
+                      {owner && <span aria-hidden="true" className="absolute inset-0 m-auto h-0.5 w-6 rotate-45 bg-ink" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
             <NoticeBar notice={notice} />
             <div className="flex justify-end gap-2"><button type="button" className={secondaryButton} onClick={closeForm}>Cancelar</button><button className={primaryButton} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
           </form>
