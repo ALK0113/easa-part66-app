@@ -10,6 +10,8 @@ import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import { teachesLikeProfessor } from '../lib/roles.js'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 // Configuración de EmailJS desde variables de entorno (ver README)
 const EMAILJS_CONFIG = {
@@ -29,6 +31,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
   const [defects, setDefects] = useState([])
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
+  const moduleColors = useModuleColors()
   const [aircraft, setAircraft] = useState([])
   const [teachers, setTeachers] = useState([])
   const [teacherModules, setTeacherModules] = useState([])
@@ -970,7 +973,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
       const tlbDefects = getDefects(tlb.id)
       const completedCount = submissions.filter((s) => s.tlb_id === tlb.id && s.signed_at).length
 
-      return <article key={tlb.id} className="card group flex items-center gap-3 p-2 pr-3 transition-shadow hover:shadow-lift">
+      return <article key={tlb.id} className={`card group flex items-center gap-3 border-l-[3px] border-r-[3px] p-2 pr-3 ${MODULE_HOVER}`} style={moduleStyle(moduleColors[tlb.module_id])}>
         <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => { setSelectedTLBId(tlb.id); setMessage('') }}>
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-subtle text-muted"><Icon name="clipboard" /></span>
           <span className="min-w-0 flex-1">

@@ -13,6 +13,8 @@ import ModuleStudents from './ModuleStudents.jsx'
 import { SESSION_FIELDS, saveSessions, sessionErrors, useFreeModuleSessions, useModuleAssignments } from '../lib/practiceSessions.js'
 import { compareCodes, outcomeLabel, useModuleStructure } from '../lib/curriculum.js'
 import Assessments from './Assessments.jsx'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -33,6 +35,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
   const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
+  const moduleColors = useModuleColors()
   const [students, setStudents] = useState([])
   const [memberships, setMemberships] = useState([])
   const [records, setRecords] = useState([])
@@ -481,7 +484,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     </section>
     <div className="space-y-2">{filtered.map((practice) => {
       const enrolledCount = memberships.filter((entry) => entry.module_id === practice.module_id).length
-      return <article key={practice.id} className="card group flex items-center gap-4 p-2 pr-3 transition-shadow hover:shadow-lift">
+      return <article key={practice.id} className={`card group flex items-center gap-4 border-l-[3px] border-r-[3px] p-2 pr-3 ${MODULE_HOVER}`} style={moduleStyle(moduleColors[practice.module_id])}>
         <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => setSelectedPractice(practice)}>
           <span className="flex w-14 shrink-0 flex-col items-center rounded-xl bg-subtle py-2">
             <span className="text-[11px] text-muted">{practice.date ? new Date(`${practice.date}T00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '') : '—'}</span>
