@@ -237,7 +237,7 @@ function WeekView({ user, onOpenPractice }) {
   // Al tocar una clase: atajo a su práctica, dentro de su módulo, si la tiene; si no, la página de la clase
   const openClass = (session) => {
     const moduleId = session.practices?.module_id || session.teaching_assignments?.degree_modules?.module_id
-    if (session.practice_id && moduleId && onOpenPractice && user.role !== ROLES.STUDENT) onOpenPractice(session.practice_id, moduleId)
+    if (session.practice_id && moduleId && onOpenPractice) onOpenPractice(session.practice_id, moduleId)
     else setOpen(session)
   }
 
@@ -313,7 +313,7 @@ function WeekView({ user, onOpenPractice }) {
                     const conflict = visibleConflicts.get(session.id)
                     return (
                       <li key={session.id}>
-                        <button type="button" {...dayDrag.bind(session, dayIndex)} title={conflict ? `Choque: ${conflict.join(' · ')}` : session.practice_id && user.role !== ROLES.STUDENT ? 'Ir a la práctica en su módulo' : undefined}
+                        <button type="button" {...dayDrag.bind(session, dayIndex)} title={conflict ? `Choque: ${conflict.join(' · ')}` : session.practice_id ? 'Ir a la práctica en su módulo' : undefined}
                           className={`w-full select-none rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle
                             ${conflict ? 'border-danger' : 'border-line'} ${cancelled ? 'opacity-60' : assignment.degree_modules?.kind === 'practica' && !conflict ? 'border-l-2 border-l-accent' : ''}
                             ${dayDrag.dragging(session) ? 'opacity-40' : ''} ${wide && canManageSessions && canEditSession(session) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
