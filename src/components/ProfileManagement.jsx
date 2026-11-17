@@ -270,7 +270,7 @@ export default function ProfileManagement({ user }) {
           <select className={inputClass} value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
             <option value="">Todos los roles</option>
             <option value="admin">Administrador</option>
-            <option value="supervisor">Supervisor</option>
+            <option value="supervisor">Coordinador</option>
             <option value="profesor">Profesor</option>
             <option value="alumno">Alumno</option>
             <option value="pendiente">Pendientes de aprobar</option>
@@ -371,11 +371,11 @@ export default function ProfileManagement({ user }) {
                       && !window.confirm(`¿Seguro que quieres hacer ADMINISTRADOR a ${editingProfile.full_name || editingProfile.email}? Tendrá acceso total a todas las escuelas.`)) return
                     setFormData({ ...formData, role })
                   }}
-                  disabled={editingProfile.id === user.id || editingProfile.role === ROLES.SUPERVISOR}
+                  disabled={editingProfile.id === user.id || (!isAdmin && editingProfile.role === ROLES.SUPERVISOR)}
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
-                  {editingProfile.role === ROLES.SUPERVISOR && <option value="supervisor">Supervisor</option>}
+                  {(isAdmin || editingProfile.role === ROLES.SUPERVISOR) && <option value="supervisor">Coordinador</option>}
                   {isAdmin && <option value="admin">Administrador</option>}
                 </select>
                 {editingProfile.id === user.id && (
@@ -384,8 +384,11 @@ export default function ProfileManagement({ user }) {
                 {formData.role === ROLES.ADMIN && editingProfile.id !== user.id && (
                   <p className="mt-1 text-xs font-medium text-danger">Administrador: acceso total a todas las escuelas.</p>
                 )}
-                {editingProfile.role === ROLES.SUPERVISOR && editingProfile.id !== user.id && (
-                  <p className="mt-1 text-xs text-muted">Los supervisores se nombran y se quitan en Centros.</p>
+                {!isAdmin && editingProfile.role === ROLES.SUPERVISOR && editingProfile.id !== user.id && (
+                  <p className="mt-1 text-xs text-muted">Solo un administrador puede cambiar el rol de un coordinador.</p>
+                )}
+                {isAdmin && formData.role === ROLES.SUPERVISOR && editingProfile.role !== ROLES.SUPERVISOR && (
+                  <p className="mt-1 text-xs text-muted">Coordinador: gestiona los usuarios, la estructura y las notas de su escuela.</p>
                 )}
               </div>
 
@@ -473,7 +476,7 @@ export default function ProfileManagement({ user }) {
                 >
                   <option value="alumno">Alumno</option>
                   <option value="profesor">Profesor</option>
-                  {isAdmin && <option value="supervisor">Supervisor</option>}
+                  {isAdmin && <option value="supervisor">Coordinador</option>}
                 </select>
               </div>
 
