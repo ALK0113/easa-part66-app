@@ -167,18 +167,26 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
   if (!module) return <div className="card empty">Módulo no encontrado.</div>
 
   const runSave = async (save) => { setBusy(true); await save(); setBusy(false) }
-  const tlbRow = (tlb, title) => (
-    <li key={tlb.id}>
-      <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openTLB(tlb.id)}>
-        <Icon name="clipboard" className="text-faint" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-ink">{title}</span>
-          <span className="mt-0.5 block text-xs text-muted">{formatDate(tlb.date)} · {defectsForTLB(tlb.id).length} defectos</span>
-        </span>
-        <span className={`badge ${tlb.published ? 'bg-success-soft text-success' : ''}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>
-      </button>
-    </li>
-  )
+  // Tarjeta de TLB igual que en la sección Technical Log Book: práctica asociada, título, avión y estado
+  const tlbRow = (tlb) => {
+    const practice = practices.find((item) => item.id === tlb.practice_id)
+    const defectCount = defectsForTLB(tlb.id).length
+    return (
+      <li key={tlb.id}>
+        <button className={`card flex w-full items-center gap-4 border-l-[3px] border-r-[3px] p-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openTLB(tlb.id)}>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-subtle text-muted"><Icon name="clipboard" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">
+              <span className="font-semibold text-ink-soft">{tlb.module_id}</span><span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">Práctica {tlb.practice_id}</span>
+            </span>
+            <span className="mt-0.5 block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
+            <span className="mt-1 block truncate text-xs text-muted">{tlb.aircraft} · {tlb.registration} · {formatDate(tlb.date)} · {defectCount} {defectCount === 1 ? 'defecto' : 'defectos'}</span>
+          </span>
+          {canEdit && <span className={`badge shrink-0 py-1 ${tlb.published ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>}
+        </button>
+      </li>
+    )
+  }
 
   if (selectedPractice) {
     const practiceRecords = recordsForPractice(selectedPractice.id)
@@ -232,7 +240,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
           <h3 className="font-semibold text-ink">Technical Log Book de la práctica</h3>
           {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => createTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
         </div>
-        {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
+        {practiceTLBs.length ? <ul className="space-y-2 px-1 pb-1 pt-1">{practiceTLBs.map(tlbRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
       </section>
     </div>
   }
