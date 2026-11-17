@@ -12,7 +12,7 @@ export const startOfWeek = (date) => { const day = (date.getDay() + 6) % 7; retu
 export const time = (value) => String(value || '').slice(0, 5)
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-export const SESSION_COLUMNS = 'id,date,start_time,end_time,room,room_id,status,note,practice_id,theory_class_id,theory_classes(title),practices(title),slot_id,teaching_assignment_id,teaching_assignments!inner(id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups(level,name),degree_modules(module_id,kind))'
+export const SESSION_COLUMNS = 'id,date,start_time,end_time,room,room_id,status,note,practice_id,theory_class_id,theory_classes(title),practices(title,module_id),slot_id,teaching_assignment_id,teaching_assignments!inner(id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups(level,name),degree_modules(module_id,kind))'
 
 // Grupo y módulo que cursa el alumno en el curso actual (para filtrar su horario).
 async function studentClasses(userId) {

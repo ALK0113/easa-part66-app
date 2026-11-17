@@ -18,7 +18,8 @@ const ModuleStudents = lazy(() => import('./ModuleStudents.jsx'))
 const TheoryClassList = lazy(() => import('./TheoryClassList.jsx'))
 const tabFallback = <div className="flex min-h-[20vh] items-center justify-center text-sm text-muted">Cargando…</div>
 
-export default function ModuleDetail({ moduleId, user, onBack }) {
+// initialPracticeId: al llegar desde el horario se abre directamente esa práctica en la pestaña Prácticas
+export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId = null }) {
   const [module, setModule] = useState(null)
   const [practices, setPractices] = useState([])
   const [students, setStudents] = useState([])
@@ -29,9 +30,9 @@ export default function ModuleDetail({ moduleId, user, onBack }) {
   const [videos, setVideos] = useState([])
   const [theoryCount, setTheoryCount] = useState(null)
   const [selectedPractice, setSelectedPractice] = useState(null)
-  const [section, setSection] = useState('resumen')
+  const [section, setSection] = useState(initialPracticeId ? 'practicas' : 'resumen')
   // Qué abrir al saltar a una pestaña (una práctica, un TLB o el formulario de TLB nuevo)
-  const [practiceToOpen, setPracticeToOpen] = useState(null)
+  const [practiceToOpen, setPracticeToOpen] = useState(initialPracticeId)
   const [tlbToOpen, setTlbToOpen] = useState(null)
   const [tlbToCreate, setTlbToCreate] = useState(null)
   const [loading, setLoading] = useState(true)
