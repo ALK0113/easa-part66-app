@@ -149,7 +149,7 @@ as $function$
   order by (f.status = 'enviado') desc nulls last, f.submitted_at nulls last, p.created_at;
 $function$;
 
--- Revisión (solo gestión): approve (con correcciones; grupo opcional), return (con motivo) o reject.
+-- Revisión (solo gestión: administración y coordinación): save (corregir), approve (grupo opcional), return (con motivo) o reject.
 create or replace function public.review_signup(p_profile_id uuid, p_action text, p_data jsonb default null,
   p_group_id uuid default null, p_reason text default null, p_extra_groups jsonb default '{}')
 returns jsonb
@@ -181,7 +181,7 @@ begin
     raise exception using errcode = '42501', message = 'Solo la administración o la coordinación de la escuela pueden revisar altas.';
   end if;
   if v_status <> 'pendiente' then raise exception using errcode = '22023', message = 'Esta solicitud ya se revisó.'; end if;
-  if p_action not in ('approve', 'return', 'reject') then raise exception using errcode = '22023', message = 'Acción no válida.'; end if;
+  if p_action not in ('approve', 'return', 'reject', 'save') then raise exception using errcode = '22023', message = 'Acción no válida.'; end if;
 
   if p_action = 'reject' then
     update public.profiles set status = 'rechazado' where id = p_profile_id;
@@ -190,6 +190,12 @@ begin
   end if;
 
   if p_data is not null then perform private.apply_signup_data(p_profile_id, p_data); end if;
+
+  -- Guardar las correcciones sin decidir todavía
+  if p_action = 'save' then
+    perform private.log_admin_action('edit_signup', 'profile', p_profile_id, '{}'::jsonb);
+    return jsonb_build_object('status', 'guardado');
+  end if;
 
   if p_action = 'return' then
     if nullif(trim(coalesce(p_reason, '')), '') is null then raise exception using errcode = '22023', message = 'Escribe el motivo para que sepa qué corregir.'; end if;

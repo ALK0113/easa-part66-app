@@ -4,7 +4,8 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import Modal from './Modal.jsx'
 
-// Revisión de un alta por la coordinación: datos, curso y módulos (alumno) o módulo + grupo (profesor), todo editable.
+// Revisión de un alta por la administración o la coordinación: datos, curso y módulos (alumno) o módulo + grupo
+// (profesor), todo editable. «Guardar cambios» corrige sin decidir todavía.
 // Aprobar crea la ficha y la matrícula del alumno (con su grupo) o las asignaciones del profesor.
 // Devolver pide un motivo; rechazar cierra la solicitud.
 
@@ -30,6 +31,7 @@ export default function SignupReview({ request, onClose, onDone }) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState('')
 
   // Módulos de los grados de la escuela y grupos del curso actual
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function SignupReview({ request, onClose, onDone }) {
     if (action === 'reject' && !window.confirm(`¿Rechazar la solicitud de ${form.full_name || request.email}? No podrá entrar.`)) return
     setBusy(true)
     setError('')
+    setSaved('')
     const { error: reviewError } = await supabase.rpc('review_signup', {
       p_profile_id: request.id,
       p_action: action,
@@ -73,6 +76,8 @@ export default function SignupReview({ request, onClose, onDone }) {
     })
     setBusy(false)
     if (reviewError) { setError(getSupabaseErrorMessage(reviewError)); return }
+    // Guardar: la solicitud sigue abierta y pendiente de decidir
+    if (action === 'save') { setSaved('Cambios guardados. La solicitud sigue pendiente.'); return }
     onDone()
   }
 
@@ -176,10 +181,12 @@ export default function SignupReview({ request, onClose, onDone }) {
         </label>
       )}
       {error && <p role="alert" className="notice-error mt-4">{error}</p>}
+      {saved && <p role="status" className="notice-success mt-4">{saved}</p>}
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
         <button type="button" className="btn-ghost text-danger" disabled={busy} onClick={() => act('reject')}>Rechazar</button>
         <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-ghost" disabled={busy} onClick={() => act('save')}>Guardar cambios</button>
           {mode === 'return'
             ? <button type="button" className="btn-secondary" disabled={busy || !reason.trim()} onClick={() => act('return')}>Enviar y devolver</button>
             : <button type="button" className="btn-secondary" disabled={busy} onClick={() => setMode('return')}>Devolver para corregir</button>}
