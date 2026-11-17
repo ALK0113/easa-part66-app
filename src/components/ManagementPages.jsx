@@ -8,7 +8,7 @@ import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
-import { MODULE_COLORS, freeModuleColor, moduleColor } from '../lib/moduleColors.js'
+import { MODULE_COLORS, MODULE_HOVER, freeModuleColor, moduleStyle } from '../lib/moduleColors.js'
 import { downloadBlob } from '../lib/download.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
@@ -264,7 +264,7 @@ export function ModulesPage({ user, onOpenModule }) {
             const count = practices.filter((practice) => practice.module_id === mod.id).length
             const studentCount = studentAssignments.filter((entry) => entry.module_id === mod.id).length
             return (
-              <article key={mod.id} className="card group flex flex-col border-l-[3px] transition-shadow hover:shadow-lift" style={{ borderLeftColor: moduleColor(mod.color) }}>
+              <article key={mod.id} className={`card group flex flex-col border-l-[3px] border-r-[3px] ${MODULE_HOVER}`} style={moduleStyle(mod.color)}>
                 <button className="flex-1 p-5 text-left" onClick={() => onOpenModule(mod.id)}>
                   <span className="badge bg-accent-soft text-accent-strong">{mod.id}</span>
                   {user.role !== ROLES.STUDENT && <span className="badge ml-1.5">{mod.school_id ? 'Escuela' : 'EASA'}</span>}

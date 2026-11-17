@@ -17,3 +17,13 @@ export function freeModuleColor(used) {
   const free = MODULE_COLORS.map((_, index) => index + 1).filter((value) => !used.has(value))
   return free.length ? free[Math.floor(Math.random() * free.length)] : null
 }
+
+// Variables de estilo de un elemento con el color de su módulo (líneas laterales y tinte al pasar el cursor)
+export const moduleStyle = (index, { sides = true } = {}) => {
+  const color = moduleColor(index)
+  return sides ? { '--module': color, borderLeftColor: color, borderRightColor: color } : { '--module': color }
+}
+
+// Al pasar el cursor (o con el teclado), un pastel muy suave del color del módulo, con transición tranquila
+export const MODULE_HOVER = 'transition-colors duration-300 ease-out hover:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))] focus-visible:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))]'
+export const MODULE_HOVER_ENABLED = 'transition-colors duration-300 ease-out enabled:hover:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))] enabled:focus-visible:bg-[color-mix(in_srgb,var(--module)_10%,var(--surface))]'
