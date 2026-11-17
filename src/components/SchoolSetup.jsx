@@ -1,6 +1,7 @@
 import AcademicStructure from './AcademicStructure.jsx'
 import Assignments from './Assignments.jsx'
 import { TemplateEditor } from './Timetable.jsx'
+import Rooms from './Rooms.jsx'
 import { useSchool } from '../contexts/useSchool.js'
 
 // «Escuela»: toda la puesta en marcha en una sola página, con los pasos en el orden en que se hacen.
@@ -14,6 +15,7 @@ const SETUP_STEPS = [
   { id: 'timetable', label: 'Horario', hint: 'La plantilla semanal de cada grupo genera las clases hasta fin de curso.' },
 ]
 const EXTRA_STEPS = [
+  { id: 'rooms', label: 'Aulas', hint: 'Aulas, talleres y hangares. Se eligen al poner el horario y sirven para avisar si dos clases coinciden en la misma aula.' },
   { id: 'cohorts', label: 'Promociones', hint: 'Se crean solas al matricular en 1º; aquí puedes renombrarlas o crear otras.' },
   { id: 'grading', label: 'Calificación y boletines', hint: 'Escala de notas, nota de aprobado y logo de los boletines.' },
 ]
@@ -56,6 +58,7 @@ export default function SchoolSetup({ user, step, onStep }) {
       {current.id === 'teachers' && <Assignments user={user} tab="teachers" embedded />}
       {current.id === 'students' && <Assignments user={user} tab="students" embedded />}
       {current.id === 'timetable' && <TemplateEditor user={user} />}
+      {current.id === 'rooms' && <Rooms />}
     </div>
   )
 }

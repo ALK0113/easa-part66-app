@@ -12,7 +12,7 @@ export const startOfWeek = (date) => { const day = (date.getDay() + 6) % 7; retu
 export const time = (value) => String(value || '').slice(0, 5)
 export const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-export const SESSION_COLUMNS = 'id,date,start_time,end_time,room,status,note,practice_id,theory_class_id,theory_classes(title),slot_id,teaching_assignment_id,teaching_assignments!inner(id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups(level,name),degree_modules(module_id,kind))'
+export const SESSION_COLUMNS = 'id,date,start_time,end_time,room,room_id,status,note,practice_id,theory_class_id,theory_classes(title),slot_id,teaching_assignment_id,teaching_assignments!inner(id,profile_id,group_id,degree_module_id,profiles(full_name,email),class_groups(level,name),degree_modules(module_id,kind))'
 
 // Grupo y módulo que cursa el alumno en el curso actual (para filtrar su horario).
 async function studentClasses(userId) {
@@ -27,7 +27,7 @@ async function studentClasses(userId) {
   return { studentId: link.student_id, pairs: (data || []).map((row) => `${row.group_id}|${row.degree_modules?.module_id}`) }
 }
 
-// Clases entre dos fechas según el rol. filter: { groupId, profileId } para administración.
+// Clases entre dos fechas según el rol. filter: { groupId, profileId, roomId } para administración.
 export async function fetchSessions(user, from, to, filter = {}) {
   let query = supabase.from('class_sessions').select(SESSION_COLUMNS).gte('date', from).lte('date', to).order('date').order('start_time')
   let pairs = null
@@ -43,6 +43,7 @@ export async function fetchSessions(user, from, to, filter = {}) {
   } else {
     if (filter.groupId) query = query.eq('teaching_assignments.group_id', filter.groupId)
     if (filter.profileId) query = query.eq('teaching_assignments.profile_id', filter.profileId)
+    if (filter.roomId) query = query.eq('room_id', filter.roomId)
   }
   const { data, error } = await query
   if (error) throw error
