@@ -192,7 +192,10 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
       <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
         <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
-        <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
+        <div className="mt-1 flex items-start justify-between gap-4">
+          <h2 className="min-w-0 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
+          <span className="shrink-0 text-right"><span className="block text-[11px] font-medium uppercase tracking-wide text-faint">Nº de práctica</span><span className="block text-2xl font-semibold tabular-nums text-ink">{selectedPractice.id}</span></span>
+        </div>
         {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
