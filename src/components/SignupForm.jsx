@@ -11,13 +11,13 @@ import Icon from './Icon.jsx'
 const PERSONAL = [
   ['full_name', 'Nombre completo', 'text', true],
   ['dni', 'DNI / NIE', 'text', false],
-  ['birth_date', 'Fecha de nacimiento', 'date', false],
+  ['birth_year', 'Año de nacimiento', 'number', false],
   ['phone', 'Teléfono', 'tel', false],
   ['address', 'Dirección', 'text', false],
   ['emergency_name', 'Contacto de emergencia', 'text', false],
   ['emergency_phone', 'Teléfono de emergencia', 'tel', false],
 ]
-const EMPTY = { full_name: '', dni: '', birth_date: '', phone: '', address: '', emergency_name: '', emergency_phone: '', level: 1, module_ids: [], teaching: [] }
+const EMPTY = { full_name: '', dni: '', birth_year: '', phone: '', address: '', emergency_name: '', emergency_phone: '', level: 1, module_ids: [], teaching: [] }
 const pairKey = (pair) => `${pair.degree_module_id}|${pair.group_id}`
 
 export default function SignupForm({ user, onLogout }) {
@@ -111,11 +111,14 @@ export default function SignupForm({ user, onLogout }) {
 
         <fieldset disabled={sent} className="space-y-5">
           <section className="card space-y-3 p-5">
-            <h2 className="font-semibold text-ink">Tus datos</h2>
+            <div>
+              <h2 className="font-semibold text-ink">Tus datos</h2>
+              <p className="mt-0.5 text-xs text-muted">Solo el nombre es obligatorio. El resto son datos personales opcionales: solo los verá la coordinación de tu escuela.</p>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {PERSONAL.filter(([key]) => isStudent || ['full_name', 'phone'].includes(key)).map(([key, label, type, required]) => (
-                <label key={key} className={`field text-sm ${key === 'address' || key === 'full_name' ? 'sm:col-span-2' : ''}`}>{label}{required || (isStudent && ['dni', 'phone'].includes(key)) ? ' *' : ''}
-                  <input className="input" type={type} maxLength={150} value={form[key] || ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
+                <label key={key} className={`field text-sm ${key === 'address' || key === 'full_name' ? 'sm:col-span-2' : ''}`}>{label}{required ? ' *' : <span className="font-normal text-faint"> (opcional)</span>}
+                  <input className="input" type={type} maxLength={150} min={type === 'number' ? 1900 : undefined} max={type === 'number' ? 2100 : undefined} placeholder={type === 'number' ? 'p. ej. 2005' : undefined} value={form[key] || ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
                 </label>
               ))}
             </div>

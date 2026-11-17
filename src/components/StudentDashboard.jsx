@@ -20,14 +20,13 @@ const STATUS = {
   baja: ['No cursa', 'bg-subtle text-muted'],
 }
 const ATTENDANCE = { P: ['Presente', 'text-success'], L: ['Tarde', 'text-warn'], A: ['Falta', 'text-danger'] }
-const fmtDate = (date) => (date ? new Date(`${String(date).slice(0, 10)}T00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 const shortDate = (date) => (date ? new Date(`${String(date).slice(0, 10)}T00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '')
 const percent = (part, total) => (total ? Math.round((part / total) * 100) : null)
 const resultOf = (item) => (item.degree_modules?.kind === 'practica'
   ? (item.practical_result === 'apto' ? 'Apto' : item.practical_result === 'no_apto' ? 'No apto' : '')
   : (item.theory_grade != null ? String(Number(item.theory_grade)) : ''))
 const PERSONAL = [
-  ['dni', 'DNI / NIE', 'text'], ['birth_date', 'Fecha de nacimiento', 'date'], ['email', 'Correo', 'email'], ['phone', 'Teléfono', 'tel'],
+  ['dni', 'DNI / NIE', 'text'], ['birth_year', 'Año de nacimiento', 'number'], ['email', 'Correo', 'email'], ['phone', 'Teléfono', 'tel'],
   ['address', 'Dirección', 'text'], ['emergency_name', 'Contacto de emergencia', 'text'], ['emergency_phone', 'Teléfono de emergencia', 'tel'],
 ]
 
@@ -299,7 +298,7 @@ function PersonalData({ student, profile, canEdit, showNotes, editing, setEditin
     )
   }
 
-  const rows = PERSONAL.map(([key, label]) => [label, key === 'birth_date' ? (student.birth_date ? fmtDate(student.birth_date) : '') : student[key]])
+  const rows = PERSONAL.map(([key, label]) => [label, student[key]])
   return (
     <section className="card p-5">
       <div className="mb-3 flex items-center justify-between gap-2">

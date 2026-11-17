@@ -9,7 +9,7 @@ import Modal from './Modal.jsx'
 // Devolver pide un motivo; rechazar cierra la solicitud.
 
 const PERSONAL = [
-  ['full_name', 'Nombre completo', 'text'], ['dni', 'DNI / NIE', 'text'], ['birth_date', 'Fecha de nacimiento', 'date'],
+  ['full_name', 'Nombre completo', 'text'], ['dni', 'DNI / NIE', 'text'], ['birth_year', 'Año de nacimiento', 'number'],
   ['phone', 'Teléfono', 'tel'], ['address', 'Dirección', 'text'], ['emergency_name', 'Contacto de emergencia', 'text'], ['emergency_phone', 'Teléfono de emergencia', 'tel'],
 ]
 const pairKey = (pair) => `${pair.degree_module_id}|${pair.group_id}`
@@ -18,7 +18,7 @@ export default function SignupReview({ request, onClose, onDone }) {
   const isStudent = request.role !== 'profesor'
   const initial = request.form || {}
   const [form, setForm] = useState(() => ({
-    full_name: initial.full_name || '', dni: initial.dni || '', birth_date: initial.birth_date || '', phone: initial.phone || '',
+    full_name: initial.full_name || '', dni: initial.dni || '', birth_year: initial.birth_year || '', phone: initial.phone || '',
     address: initial.address || '', emergency_name: initial.emergency_name || '', emergency_phone: initial.emergency_phone || '',
     level: initial.level || 1, module_ids: initial.module_ids || [], teaching: initial.teaching || [],
   }))

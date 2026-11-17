@@ -2,8 +2,12 @@
 -- curso + módulos (alumno) o módulo + grupo (profesor). La coordinación la revisa: corrige y aprueba, la devuelve
 -- con un motivo o la rechaza. Al aprobar se crean la ficha del alumno y su matrícula, o las asignaciones del profesor.
 -- Después, los datos personales solo los cambia la coordinación.
+-- Datos sensibles (DNI, teléfono, dirección, contacto de emergencia) opcionales; de la fecha de nacimiento solo el año.
 
 begin;
+
+-- Ficha del alumno: año de nacimiento en lugar de la fecha completa (birth_date deja de usarse)
+alter table public.students add column if not exists birth_year smallint check (birth_year is null or birth_year between 1900 and 2100);
 
 create table if not exists public.signup_forms (
   profile_id uuid primary key references public.profiles(id) on delete cascade,
@@ -11,7 +15,7 @@ create table if not exists public.signup_forms (
   role text not null check (role in ('alumno', 'profesor')),
   full_name text check (full_name is null or length(full_name) <= 150),
   dni text check (dni is null or length(dni) <= 20),
-  birth_date date,
+  birth_year smallint check (birth_year is null or birth_year between 1900 and 2100),
   phone text check (phone is null or length(phone) <= 30),
   address text check (address is null or length(address) <= 250),
   emergency_name text check (emergency_name is null or length(emergency_name) <= 150),
@@ -80,15 +84,15 @@ begin
     raise exception using errcode = '22023', message = 'Algún módulo o grupo no es de tu escuela o no se imparte este curso.';
   end if;
 
-  insert into public.signup_forms as f (profile_id, school_id, role, full_name, dni, birth_date, phone, address, emergency_name, emergency_phone, level, module_ids, teaching, updated_at)
+  insert into public.signup_forms as f (profile_id, school_id, role, full_name, dni, birth_year, phone, address, emergency_name, emergency_phone, level, module_ids, teaching, updated_at)
   values (p_profile_id, v_school, v_role,
-    nullif(trim(p_data ->> 'full_name'), ''), nullif(trim(p_data ->> 'dni'), ''), nullif(p_data ->> 'birth_date', '')::date,
+    nullif(trim(p_data ->> 'full_name'), ''), nullif(trim(p_data ->> 'dni'), ''), nullif(p_data ->> 'birth_year', '')::smallint,
     nullif(trim(p_data ->> 'phone'), ''), nullif(trim(p_data ->> 'address'), ''), nullif(trim(p_data ->> 'emergency_name'), ''),
     nullif(trim(p_data ->> 'emergency_phone'), ''), coalesce(nullif(p_data ->> 'level', '')::smallint, 1),
     case when v_role = 'alumno' then v_modules else '{}' end,
     case when v_role = 'profesor' then v_teaching else '[]' end, now())
   on conflict (profile_id) do update set
-    full_name = excluded.full_name, dni = excluded.dni, birth_date = excluded.birth_date, phone = excluded.phone,
+    full_name = excluded.full_name, dni = excluded.dni, birth_year = excluded.birth_year, phone = excluded.phone,
     address = excluded.address, emergency_name = excluded.emergency_name, emergency_phone = excluded.emergency_phone,
     level = excluded.level, module_ids = excluded.module_ids, teaching = excluded.teaching, updated_at = now();
 end;
@@ -115,7 +119,6 @@ begin
   select * into f from public.signup_forms where profile_id = v_uid;
   if p_submit then
     if f.full_name is null then raise exception using errcode = '22023', message = 'Falta tu nombre completo.'; end if;
-    if f.role = 'alumno' and (f.dni is null or f.phone is null) then raise exception using errcode = '22023', message = 'Faltan tu DNI/NIE y tu teléfono.'; end if;
     if f.role = 'alumno' and cardinality(f.module_ids) = 0 then raise exception using errcode = '22023', message = 'Marca al menos un módulo.'; end if;
     if f.role = 'profesor' and jsonb_array_length(f.teaching) = 0 then raise exception using errcode = '22023', message = 'Marca al menos un módulo y grupo que impartes.'; end if;
     update public.signup_forms set status = 'enviado', submitted_at = now(), return_reason = null where profile_id = v_uid;
@@ -202,7 +205,7 @@ begin
 
   if v_role = 'alumno' then
     v_student := private.create_student_for_profile(p_profile_id);
-    update public.students set name = f.full_name, dni = f.dni, birth_date = f.birth_date, email = v_email, phone = f.phone,
+    update public.students set name = f.full_name, dni = f.dni, birth_year = f.birth_year, email = v_email, phone = f.phone,
       address = f.address, emergency_name = f.emergency_name, emergency_phone = f.emergency_phone
     where id = v_student;
     perform private.enroll_student_in_group(v_student, g.id);
