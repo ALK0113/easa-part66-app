@@ -138,18 +138,18 @@ stable
 security definer
 set search_path to ''
 as $function$
-  -- Coordinación y admin: todas las de su escuela. Profesorado: las de alumnos de su escuela.
+  -- Solo gestión (administración y coordinación de la escuela)
   select p.id, p.email, p.role, p.created_at, s.id, s.name, to_jsonb(f.*),
     case when p.role = 'profesor' then 'profesor' when f.level is not null and f.level <> 1 then 'curso' end
   from public.profiles p
   join public.school_profiles sp on sp.profile_id = p.id
   join public.schools s on s.id = sp.school_id
   left join public.signup_forms f on f.profile_id = p.id
-  where p.status = 'pendiente' and private.can_review_profile(p.id)
+  where p.status = 'pendiente' and private.can_manage_school(s.id) and p.id <> (select auth.uid())
   order by (f.status = 'enviado') desc nulls last, f.submitted_at nulls last, p.created_at;
 $function$;
 
--- Revisión: approve (con correcciones; grupo opcional), return (con motivo) o reject. El profesorado revisa altas de alumnos.
+-- Revisión (solo gestión): approve (con correcciones; grupo opcional), return (con motivo) o reject.
 create or replace function public.review_signup(p_profile_id uuid, p_action text, p_data jsonb default null,
   p_group_id uuid default null, p_reason text default null, p_extra_groups jsonb default '{}')
 returns jsonb
@@ -175,12 +175,11 @@ begin
   select sp.school_id, p.role, p.status, p.email into v_school, v_role, v_status, v_email
   from public.profiles p join public.school_profiles sp on sp.profile_id = p.id where p.id = p_profile_id;
   if v_school is null then raise exception using errcode = 'P0002', message = 'Solicitud no encontrada.'; end if;
-  -- Coordinación y admin revisan todo; el profesorado, las altas de alumnos de su escuela
-  if not private.can_review_profile(p_profile_id) then
-    raise exception using errcode = '42501', message = case when v_role = 'profesor'
-      then 'Solo la coordinación puede revisar las altas de profesores.' else 'No puedes revisar esta solicitud.' end;
-  end if;
+  -- Solo gestión: administración y coordinación de la escuela
   v_manager := private.can_manage_school(v_school);
+  if not v_manager or p_profile_id = (select auth.uid()) then
+    raise exception using errcode = '42501', message = 'Solo la administración o la coordinación de la escuela pueden revisar altas.';
+  end if;
   if v_status <> 'pendiente' then raise exception using errcode = '22023', message = 'Esta solicitud ya se revisó.'; end if;
   if p_action not in ('approve', 'return', 'reject') then raise exception using errcode = '22023', message = 'Acción no válida.'; end if;
 
@@ -209,9 +208,6 @@ begin
     from public.class_groups cg join public.academic_years y on y.id = cg.academic_year_id and y.is_current
     where cg.id = p_group_id and y.school_id = v_school;
     if v_gid is null then raise exception using errcode = '22023', message = 'Ese grupo no es del curso actual de la escuela.'; end if;
-    if not v_manager and not private.teaches_group(v_gid) then
-      raise exception using errcode = '42501', message = 'Solo puedes asignar grupos en los que das clase.';
-    end if;
   end if;
 
   update public.profiles set full_name = f.full_name, phone = coalesce(f.phone, phone), status = 'activo' where id = p_profile_id;
@@ -226,21 +222,20 @@ begin
     perform set_config('app.derived_labels', 'off', true);
     if v_gid is not null then
       perform private.enroll_student_in_group(v_student, v_gid);
-      -- Ajuste fino de módulos: solo coordinación y admin (el profesor deja el grupo; el resto lo hace coordinación)
-      if v_manager then
-        for v_dm in select dm.id from public.degree_modules dm where dm.degree_id = v_gdegree and dm.level = v_glevel and not (dm.id = any (f.module_ids)) loop
-          perform public.enrollment_set_module(v_student, v_dm.id, 'no_cursa');
-        end loop;
-        for v_dm in select dm.id, dm.level, dm.degree_id from public.degree_modules dm
-          where dm.id = any (f.module_ids) and not (dm.degree_id = v_gdegree and dm.level = v_glevel) loop
-          v_group := nullif(p_extra_groups ->> v_dm.id::text, '')::uuid;
-          if v_group is null then
-            select cg.id into v_group from public.class_groups cg
-            where cg.academic_year_id = v_gyear and cg.degree_id = v_dm.degree_id and cg.level = v_dm.level order by cg.name limit 1;
-          end if;
-          if v_group is not null then perform public.enrollment_set_module(v_student, v_dm.id, 'cursa', v_group); end if;
-        end loop;
-      end if;
+      -- Módulos de su curso que no cursa
+      for v_dm in select dm.id from public.degree_modules dm where dm.degree_id = v_gdegree and dm.level = v_glevel and not (dm.id = any (f.module_ids)) loop
+        perform public.enrollment_set_module(v_student, v_dm.id, 'no_cursa');
+      end loop;
+      -- Módulos de otro curso o grado que sí cursa (con el grupo elegido en la revisión o el primero de ese curso)
+      for v_dm in select dm.id, dm.level, dm.degree_id from public.degree_modules dm
+        where dm.id = any (f.module_ids) and not (dm.degree_id = v_gdegree and dm.level = v_glevel) loop
+        v_group := nullif(p_extra_groups ->> v_dm.id::text, '')::uuid;
+        if v_group is null then
+          select cg.id into v_group from public.class_groups cg
+          where cg.academic_year_id = v_gyear and cg.degree_id = v_dm.degree_id and cg.level = v_dm.level order by cg.name limit 1;
+        end if;
+        if v_group is not null then perform public.enrollment_set_module(v_student, v_dm.id, 'cursa', v_group); end if;
+      end loop;
     end if;
   else
     insert into public.teaching_assignments (profile_id, degree_module_id, group_id)
@@ -250,8 +245,8 @@ begin
                       where ta.profile_id = p_profile_id and ta.degree_module_id = (t ->> 'degree_module_id')::uuid and ta.group_id = (t ->> 'group_id')::uuid);
   end if;
 
-  -- La ficha se guarda si queda algo por hacer (grupo o módulos), para que coordinación la consulte
-  if v_role = 'profesor' or (v_gid is not null and v_manager) then
+  -- Sin grupo, la ficha se guarda (con sus módulos) para consultarla al asignarlo más tarde
+  if v_role = 'profesor' or v_gid is not null then
     delete from public.signup_forms where profile_id = p_profile_id;
   end if;
   perform private.log_admin_action('approve_signup', 'profile', p_profile_id, jsonb_build_object('role', v_role, 'group_id', p_group_id));
@@ -269,8 +264,6 @@ as $function$
 begin
   if (select auth.uid()) is null or private.is_global_admin() then return new; end if;
   if private.is_supervisor() and old.id <> (select auth.uid()) and private.profile_in_my_school(old.id) then return new; end if;
-  -- Al aprobar un alta pendiente, quien la revisa (coordinación o profesor) guarda el nombre y el teléfono de la ficha
-  if old.status = 'pendiente' and old.id <> (select auth.uid()) and private.can_review_profile(old.id) then return new; end if;
   if new.full_name is distinct from old.full_name or new.phone is distinct from old.phone then
     raise exception using errcode = '42501', message = 'Tus datos solo los puede cambiar la coordinación de tu escuela.';
   end if;

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
+import { ROLES, isManager } from '../lib/roles.js'
 import SignupReview from './SignupReview.jsx'
 
-// Solicitudes de alta: coordinación y admin ven todas; el profesorado, las de alumnos de su escuela.
+// Solicitudes de alta: solo las revisan la administración y la coordinación de la escuela.
 // Cada persona rellena su ficha tras confirmar el correo;
 // aquí se revisa: rojo = se registra como profesor (confirmar), ámbar = alumno en un curso distinto de 1º (verificar).
 // Las que aún se están rellenando salen aparte y atenuadas. `schoolId` (admin) limita la lista a esa escuela.
@@ -15,7 +15,7 @@ const FLAG = {
 export default function PendingRequests({ user, schoolId = null }) {
   const [requests, setRequests] = useState([])
   const [open, setOpen] = useState(null)
-  const canReview = isManager(user.role) || teachesLikeProfessor(user.role)
+  const canReview = isManager(user.role)
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('list_signup_requests')
@@ -70,7 +70,7 @@ export default function PendingRequests({ user, schoolId = null }) {
           <ul className="max-h-[8.5rem] overflow-y-auto overscroll-contain">{waiting.map((request) => row(request, true))}</ul>
         </div>
       )}
-      {open && <SignupReview request={open} user={user} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load() }} />}
+      {open && <SignupReview request={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load() }} />}
     </section>
   )
 }
