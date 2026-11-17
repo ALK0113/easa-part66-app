@@ -129,11 +129,11 @@ function UpcomingClasses({ user, onOpen }) {
           {days.map(([date, rows]) => (
             <div key={date}>
               <p className="mb-1 text-xs font-medium text-faint">{dayLabel(date)}</p>
-              <ul className="divide-y divide-line rounded-xl border border-line">
+              <ul className="space-y-1.5">
                 {rows.map((session) => {
                   const assignment = session.teaching_assignments
                   return (
-                    <li key={session.id} className="flex items-center gap-3 border-l-[3px] px-3 py-2 text-sm" style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}>
+                    <li key={session.id} className="flex items-center gap-3 rounded-xl border border-l-[3px] border-line px-3 py-2 text-sm" style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}>
                       <span className="w-12 shrink-0 tabular-nums text-muted">{time(session.start_time)}</span>
                       <span className="min-w-0 flex-1 truncate text-ink">
                         {assignment.degree_modules?.module_id} · {session.theory_classes?.title || KIND_LABEL[assignment.degree_modules?.kind]}

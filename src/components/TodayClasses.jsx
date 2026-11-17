@@ -63,7 +63,7 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
         </ul>
       )}
       {sessions?.length > 0 && (
-        <ul className="px-2 pb-2">
+        <ul className="space-y-1.5 px-4 pb-4">
           {sessions.map((session) => {
             const assignment = session.teaching_assignments
             const cancelled = session.status === 'cancelada'
@@ -72,7 +72,7 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
             return (
               <li key={session.id}>
                 <button type="button" onClick={onOpen} style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}
-                  className={`flex w-full items-center gap-4 rounded-r-xl border-l-[3px] px-3 py-3 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>
+                  className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-line px-3 py-2.5 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>
                   <span className={`w-14 shrink-0 text-sm tabular-nums ${live ? 'font-semibold text-accent-strong' : 'text-muted'}`}>{time(session.start_time)}</span>
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate font-medium text-ink ${cancelled ? 'line-through' : ''}`}>
