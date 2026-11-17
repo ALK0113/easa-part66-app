@@ -369,7 +369,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setOpenSessionId(null) }}>← Prácticas</button>
       <section>
         {/* Encima del título: módulo, submódulo y nº de práctica, en negro */}
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink tabular-nums" title={moduleName || undefined}>{[selectedPractice.module_id, practiceSub?.code, selectedPractice.id].filter(Boolean).join(' · ')}</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-ink tabular-nums" title={moduleName || undefined}>{[selectedPractice.module_id, practiceSub?.code, selectedPractice.id].filter(Boolean).join(' · ')}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
         {meta && <p className="mt-1 text-sm text-muted">{meta}</p>}
         {(practiceSub || practiceOutcome) && (
