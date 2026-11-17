@@ -133,9 +133,8 @@ function UpcomingClasses({ user, onOpen }) {
                 {rows.map((session) => {
                   const assignment = session.teaching_assignments
                   return (
-                    <li key={session.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <li key={session.id} className="flex items-center gap-3 border-l-[3px] px-3 py-2 text-sm" style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}>
                       <span className="w-12 shrink-0 tabular-nums text-muted">{time(session.start_time)}</span>
-                      <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: moduleColor(assignment.degree_modules?.modules?.color) }} />
                       <span className="min-w-0 flex-1 truncate text-ink">
                         {assignment.degree_modules?.module_id} · {session.theory_classes?.title || KIND_LABEL[assignment.degree_modules?.kind]}
                       </span>
