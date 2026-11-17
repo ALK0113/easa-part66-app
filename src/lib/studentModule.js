@@ -26,7 +26,7 @@ export function useStudentModule(moduleId, profileId) {
       ])
       const yearIds = [...new Set((enrollments.data || []).map((row) => row.academic_year_id))]
       const periods = yearIds.length
-        ? (await supabase.from('evaluation_periods').select('id,name,position').in('academic_year_id', yearIds).order('position')).data || []
+        ? (await supabase.from('evaluation_periods').select('id,name,position,ends_on').in('academic_year_id', yearIds).order('position')).data || []
         : []
       if (!active) return
       const marked = (attendance.data || []).filter((row) => row.status && row.class_sessions.status !== 'cancelada')
