@@ -7,6 +7,8 @@ import { AttendanceControl, EvaluationControl } from './RecordControls.jsx'
 import { HoursStatus } from './PracticeSessions.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 const STATUS_LABEL = { P: ['Presente', 'text-success'], L: ['Tarde', 'text-warn'], A: ['Falta', 'text-danger'] }
 const EVALUATION_TONE = { Apto: 'text-success', 'No Apto': 'text-danger' }
@@ -258,6 +260,9 @@ export function SessionPage({ session, index, className, canEdit, onBack, onChan
 // Sesiones de una clase con el estado de la lista de cada una. El personal entra en la página
 // de la sesión; el alumno ve aquí su asistencia, su evaluación y el comentario de cada sesión.
 export function ClassSessions({ sessions: allSessions, requiredHours, canEdit, isStudent, editHint, onOpenSession, owner, moduleId, user, onSessionsChanged }) {
+  // Cada sesión, con el color de su módulo (líneas laterales y tinte al pasar el cursor)
+  const moduleColors = useModuleColors()
+  const lineStyle = moduleStyle(moduleColors[moduleId])
   const [rows, setRows] = useState(null)
   const [adding, setAdding] = useState(false)
   const manage = canEdit && owner && onSessionsChanged
@@ -333,7 +338,7 @@ export function ClassSessions({ sessions: allSessions, requiredHours, canEdit, i
       {pendingLists > 0 && <p className="notice-error mb-3">{pendingLists === 1 ? 'Hay 1 sesión pasada sin lista completa.' : `Hay ${pendingLists} sesiones pasadas sin lista completa.`}</p>}
       {sessions.length === 0
         ? <p className="text-sm text-danger">Sin programar en el horario. {editHint}</p>
-        : <ul className="divide-y divide-line">
+        : <ul className="space-y-1.5">
           {sessions.map((session) => {
             const own = isStudent && !canEdit ? ofSession(session.id)[0] : null
             const content = (
@@ -357,10 +362,10 @@ export function ClassSessions({ sessions: allSessions, requiredHours, canEdit, i
               </>
             )
             return (
-              <li key={session.id} className="flex items-center gap-1">
+              <li key={session.id} className={`flex items-center gap-1 rounded-xl border border-l-[3px] border-r-[3px] border-line pr-1 ${MODULE_HOVER}`} style={lineStyle}>
                 {canEdit && onOpenSession
-                  ? <button type="button" className="-ml-2 flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-2 py-2.5 text-left text-sm hover:bg-subtle" onClick={() => onOpenSession(session.id)}>{content}</button>
-                  : <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 py-2.5 text-sm">{content}</div>}
+                  ? <button type="button" className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 rounded-xl px-3 py-2.5 text-left text-sm" onClick={() => onOpenSession(session.id)}>{content}</button>
+                  : <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5 text-sm">{content}</div>}
                 {manage && (
                   <button type="button" className="shrink-0 rounded-lg p-1.5 text-danger/70 hover:bg-danger-soft hover:text-danger" aria-label={`Eliminar ${session.recovery ? 'recuperación' : 'sesión'} del ${shortDate(session.date)}`} title="Eliminar sesión"
                     onClick={async () => { try { if (await removeSessionFromClass(session)) onSessionsChanged() } catch (removeError) { setError(getSupabaseErrorMessage(removeError)) } }}>
@@ -588,7 +593,7 @@ export function StudentPracticeResult({ record }) {
 }
 
 // Sesiones de una práctica vistas por el alumno (asistencia, Apto/No apto y comentario de cada una)
-export function StudentPracticeSessions({ practiceId, requiredHours }) {
+export function StudentPracticeSessions({ practiceId, requiredHours, moduleId }) {
   const [sessions, setSessions] = useState(null)
   useEffect(() => {
     let active = true
@@ -597,5 +602,5 @@ export function StudentPracticeSessions({ practiceId, requiredHours }) {
     return () => { active = false }
   }, [practiceId])
   if (!sessions) return <p className="text-sm text-muted">Cargando sesiones…</p>
-  return <ClassSessions sessions={sessions} requiredHours={requiredHours} canEdit={false} isStudent />
+  return <ClassSessions sessions={sessions} requiredHours={requiredHours} canEdit={false} isStudent moduleId={moduleId} />
 }

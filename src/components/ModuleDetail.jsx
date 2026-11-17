@@ -9,6 +9,7 @@ import { canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 import { StudentPracticeResult, StudentPracticeSessions } from './SessionAttendance.jsx'
 import UpcomingSessions from './UpcomingSessions.jsx'
+import { MODULE_HOVER, moduleColor, moduleStyle } from '../lib/moduleColors.js'
 
 // Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
@@ -184,7 +185,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     const practiceTLBs = tlbForPractice(selectedPractice.id)
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
-      <section>
+      <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
         <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
         {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
@@ -196,7 +197,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       </section>
       {!canEdit && <>
         <StudentPracticeResult record={practiceRecords[0]} />
-        <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} />
+        <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} moduleId={module.id} />
       </>}
       {canEdit && <RecordSummary items={[['Presentes', counts.P, 'bg-success'], ['Tarde', counts.L, 'bg-warn'], ['Faltas', counts.A, 'bg-danger'], ['Aptos', `${counts.apto}/${students.length}`, 'bg-accent']]} />}
       {canEdit && <section className="card overflow-hidden">
@@ -240,7 +241,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
   const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
-      <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openPractice(practice)}>
+      <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
           <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
@@ -258,7 +259,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
 
   return <div className="space-y-6">
     <button type="button" className="back-link" onClick={onBack}>← Módulos</button>
-    <section>
+    <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
       <span className="badge bg-accent-soft text-accent-strong">{module.id}</span>
       <h2 className="mt-2 text-2xl font-semibold text-ink">{module.name}</h2>
       <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
@@ -298,7 +299,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     )}
 
     {section === 'practicas' && usesPracticePage && <Suspense fallback={tabFallback}><PracticeList key={`p-${moduleId}`} user={user} moduleId={moduleId} initialPracticeId={practiceToOpen} onClearInitial={() => setPracticeToOpen(null)} onCreateTLB={createTLB} /></Suspense>}
-    {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
+    {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul className="space-y-1.5">{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
 
     {section === 'tlb' && <Suspense fallback={tabFallback}><TLBList key={`t-${moduleId}`} user={user} moduleId={moduleId} initialTlbId={tlbToOpen} onClearInitialTlb={() => setTlbToOpen(null)} initialCreate={tlbToCreate} onClearInitialCreate={() => setTlbToCreate(null)} /></Suspense>}
 
