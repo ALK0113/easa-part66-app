@@ -375,7 +375,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
     doc.setTextColor(10, 37, 64)
-    doc.text('EASA PART-147 · TASK LOG BOOK', margin, 17)
+    doc.text('EASA PART-147 · TECHNICAL LOG BOOK', margin, 17)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(100, 110, 120)
@@ -560,7 +560,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
         student_email: studentEmail,
         tlb_id: selectedTLB.id,
         practice_title: getPractice(selectedTLB.practice_id)?.title || 'Práctica TLB',
-        message: `El alumno ${user.name} ha completado el Task Log Book ${selectedTLB.id}.`,
+        message: `El alumno ${user.name} ha completado el Technical Log Book ${selectedTLB.id}.`,
         attachment: pdfFile,
       }
 
@@ -713,7 +713,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     </div>
   </>
 
-  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando Task Log Book…</div>
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando Technical Log Book…</div>
   if (error) return <div role="alert" className="notice-error">No se pudo cargar el TLB: {error}</div>
 
   if (selectedTLB) {
@@ -732,7 +732,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
     const saveLabel = { saving: 'Guardando…', saved: 'Borrador guardado', error: 'No se pudo guardar el borrador' }[saveState]
 
     return <div className="space-y-6">
-      <button type="button" className="back-link" onClick={() => { setSelectedTLBId(null); onClearInitialTlb?.(); setMessage('') }}>← Task Log Book</button>
+      <button type="button" className="back-link" onClick={() => { setSelectedTLBId(null); onClearInitialTlb?.(); setMessage('') }}>← Technical Log Book</button>
 
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
@@ -956,7 +956,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
         {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
       </div>
       : <div className="page-intro">
-        <div><h2>{isStudent ? 'Mi Task Log Book' : 'Task Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
+        <div><h2>{isStudent ? 'Mi Technical Log Book' : 'Technical Log Book'}</h2><p>{isStudent ? 'Los TLB que tu profesor ha publicado.' : 'Publica un TLB para que lo vean tus alumnos.'}</p></div>
         {!isStudent && <button className={buttonClass} onClick={() => openCreate()}><Icon name="plus" size={16} />Nuevo TLB</button>}
       </div>}
     <section className={`grid gap-2 ${moduleId ? 'md:grid-cols-[2fr_1fr_1fr]' : 'md:grid-cols-[2fr_1fr_1fr_1fr]'}`}>
@@ -979,7 +979,7 @@ export default function TLBList({ user, moduleId = null, initialTlbId = null, on
           <span className="min-w-0 flex-1">
             {/* Práctica a la que pertenece el TLB: módulo y nº de práctica, como en el listado de prácticas */}
             <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums" title="Práctica asociada">
-              <span className="font-semibold text-ink-soft">{tlb.module_id}</span><span className="mx-1.5 text-line-strong">·</span>Práctica <span className="font-semibold text-ink-soft">{tlb.practice_id}</span>
+              <span className="font-semibold text-ink-soft">{tlb.module_id}</span><span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">Práctica {tlb.practice_id}</span>
             </span>
             <span className="mt-0.5 block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">

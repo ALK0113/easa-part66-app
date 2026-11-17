@@ -229,7 +229,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       </section>}
       <section className="card p-3">
         <div className="flex items-center justify-between px-3 pb-1 pt-2">
-          <h3 className="font-semibold text-ink">Task Log Book de la práctica</h3>
+          <h3 className="font-semibold text-ink">Technical Log Book de la práctica</h3>
           {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => createTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
         </div>
         {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
@@ -238,12 +238,12 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
   }
 
   const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
-  // Módulo → (submódulos) → clases teóricas y clases prácticas. El Task Log Book es una subcategoría
+  // Módulo → (submódulos) → clases teóricas y clases prácticas. El Technical Log Book es una subcategoría
   // de las clases prácticas (sección «tlb» dentro de la pestaña Práctica).
   // El número de cada pestaña va en pequeño junto al nombre
   const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría', theoryCount], ['practicas', 'Práctica', practices.length], ['videos', 'Vídeos', videos.length], ...(usesPracticePage ? [['alumnos', 'Alumnos', students.length]] : [])]
   const inPractices = section === 'practicas' || section === 'tlb'
-  const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
+  const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Technical Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
       <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
@@ -275,7 +275,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label, count]) => <button key={id} aria-current={(id === 'practicas' ? inPractices : section === id) ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}{count != null && <span className="ml-1.5 text-xs font-normal tabular-nums text-muted">{count}</span>}</button>)}</nav>
 
     {inPractices && (
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Task Log Book">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Technical Log Book">
         {practiceViews.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}
             className={`rounded-xl border px-3.5 py-1.5 text-sm font-medium ${section === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
