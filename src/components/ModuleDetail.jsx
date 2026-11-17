@@ -251,10 +251,11 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     <li key={practice.id}>
       <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}</span>
           <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>
+        <span className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-ink" style={{ backgroundColor: 'color-mix(in srgb, var(--module) 12%, var(--surface))' }} title="Nº de práctica">Nº {practice.id}</span>
         {!canEdit && (() => {
           const evaluation = recordsForPractice(practice.id)[0]?.evaluation
           return <span className={`badge ${evaluation === 'Apto' ? 'bg-success-soft text-success' : evaluation === 'No Apto' ? 'bg-danger-soft text-danger' : 'text-faint'}`}>{evaluation === 'Apto' ? 'Apto' : evaluation === 'No Apto' ? 'No apto' : 'Pendiente'}</span>

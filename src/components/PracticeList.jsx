@@ -494,7 +494,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
             <span className="text-lg font-semibold leading-none text-ink">{practice.date ? Number(String(practice.date).slice(8, 10)) : ''}</span>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}</span>
             <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}
@@ -504,6 +504,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
               <span>· {enrolledCount} alumnos</span>
             </span>
           </span>
+          <span className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-ink" style={{ backgroundColor: 'color-mix(in srgb, var(--module) 12%, var(--surface))' }} title="Nº de práctica">Nº {practice.id}</span>
         </button>
         {canEdit(practice) && <div className="flex gap-1 text-muted">
           {onCreateTLB && <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Crear TLB de ${practice.title}`} title="Crear TLB" onClick={() => onCreateTLB({ module_id: practice.module_id, practice_id: practice.id })}><Icon name="clipboard" size={16} /></button>}
