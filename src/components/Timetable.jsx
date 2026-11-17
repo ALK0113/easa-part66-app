@@ -11,6 +11,7 @@ import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportSchedule from './ImportSchedule.jsx'
 import { ConflictConfirm, RoomSelect } from './ScheduleControls.jsx'
+import { moduleColor } from '../lib/moduleColors.js'
 import { checkConflicts, fetchTemplateConflicts, fetchWeekConflicts, roomValues, useRooms } from '../lib/scheduleTools.js'
 
 // Horario semanal. Profesor: sus clases y pasar lista. Alumno: sus clases.
@@ -314,8 +315,9 @@ function WeekView({ user, onOpenPractice }) {
                     return (
                       <li key={session.id}>
                         <button type="button" {...dayDrag.bind(session, dayIndex)} title={conflict ? `Choque: ${conflict.join(' · ')}` : session.practice_id ? 'Ir a la práctica en su módulo' : undefined}
-                          className={`w-full select-none rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle
-                            ${conflict ? 'border-danger' : 'border-line'} ${cancelled ? 'opacity-60' : assignment.degree_modules?.kind === 'practica' && !conflict ? 'border-l-2 border-l-accent' : ''}
+                          style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}
+                          className={`w-full select-none rounded-xl border border-l-4 px-3 py-2 text-left transition-colors hover:bg-subtle
+                            ${conflict ? 'border-danger' : 'border-line'} ${cancelled ? 'opacity-60' : ''}
                             ${dayDrag.dragging(session) ? 'opacity-40' : ''} ${wide && canManageSessions && canEditSession(session) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                           <span className="block text-xs tabular-nums text-muted">{time(session.start_time)}–{time(session.end_time)}{session.room ? ` · ${session.room}` : ''}</span>
                           <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}{conflict && <span className="ml-1 text-danger">· choque</span>}</span>
@@ -550,7 +552,7 @@ export function TemplateEditor({ user }) {
     let active = true
     async function load() {
       const { data, error } = await supabase.from('schedule_slots')
-        .select('id,weekday,start_time,end_time,room,room_id,teaching_assignment_id,teaching_assignments!inner(group_id,profile_id,profiles(full_name),degree_modules(module_id,kind))')
+        .select('id,weekday,start_time,end_time,room,room_id,teaching_assignment_id,teaching_assignments!inner(group_id,profile_id,profiles(full_name),degree_modules(module_id,kind,modules(color)))')
         .eq('teaching_assignments.group_id', activeGroup).order('weekday').order('start_time')
       if (!active) return
       if (error) setNotice({ error: true, text: getSupabaseErrorMessage(error) })
@@ -651,7 +653,8 @@ export function TemplateEditor({ user }) {
                   {items.map((slot) => (
                     <li key={slot.id}>
                       <button type="button" {...slotDrag.bind(slot, index)} disabled={!isMine(slot)} title={groupConflicts.has(slot.id) ? `Choque: ${groupConflicts.get(slot.id).join(' · ')}` : undefined}
-                        className={`w-full select-none rounded-xl border px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60 ${groupConflicts.has(slot.id) ? 'border-danger' : 'border-line'} ${slotDrag.dragging(slot) ? 'opacity-40' : ''} ${wide && isMine(slot) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
+                        style={{ borderLeftColor: moduleColor(slot.teaching_assignments.degree_modules?.modules?.color) }}
+                        className={`w-full select-none rounded-xl border border-l-4 px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60 ${groupConflicts.has(slot.id) ? 'border-danger' : 'border-line'} ${slotDrag.dragging(slot) ? 'opacity-40' : ''} ${wide && isMine(slot) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         <span className="block text-xs tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}{slot.room ? ` · ${slot.room}` : ''}</span>
                         <span className="block text-sm font-medium text-ink">{assignmentLabel(slot.teaching_assignments)}{groupConflicts.has(slot.id) && <span className="ml-1 text-danger">· choque</span>}</span>
                         <span className="block truncate text-xs text-muted">{slot.teaching_assignments.profiles?.full_name}</span>

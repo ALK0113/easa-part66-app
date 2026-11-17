@@ -6,6 +6,7 @@ import { addDays, fetchSessions, parseISODate, time, toISODate } from '../lib/sc
 import { buildStudentView, useStudentData } from '../lib/studentData.js'
 import TodayClasses from './TodayClasses.jsx'
 import Icon from './Icon.jsx'
+import { moduleColor } from '../lib/moduleColors.js'
 
 // Inicio del alumno: aviso de faltas, clases de hoy y próximas, próximos exámenes y últimas notas.
 
@@ -134,6 +135,7 @@ function UpcomingClasses({ user, onOpen }) {
                   return (
                     <li key={session.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                       <span className="w-12 shrink-0 tabular-nums text-muted">{time(session.start_time)}</span>
+                      <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: moduleColor(assignment.degree_modules?.modules?.color) }} />
                       <span className="min-w-0 flex-1 truncate text-ink">
                         {assignment.degree_modules?.module_id} · {session.theory_classes?.title || KIND_LABEL[assignment.degree_modules?.kind]}
                       </span>

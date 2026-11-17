@@ -8,6 +8,7 @@ import { practices as starterPractices } from '../data/practices.js'
 import { students as starterStudents } from '../data/students.js'
 import { videos as starterVideos } from '../data/videos.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
+import { MODULE_COLORS, moduleColor, randomModuleColor } from '../lib/moduleColors.js'
 import { downloadBlob } from '../lib/download.js'
 import { ROLES, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import Icon from './Icon.jsx'
@@ -17,7 +18,7 @@ import Icon from './Icon.jsx'
 /* ------------------------------------------------------------------ */
 
 const STARTER_MODULE_ID = 'M11'
-const MAX_COLOR = 18
+const MAX_COLOR = MODULE_COLORS.length
 const PAGE_SIZE = 1000
 
 const cardClass = 'card p-5 md:p-6'
@@ -206,7 +207,7 @@ export function ModulesPage({ user, onOpenModule }) {
   function openForm(mod = null) {
     setEditing(mod)
     setFormOpen(true)
-    setForm(mod ? { ...mod } : { id: '', name: '', description: '', color: (modules.length % MAX_COLOR) + 1 })
+    setForm(mod ? { ...mod } : { id: '', name: '', description: '', color: randomModuleColor() })
     notify('')
   }
 
@@ -264,7 +265,7 @@ export function ModulesPage({ user, onOpenModule }) {
             return (
               <article key={mod.id} className="card group flex flex-col transition-shadow hover:shadow-lift">
                 <button className="flex-1 p-5 text-left" onClick={() => onOpenModule(mod.id)}>
-                  <span className="badge bg-accent-soft text-accent-strong">{mod.id}</span>
+                  <span className="badge gap-1.5 bg-accent-soft text-accent-strong"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: moduleColor(mod.color) }} />{mod.id}</span>
                   {user.role !== ROLES.STUDENT && <span className="badge ml-1.5">{mod.school_id ? 'Escuela' : 'EASA'}</span>}
                   <h3 className="mt-3 font-semibold text-ink">{mod.name}</h3>
                   <p className="mt-1 line-clamp-2 text-sm text-muted">{mod.description || 'Sin descripción'}</p>
@@ -290,7 +291,18 @@ export function ModulesPage({ user, onOpenModule }) {
             <FormField label="Código" value={form.id} onChange={(id) => setForm({ ...form, id })} required disabled={Boolean(editing)} />
             <FormField label="Nombre" value={form.name} onChange={(name) => setForm({ ...form, name })} required />
             <FormField label="Descripción" value={form.description || ''} onChange={(description) => setForm({ ...form, description })} />
-            <FormField label={`Color (1-${MAX_COLOR})`} type="number" min={1} max={MAX_COLOR} value={form.color} onChange={(color) => setForm({ ...form, color })} />
+            <fieldset>
+              <legend className="mb-1.5 text-sm font-medium text-ink-soft">Color del módulo</legend>
+              <p className="mb-2 text-xs text-muted">Se ve en el horario y en las listas, y se mantiene de un curso a otro.</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Color del módulo">
+                {MODULE_COLORS.map((hex, index) => (
+                  <button key={hex} type="button" role="radio" aria-checked={Number(form.color) === index + 1} aria-label={`Color ${index + 1}`}
+                    onClick={() => setForm({ ...form, color: index + 1 })}
+                    className={`h-7 w-7 rounded-full border-2 ${Number(form.color) === index + 1 ? 'border-ink ring-2 ring-offset-1 ring-ink' : 'border-transparent'}`}
+                    style={{ backgroundColor: hex }} />
+                ))}
+              </div>
+            </fieldset>
             <NoticeBar notice={notice} />
             <div className="flex justify-end gap-2"><button type="button" className={secondaryButton} onClick={closeForm}>Cancelar</button><button className={primaryButton} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
           </form>

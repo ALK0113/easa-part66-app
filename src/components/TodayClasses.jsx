@@ -5,6 +5,7 @@ import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { ROLES, teachesLikeProfessor } from '../lib/roles.js'
 import { fetchSessions, time, toISODate } from '../lib/schedule.js'
 import Icon from './Icon.jsx'
+import { moduleColor } from '../lib/moduleColors.js'
 
 // Clases de hoy en el inicio (profesor y alumno). Al tocar una se abre el horario.
 // El profesor ve también las prácticas de hoy de sus módulos que no van en una clase: se abren para pasar lista.
@@ -73,7 +74,8 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
                 <button type="button" onClick={onOpen} className={`flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>
                   <span className={`w-14 shrink-0 text-sm tabular-nums ${live ? 'font-semibold text-accent-strong' : 'text-muted'}`}>{time(session.start_time)}</span>
                   <span className="min-w-0 flex-1">
-                    <span className={`block truncate font-medium text-ink ${cancelled ? 'line-through' : ''}`}>
+                    <span className={`flex items-center gap-1.5 truncate font-medium text-ink ${cancelled ? 'line-through' : ''}`}>
+                      <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: moduleColor(assignment.degree_modules?.modules?.color) }} />
                       {assignment.degree_modules?.module_id} · {KIND_LABEL[assignment.degree_modules?.kind]}
                     </span>
                     <span className="mt-0.5 block text-xs text-muted">
