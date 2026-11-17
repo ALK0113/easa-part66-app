@@ -91,7 +91,9 @@ function App() {
           : 'Tu cuenta aún no tiene un perfil configurado. Contacta con administración.')
         userIdRef.current = null
         setUser(null)
-        await supabase.auth.signOut()
+        // Solo esta pestaña: un error puntual (p. ej. un token antiguo de otra pestaña) no debe cerrar
+        // la sesión en todos los dispositivos, que es lo que hace signOut() por defecto
+        await supabase.auth.signOut({ scope: 'local' })
         return
       }
 
@@ -145,7 +147,8 @@ function App() {
   }
 
   async function handleLogout() {
-    try { await supabase.auth.signOut() } catch { /* se cierra la sesión local igualmente */ }
+    // Cierra la sesión de este dispositivo; las de otros dispositivos siguen abiertas
+    try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* se cierra la sesión local igualmente */ }
     userIdRef.current = null
     setUser(null)
     setActivePage('dashboard')

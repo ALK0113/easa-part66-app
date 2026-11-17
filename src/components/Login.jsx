@@ -93,7 +93,7 @@ export default function Login({ onLoginSuccess }) {
 
     // Sin perfil válido no se entra: nunca se asume un rol por defecto.
     if (profileError || !profile?.role) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       setError(profileError
         ? 'No se pudo cargar tu perfil. Inténtalo de nuevo en unos minutos.'
         : 'Tu cuenta aún no tiene un perfil configurado. Contacta con administración.')
