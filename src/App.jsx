@@ -30,7 +30,8 @@ const TeacherGroups = lazy(() => import('./components/TeacherGroups.jsx'))
 const AircraftPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.AircraftPage })))
 const ReportsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.ReportsPage })))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
-const MyDataPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.MyDataPage })))
+const StudentDashboard = lazy(() => import('./components/StudentDashboard.jsx'))
+const StudentHome = lazy(() => import('./components/StudentHome.jsx'))
 
 const ProfileManagement = lazy(() => import('./components/ProfileManagement.jsx'))
 const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
@@ -196,7 +197,7 @@ function App() {
       case 'reports': return <ReportsPage />
       case 'settings': return <SettingsPage user={user} />
       case 'mydata': return <ProfileSettings user={user} />
-      case 'progress': return <MyDataPage user={user} />
+      case 'progress': return <MyProgress user={user} />
       case 'schools': return <SchoolManagement user={user} />
       case 'timetable': return <Timetable user={user} />
       case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
@@ -321,14 +322,8 @@ function FullScreenMessage({ children }) {
 }
 
 
-// Módulos propios de un profesor o alumno (para sus próximas prácticas)
+// Módulos propios de un profesor (para sus próximas prácticas). El alumno tiene su propio inicio.
 async function fetchOwnModuleIds(user) {
-  if (user.role === ROLES.STUDENT) {
-    const { data: link } = await supabase.from('student_profiles').select('student_id').eq('profile_id', user.id).maybeSingle()
-    if (!link) return []
-    const { data } = await supabase.from('student_modules').select('module_id').eq('student_id', link.student_id)
-    return (data || []).map((entry) => entry.module_id)
-  }
   const { data } = await supabase.from('teacher_modules').select('module_id').eq('profile_id', user.id)
   return (data || []).map((entry) => entry.module_id)
 }
@@ -347,12 +342,14 @@ function greeting() {
   return 'Buenas noches'
 }
 
-function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, openSetup }) {
+function DashboardHome({ user, setActivePage, onOpenPractice, openSetup }) {
   const { isAdmin, filterId, school, setSchoolId } = useSchool()
   const [stats, setStats] = useState(null)
   const [upcoming, setUpcoming] = useState(null)
 
   useEffect(() => {
+    // El alumno tiene su propio inicio (StudentHome) y no usa estas cifras
+    if (user.role === ROLES.STUDENT) return undefined
     let cancelled = false
     let timer = null
 
@@ -401,14 +398,11 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
   }, [user.id, user.role, filterId])
 
   const isStudent = user.role === ROLES.STUDENT
-  const cards = isStudent
-    ? [['modules', 'Mis módulos', 'book', 'modules'], ['practices', 'Mis prácticas', 'chart', 'progress'], ['tlbs', 'Mi Task Log Book', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
-    : [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Task Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
+  const cards = [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Task Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
 
   const firstName = (user.name || '').split(' ')[0]
   const todayText = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
   const today = todayText.charAt(0).toUpperCase() + todayText.slice(1)
-  const openPractice = (practice) => (isStudent ? onOpenModule(practice.module_id) : setActivePage('practices'))
 
   return (
     <div className="space-y-8">
@@ -418,6 +412,7 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
         {isAdmin && school && <button type="button" className="link mt-2" onClick={() => setSchoolId('')}>← Volver a todas las escuelas</button>}
       </section>
 
+      {isStudent ? <StudentHome user={user} setActivePage={setActivePage} onOpenPractice={onOpenPractice} /> : <>
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map(([statKey, label, icon, page]) => (
           <button
@@ -440,7 +435,7 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
         ))}
       </section>
 
-      {!isStudent && <PendingRequests user={user} schoolId={filterId} />}
+      <PendingRequests user={user} schoolId={filterId} />
 
       {(user.role === ROLES.SUPERVISOR || filterId) && <GettingStarted schoolId={filterId} setActivePage={setActivePage} openSetup={openSetup} />}
 
@@ -449,7 +444,7 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
       <section className="card">
         <div className="flex items-center justify-between px-5 pb-2 pt-5">
           <h3 className="font-semibold text-ink">Próximas prácticas</h3>
-          {!isStudent && <button type="button" className="link" onClick={() => setActivePage('practices')}>Ver todas</button>}
+          <button type="button" className="link" onClick={() => setActivePage('practices')}>Ver todas</button>
         </div>
         {upcoming === null && <p className="empty">Cargando…</p>}
         {upcoming?.length === 0 && <p className="empty">No tienes prácticas próximas. Disfruta del día.</p>}
@@ -457,7 +452,7 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
           <ul className="px-2 pb-2">
             {upcoming.map((practice) => (
               <li key={practice.id}>
-                <button type="button" onClick={() => openPractice(practice)} className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle">
+                <button type="button" onClick={() => setActivePage('practices')} className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle">
                   <span className="flex w-12 shrink-0 flex-col items-center rounded-lg bg-subtle py-1.5">
                     <span className="text-[11px]  text-muted">{new Date(`${practice.date}T00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span>
                     <span className="text-lg font-semibold leading-none text-ink">{Number(practice.date.slice(8, 10))}</span>
@@ -473,8 +468,30 @@ function DashboardHome({ user, setActivePage, onOpenModule, onOpenPractice, open
           </ul>
         )}
       </section>
+      </>}
     </div>
   )
+}
+
+// «Mi progreso»: el alumno ve su propia ficha en modo lectura
+function MyProgress({ user }) {
+  const [studentId, setStudentId] = useState(undefined)
+  useEffect(() => {
+    let active = true
+    supabase.from('student_profiles').select('student_id').eq('profile_id', user.id).maybeSingle()
+      .then(({ data }) => { if (active) setStudentId(data?.student_id || null) })
+    return () => { active = false }
+  }, [user.id])
+  if (studentId === undefined) return <FullScreenMessage>Cargando tus datos…</FullScreenMessage>
+  if (!studentId) {
+    return (
+      <section className="card p-6 text-center">
+        <h2 className="font-semibold text-ink">Tu cuenta aún no está vinculada</h2>
+        <p className="mt-2 text-sm text-muted">Pide a la escuela que asocie tu cuenta a tu ficha de alumno.</p>
+      </section>
+    )
+  }
+  return <StudentDashboard studentId={studentId} user={user} selfView />
 }
 
 export default App

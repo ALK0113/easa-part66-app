@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { KIND_LABEL, groupLabel } from '../lib/academic.js'
@@ -6,6 +6,7 @@ import { isManager } from '../lib/roles.js'
 import { useStudentConflicts } from '../lib/conflicts.js'
 import Icon from './Icon.jsx'
 import ConflictNotice from './StudentConflicts.jsx'
+import { buildStudentView, useStudentData } from '../lib/studentData.js'
 
 // Ficha completa del alumno a modo de panel: datos personales, matrícula, módulos pendientes,
 // asistencia y faltas, notas (módulos, exámenes, prácticas), comentarios y su historial por curso.
@@ -30,92 +31,19 @@ const PERSONAL = [
   ['address', 'Dirección', 'text'], ['emergency_name', 'Contacto de emergencia', 'text'], ['emergency_phone', 'Teléfono de emergencia', 'tel'],
 ]
 
-function useStudentData(studentId, version) {
-  const [state, setState] = useState({ data: null, error: '' })
-  useEffect(() => {
-    let active = true
-    async function load() {
-      const [student, link, enrollments, modules, attendance, practices, grades, names] = await Promise.all([
-        supabase.from('students').select('*, cohorts(name)').eq('id', studentId).single(),
-        supabase.from('student_profiles').select('profile_id, profiles(full_name, email, phone, status)').eq('student_id', studentId).maybeSingle(),
-        supabase.from('enrollments').select('academic_year_id, level, status, left_on, academic_years(name, starts_on, is_current), class_groups(level, name)').eq('student_id', studentId),
-        supabase.from('module_enrollments').select('id, academic_year_id, is_carryover, theory_grade, practical_result, status, joined_on, left_on, degree_modules(module_id, kind, level), class_groups(level, name), academic_years(name, starts_on, is_current)').eq('student_id', studentId),
-        supabase.from('session_attendance').select('session_id, status, evaluation, comment, updated_at, class_sessions(date, start_time, end_time, status, recovery, practices(title), theory_classes(title), teaching_assignments(degree_modules(module_id)))').eq('student_id', studentId),
-        supabase.from('practice_records').select('practice_id, attendance, evaluation, comment, updated_at, practices(title, module_id)').eq('student_id', studentId),
-        supabase.from('assessment_grades').select('grade, comment, updated_at, assessments(title, kind, scope, max_grade, module_id, date)').eq('student_id', studentId),
-        supabase.from('modules').select('id, name'),
-      ])
-      const failed = [student, enrollments, modules].find((result) => result.error)
-      if (failed) { if (active) setState({ data: null, error: getSupabaseErrorMessage(failed.error) }); return }
-      const profileId = link.data?.profile_id
-      const tlbs = profileId
-        ? await supabase.from('tlb_submissions').select('id, signed_at, control_number, revision, tlbs(aircraft, registration, module_id)').eq('student_id', profileId)
-        : { data: [] }
-      if (!active) return
-      setState({
-        error: '',
-        data: {
-          student: student.data,
-          profile: link.data?.profiles || null,
-          enrollments: enrollments.data || [],
-          modules: modules.data || [],
-          attendance: (attendance.data || []).filter((row) => row.class_sessions),
-          practices: practices.data || [],
-          grades: grades.data || [],
-          tlbs: tlbs.data || [],
-          names: Object.fromEntries((names.data || []).map((item) => [item.id, item.name])),
-        },
-      })
-    }
-    load()
-    return () => { active = false }
-  }, [studentId, version])
-  return state
-}
-
-export default function StudentDashboard({ studentId, user, onBack }) {
+// selfView: el propio alumno ve su ficha en modo lectura (sin datos internos del personal)
+export default function StudentDashboard({ studentId, user, onBack, selfView = false }) {
   const [version, setVersion] = useState(0)
   const { data, error } = useStudentData(studentId, version)
   const [editing, setEditing] = useState(false)
-  const conflicts = useStudentConflicts(data?.student?.school_id, studentId, version)
+  const conflicts = useStudentConflicts(selfView ? null : data?.student?.school_id, studentId, version)
 
-  const view = useMemo(() => {
-    if (!data) return null
-    const currentEnrollment = data.enrollments.find((item) => item.academic_years?.is_current)
-    const current = data.modules.filter((item) => item.academic_years?.is_current).sort((a, b) => (a.degree_modules?.module_id || '').localeCompare(b.degree_modules?.module_id || ''))
-    // Pendientes: arrastrados este curso + suspendidos de cursos anteriores que no se han aprobado después
-    const approved = new Set(data.modules.filter((item) => ['aprobado', 'convalidado', 'exento'].includes(item.status)).map((item) => `${item.degree_modules?.module_id}-${item.degree_modules?.kind}`))
-    const pending = [
-      ...current.filter((item) => item.is_carryover),
-      ...data.modules.filter((item) => !item.academic_years?.is_current && item.status === 'suspendido' && !approved.has(`${item.degree_modules?.module_id}-${item.degree_modules?.kind}`)
-        && !current.some((cur) => cur.degree_modules?.module_id === item.degree_modules?.module_id && cur.degree_modules?.kind === item.degree_modules?.kind)),
-    ]
-    const marked = data.attendance.filter((row) => row.status && row.class_sessions.status !== 'cancelada')
-    const count = (status) => marked.filter((row) => row.status === status).length
-    const byModule = {}
-    marked.forEach((row) => {
-      const id = row.class_sessions.teaching_assignments?.degree_modules?.module_id || '—'
-      const item = (byModule[id] ||= { id, P: 0, L: 0, A: 0 })
-      item[row.status] += 1
-    })
-    const absences = marked.filter((row) => row.status === 'A').sort((a, b) => b.class_sessions.date.localeCompare(a.class_sessions.date))
-    const className = (row) => row.class_sessions.practices?.title || row.class_sessions.theory_classes?.title || ''
-    const comments = [
-      ...data.attendance.filter((row) => row.comment).map((row) => ({ date: row.class_sessions.date, source: `${row.class_sessions.teaching_assignments?.degree_modules?.module_id || ''} · sesión${className(row) ? ` · ${className(row)}` : ''}`, text: row.comment })),
-      ...data.practices.filter((row) => row.comment).map((row) => ({ date: row.updated_at, source: `${row.practices?.module_id || ''} · práctica · ${row.practices?.title || ''}`, text: row.comment })),
-      ...data.grades.filter((row) => row.comment).map((row) => ({ date: row.assessments?.date || row.updated_at, source: `${row.assessments?.module_id || ''} · ${row.assessments?.kind === 'examen' ? 'examen' : 'evaluación'} · ${row.assessments?.title || ''}`, text: row.comment })),
-    ].sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    const graded = current.filter((item) => item.degree_modules?.kind === 'teoria' && item.theory_grade != null)
-    const average = graded.length ? graded.reduce((sum, item) => sum + Number(item.theory_grade), 0) / graded.length : null
-    const evaluatedPractices = data.practices.filter((row) => row.evaluation)
-    const years = [...new Map([...data.enrollments, ...data.modules].map((item) => [item.academic_year_id, item.academic_years])).entries()]
-      .map(([id, year]) => ({ id, year, enrollment: data.enrollments.find((item) => item.academic_year_id === id), modules: data.modules.filter((item) => item.academic_year_id === id) }))
-      .sort((a, b) => (b.year?.starts_on || '').localeCompare(a.year?.starts_on || ''))
-    return { currentEnrollment, current, pending, marked, present: count('P'), late: count('L'), absent: count('A'), byModule: Object.values(byModule).sort((a, b) => a.id.localeCompare(b.id)), absences, className, comments, average, evaluatedPractices, years }
-  }, [data])
+  const view = useMemo(() => (data ? buildStudentView(data) : null), [data])
 
-  if (error) return <div className="space-y-4"><button type="button" className="back-link" onClick={onBack}>← Alumnos</button><p role="alert" className="notice-error">{error}</p></div>
-  if (!data || !view) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">Cargando ficha…</div>
+  const back = !selfView && <button type="button" className="back-link" onClick={onBack}>← Alumnos</button>
+  if (error) return <div className="space-y-4">{back}<p role="alert" className="notice-error">{error}</p></div>
+  if (!data || !view) return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">{selfView ? 'Cargando tus datos…' : 'Cargando ficha…'}</div>
+  const you = (staffText, studentText) => (selfView ? studentText : staffText)
 
   const { student, profile } = data
   const group = view.currentEnrollment?.class_groups
@@ -134,7 +62,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
 
   return (
     <div className="space-y-5">
-      <button type="button" className="back-link" onClick={onBack}>← Alumnos</button>
+      {back}
 
       <section className="card flex flex-wrap items-center gap-4 p-5">
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-lg font-semibold text-accent-strong">{initials}</span>
@@ -148,10 +76,10 @@ export default function StudentDashboard({ studentId, user, onBack }) {
           </p>
         </div>
         {dropped && <span className="badge bg-danger-soft text-danger">Baja desde {shortDate(view.currentEnrollment.left_on)}</span>}
-        {!profile && <span className="badge text-muted">Sin cuenta de acceso</span>}
+        {!profile && !selfView && <span className="badge text-muted">Sin cuenta de acceso</span>}
       </section>
 
-      <ConflictNotice rows={conflicts} title="Clases solapadas" hint="Se puede reubicar al alumno en Escuela → Alumnos o ajustar el horario de una de las clases." />
+      {!selfView && <ConflictNotice rows={conflicts} title="Clases solapadas" hint="Se puede reubicar al alumno en Escuela → Alumnos o ajustar el horario de una de las clases." />}
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         {tiles.map(([label, value, tone, hint]) => (
@@ -166,7 +94,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="space-y-5">
           <Card title="Módulos este curso" icon="layers">
-            {view.current.length === 0 ? <Empty>Sin módulos este curso.</Empty> : (
+            {view.current.length === 0 ? <Empty>{you('Sin módulos este curso.', 'Aún no tienes módulos este curso.')}</Empty> : (
               <ul className="divide-y divide-line">
                 {view.current.map((item) => {
                   const [label, tone] = STATUS[item.status] || STATUS.cursando
@@ -199,7 +127,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
           )}
 
           <Card title="Exámenes y evaluaciones" icon="grade">
-            {data.grades.length === 0 ? <Empty>Sin notas de exámenes ni evaluaciones.</Empty> : (
+            {data.grades.length === 0 ? <Empty>{you('Sin notas de exámenes ni evaluaciones.', 'Aún no tienes notas de exámenes ni evaluaciones.')}</Empty> : (
               <ul className="divide-y divide-line">
                 {[...data.grades].sort((a, b) => String(b.assessments?.date || '').localeCompare(String(a.assessments?.date || ''))).map((row, index) => (
                   <li key={index} className="flex items-center gap-3 py-2 text-sm">
@@ -213,7 +141,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
           </Card>
 
           <Card title="Prácticas" icon="wrench">
-            {data.practices.length === 0 ? <Empty>Sin prácticas registradas.</Empty> : (
+            {data.practices.length === 0 ? <Empty>{you('Sin prácticas registradas.', 'Aún no tienes prácticas registradas.')}</Empty> : (
               <ul className="divide-y divide-line">
                 {data.practices.map((row) => (
                   <li key={row.practice_id} className="flex items-center gap-3 py-2 text-sm">
@@ -229,7 +157,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
           </Card>
 
           <Card title="Comentarios" icon="edit">
-            {view.comments.length === 0 && !student.notes ? <Empty>Sin comentarios.</Empty> : (
+            {view.comments.length === 0 ? <Empty>{you('Sin comentarios.', 'Aún no tienes comentarios del profesorado.')}</Empty> : (
               <ul className="space-y-3">
                 {view.comments.slice(0, 30).map((item, index) => (
                   <li key={index} className="rounded-xl bg-subtle/50 px-3 py-2">
@@ -243,7 +171,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
         </div>
 
         <div className="space-y-5">
-          <PersonalData student={student} profile={profile} canEdit={isManager(user.role)} editing={editing} setEditing={setEditing} onSaved={() => { setEditing(false); setVersion((value) => value + 1) }} />
+          <PersonalData student={student} profile={profile} canEdit={!selfView && isManager(user.role)} showNotes={!selfView} editing={editing} setEditing={setEditing} onSaved={() => { setEditing(false); setVersion((value) => value + 1) }} />
 
           <Card title="Asistencia por módulo" icon="chart">
             {view.byModule.length === 0 ? <Empty>Aún no hay asistencia registrada.</Empty> : (
@@ -271,7 +199,7 @@ export default function StudentDashboard({ studentId, user, onBack }) {
           </Card>
 
           <Card title={`Faltas${view.absences.length ? ` · ${view.absences.length}` : ''}`} icon="calendar" tone={view.absences.length ? 'text-danger' : ''}>
-            {view.absences.length === 0 ? <Empty>Sin faltas.</Empty> : (
+            {view.absences.length === 0 ? <Empty>{you('Sin faltas.', 'No tienes faltas.')}</Empty> : (
               <ul className="divide-y divide-line">
                 {view.absences.slice(0, 20).map((row) => (
                   <li key={row.session_id} className="flex items-center gap-3 py-2 text-sm">
@@ -332,7 +260,7 @@ function Empty({ children }) {
 }
 
 // Datos personales: los ve el personal; los edita administración y supervisión
-function PersonalData({ student, profile, canEdit, editing, setEditing, onSaved }) {
+function PersonalData({ student, profile, canEdit, showNotes, editing, setEditing, onSaved }) {
   const [form, setForm] = useState(() => Object.fromEntries([...PERSONAL.map(([key]) => [key, student[key] || '']), ['notes', student.notes || '']]))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -388,7 +316,7 @@ function PersonalData({ student, profile, canEdit, editing, setEditing, onSaved 
         <dt className="text-muted">Cuenta</dt>
         <dd className={profile ? 'text-ink' : 'text-faint'}>{profile ? `${profile.email}${profile.status && profile.status !== 'active' ? ` · ${profile.status}` : ''}` : 'Sin vincular'}</dd>
       </dl>
-      {student.notes && <div className="mt-3 rounded-xl bg-subtle/60 px-3 py-2"><p className="text-xs font-medium text-muted">Observaciones</p><p className="mt-0.5 whitespace-pre-line text-sm text-ink">{student.notes}</p></div>}
+      {showNotes && student.notes && <div className="mt-3 rounded-xl bg-subtle/60 px-3 py-2"><p className="text-xs font-medium text-muted">Observaciones</p><p className="mt-0.5 whitespace-pre-line text-sm text-ink">{student.notes}</p></div>}
     </section>
   )
 }
