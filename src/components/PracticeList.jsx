@@ -13,6 +13,8 @@ import ModuleStudents from './ModuleStudents.jsx'
 import { SESSION_FIELDS, saveSessions, sessionErrors, useFreeModuleSessions, useModuleAssignments } from '../lib/practiceSessions.js'
 import { compareCodes, outcomeLabel, useModuleStructure } from '../lib/curriculum.js'
 import Assessments from './Assessments.jsx'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
@@ -33,6 +35,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
   const { filterId } = useSchool()
   const [practices, setPractices] = useState([])
   const [modules, setModules] = useState([])
+  const moduleColors = useModuleColors()
   const [students, setStudents] = useState([])
   const [memberships, setMemberships] = useState([])
   const [records, setRecords] = useState([])
@@ -361,13 +364,14 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     const moduleName = modules.find((module) => module.id === selectedPractice.module_id)?.name
     const practiceSub = structure.submodules.find((sub) => sub.id === selectedPractice.submodule_id)
     const practiceOutcome = structure.outcomes.find((outcome) => outcome.id === selectedPractice.learning_outcome_id)
-    const meta = [selectedPractice.id, selectedPractice.ata].filter(Boolean).join(' · ')
+    const meta = [selectedPractice.ata].filter(Boolean).join(' · ')
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setOpenSessionId(null) }}>← Prácticas</button>
       <section>
-        <p className="text-xs font-medium uppercase tracking-wide text-faint">{selectedPractice.module_id}{moduleName ? ` · ${moduleName}` : ''}</p>
+        {/* Encima del título: módulo, submódulo y nº de práctica, en negro */}
+        <p className="text-sm font-semibold uppercase tracking-wide text-ink tabular-nums" title={moduleName || undefined}>{[selectedPractice.module_id, practiceSub?.code, selectedPractice.id].filter(Boolean).join(' · ')}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-        <p className="mt-1 text-sm text-muted">{meta}</p>
+        {meta && <p className="mt-1 text-sm text-muted">{meta}</p>}
         {(practiceSub || practiceOutcome) && (
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
             {practiceSub && <span className="badge bg-subtle py-0.5 text-ink-soft" title="Submódulo">{practiceSub.code} · {practiceSub.name}</span>}
@@ -481,14 +485,14 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     </section>
     <div className="space-y-2">{filtered.map((practice) => {
       const enrolledCount = memberships.filter((entry) => entry.module_id === practice.module_id).length
-      return <article key={practice.id} className="card group flex items-center gap-4 p-2 pr-3 transition-shadow hover:shadow-lift">
+      return <article key={practice.id} className={`card group flex items-center gap-4 border-l-[3px] border-r-[3px] p-2 pr-3 ${MODULE_HOVER}`} style={moduleStyle(moduleColors[practice.module_id])}>
         <button className="flex min-w-0 flex-1 items-center gap-4 rounded-xl p-2 text-left" onClick={() => setSelectedPractice(practice)}>
           <span className="flex w-14 shrink-0 flex-col items-center rounded-xl bg-subtle py-2">
             <span className="text-[11px] text-muted">{practice.date ? new Date(`${practice.date}T00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '') : '—'}</span>
             <span className="text-lg font-semibold leading-none text-ink">{practice.date ? Number(String(practice.date).slice(8, 10)) : ''}</span>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums"><span className="font-semibold text-ink-soft">{practice.module_id}</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">{practice.id}</span></span>
             <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}

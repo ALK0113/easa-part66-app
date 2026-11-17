@@ -4,8 +4,12 @@ import { useSchool } from '../contexts/useSchool.js'
 import { groupLabel } from '../lib/academic.js'
 import { ROLES } from '../lib/roles.js'
 import { time } from '../lib/schedule.js'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
+import Icon from './Icon.jsx'
 
-// Próximas sesiones de teoría y de práctica del módulo: tipo, módulo, submódulo, ATA, fecha y horas.
+// Próximas sesiones de teoría y de práctica del módulo: tipo, módulo, submódulo, ATA, nº de práctica
+// (con un icono si tiene TLB), fecha y horas. Cada sesión lleva el color del módulo.
 // El alumno ve solo las de sus grupos.
 // Se ven tres a la vez; el resto con scroll
 const LIMIT = 40
@@ -14,6 +18,8 @@ export default function UpcomingSessions({ moduleId, user, onOpenPractice, onOpe
   const { filterId } = useSchool()
   const [rows, setRows] = useState(null)
   const [submodules, setSubmodules] = useState({})
+  const [withTlb, setWithTlb] = useState(new Set())
+  const moduleColors = useModuleColors()
 
   useEffect(() => {
     let active = true
@@ -36,6 +42,12 @@ export default function UpcomingSessions({ moduleId, user, onOpenPractice, onOpe
       const list = (sessionResult.data || []).filter((row) => !ownGroups || ownGroups.has(row.teaching_assignments.group_id))
       setSubmodules(Object.fromEntries((subResult.data || []).map((sub) => [sub.id, sub])))
       setRows(list.slice(0, LIMIT))
+      // Prácticas con TLB asociado (el alumno solo ve los publicados para él)
+      const practiceIds = [...new Set(list.slice(0, LIMIT).map((row) => row.practice_id).filter(Boolean))]
+      if (practiceIds.length) {
+        const { data: tlbRows } = await supabase.from('tlbs').select('practice_id').in('practice_id', practiceIds)
+        if (active) setWithTlb(new Set((tlbRows || []).map((row) => row.practice_id)))
+      }
     }
     load()
     return () => { active = false }
@@ -45,7 +57,7 @@ export default function UpcomingSessions({ moduleId, user, onOpenPractice, onOpe
   if (!rows.length) return <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay sesiones de teoría ni de práctica programadas.</p>
 
   return (
-    <ul className="max-h-[12.75rem] overflow-y-auto overscroll-contain pr-1" aria-label="Próximas sesiones">
+    <ul className="max-h-[14.5rem] space-y-1.5 overflow-y-auto overscroll-contain pr-1" aria-label="Próximas sesiones">
       {rows.map((row) => {
         const practice = row.practices
         const theory = row.theory_classes
@@ -54,7 +66,8 @@ export default function UpcomingSessions({ moduleId, user, onOpenPractice, onOpe
         return (
           <li key={row.id}>
             <button type="button" onClick={() => (practice ? onOpenPractice?.(practice.id) : onOpenTheory?.(theory?.id))}
-              className="flex w-full items-center gap-4 rounded-xl px-3 py-2.5 text-left hover:bg-subtle">
+              style={moduleStyle(moduleColors[moduleId])}
+              className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-2.5 text-left ${MODULE_HOVER}`}>
               <span className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-subtle py-1.5">
                 <span className="text-[11px] text-muted">{date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span>
                 <span className="text-base font-semibold leading-none text-ink">{date.getDate()}</span>
@@ -65,6 +78,12 @@ export default function UpcomingSessions({ moduleId, user, onOpenPractice, onOpe
                   <span>{moduleId}</span>
                   {sub && <span>· {sub.code}</span>}
                   {practice?.ata && <span>· {practice.ata}</span>}
+                  {practice && <span className="normal-case tracking-normal">· Nº {practice.id}</span>}
+                  {practice && withTlb.has(practice.id) && (
+                    <span className="inline-flex items-center gap-0.5 normal-case tracking-normal text-ink-soft" title="Tiene TLB asociado">
+                      <Icon name="clipboard" size={12} /><span className="sr-only">Tiene TLB asociado</span>TLB
+                    </span>
+                  )}
                 </span>
                 <span className="mt-0.5 block truncate text-sm font-medium text-ink">{practice?.title || theory?.title}</span>
               </span>

@@ -5,10 +5,13 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { formatDate } from '../lib/format.js'
 import Icon from './Icon.jsx'
-import { canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
+import { ROLES, canAccessPage, isManager, teachesLikeProfessor } from '../lib/roles.js'
 import { RecordSummary, StudentRecordRow } from './RecordControls.jsx'
 import { StudentPracticeResult, StudentPracticeSessions } from './SessionAttendance.jsx'
 import UpcomingSessions from './UpcomingSessions.jsx'
+import { MODULE_HOVER, moduleColor, moduleStyle } from '../lib/moduleColors.js'
+import { useStudentModule } from '../lib/studentModule.js'
+import StudentModuleSummary from './StudentModuleSummary.jsx'
 
 // Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
@@ -41,6 +44,9 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  // El alumno no ve la lista de alumnos: ve su asistencia, sus faltas y sus notas del módulo
+  const isStudent = user.role === ROLES.STUDENT
+  const studentData = useStudentModule(moduleId, isStudent ? user.id : null)
 
   // Admin con una escuela elegida: solo los datos de esa escuela
   const { filterId } = useSchool()
@@ -161,18 +167,26 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
   if (!module) return <div className="card empty">Módulo no encontrado.</div>
 
   const runSave = async (save) => { setBusy(true); await save(); setBusy(false) }
-  const tlbRow = (tlb, title) => (
-    <li key={tlb.id}>
-      <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openTLB(tlb.id)}>
-        <Icon name="clipboard" className="text-faint" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-ink">{title}</span>
-          <span className="mt-0.5 block text-xs text-muted">{formatDate(tlb.date)} · {defectsForTLB(tlb.id).length} defectos</span>
-        </span>
-        <span className={`badge ${tlb.published ? 'bg-success-soft text-success' : ''}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>
-      </button>
-    </li>
-  )
+  // Tarjeta de TLB igual que en la sección Technical Log Book: práctica asociada, título, avión y estado
+  const tlbRow = (tlb) => {
+    const practice = practices.find((item) => item.id === tlb.practice_id)
+    const defectCount = defectsForTLB(tlb.id).length
+    return (
+      <li key={tlb.id}>
+        <button className={`card flex w-full items-center gap-4 border-l-[3px] border-r-[3px] p-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openTLB(tlb.id)}>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-subtle text-muted"><Icon name="clipboard" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">
+              <span className="font-semibold text-ink-soft">{tlb.module_id}</span><span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">Práctica {tlb.practice_id}</span>
+            </span>
+            <span className="mt-0.5 block truncate font-medium text-ink">{practice ? practice.title : `Práctica ${tlb.practice_id}`}</span>
+            <span className="mt-1 block truncate text-xs text-muted">{tlb.aircraft} · {tlb.registration} · {formatDate(tlb.date)} · {defectCount} {defectCount === 1 ? 'defecto' : 'defectos'}</span>
+          </span>
+          {canEdit && <span className={`badge shrink-0 py-1 ${tlb.published ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'}`}>{tlb.published ? 'Publicado' : 'Borrador'}</span>}
+        </button>
+      </li>
+    )
+  }
 
   if (selectedPractice) {
     const practiceRecords = recordsForPractice(selectedPractice.id)
@@ -184,10 +198,11 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     const practiceTLBs = tlbForPractice(selectedPractice.id)
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
-      <section>
-        <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
+      <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
+        {/* Encima del título: módulo y nº de práctica, en negro */}
+        <p className="text-sm font-semibold uppercase tracking-wide text-ink tabular-nums">{module.id} · {selectedPractice.id}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-        {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
+        {(selectedPractice.ata || selectedPractice.detail) && <p className="mt-1 text-sm text-muted">{[selectedPractice.ata, selectedPractice.detail].filter(Boolean).join(' · ')}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
           {selectedPractice.start_time && <span className="badge gap-1.5 bg-surface py-1"><Icon name="clock" size={14} className="text-faint" />{String(selectedPractice.start_time).slice(0, 5)} · {selectedPractice.hours} h</span>}
@@ -196,7 +211,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       </section>
       {!canEdit && <>
         <StudentPracticeResult record={practiceRecords[0]} />
-        <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} />
+        <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} moduleId={module.id} />
       </>}
       {canEdit && <RecordSummary items={[['Presentes', counts.P, 'bg-success'], ['Tarde', counts.L, 'bg-warn'], ['Faltas', counts.A, 'bg-danger'], ['Aptos', `${counts.apto}/${students.length}`, 'bg-accent']]} />}
       {canEdit && <section className="card overflow-hidden">
@@ -223,26 +238,26 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       </section>}
       <section className="card p-3">
         <div className="flex items-center justify-between px-3 pb-1 pt-2">
-          <h3 className="font-semibold text-ink">Task Log Book de la práctica</h3>
+          <h3 className="font-semibold text-ink">Technical Log Book de la práctica</h3>
           {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => createTLB({ module_id: module.id, practice_id: selectedPractice.id })}><Icon name="plus" size={14} />Crear TLB</button>}
         </div>
-        {practiceTLBs.length ? <ul>{practiceTLBs.map((tlb) => tlbRow(tlb, `${tlb.aircraft} · ${tlb.registration}`))}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
+        {practiceTLBs.length ? <ul className="space-y-2 px-1 pb-1 pt-1">{practiceTLBs.map(tlbRow)}</ul> : <p className="px-3 pb-3 pt-1 text-sm text-muted">No hay TLB para esta práctica.</p>}
       </section>
     </div>
   }
 
   const totalHours = practices.reduce((sum, practice) => sum + (practice.hours || 0), 0)
-  // Módulo → (submódulos) → clases teóricas y clases prácticas. El Task Log Book es una subcategoría
+  // Módulo → (submódulos) → clases teóricas y clases prácticas. El Technical Log Book es una subcategoría
   // de las clases prácticas (sección «tlb» dentro de la pestaña Práctica).
   // El número de cada pestaña va en pequeño junto al nombre
   const tabs = [['resumen', 'Resumen'], ['teoria', 'Teoría', theoryCount], ['practicas', 'Práctica', practices.length], ['videos', 'Vídeos', videos.length], ...(usesPracticePage ? [['alumnos', 'Alumnos', students.length]] : [])]
   const inPractices = section === 'practicas' || section === 'tlb'
-  const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Task Log Book · ${tlbs.length}`]]
+  const practiceViews = [['practicas', `Clases prácticas · ${practices.length}`], ['tlb', `Technical Log Book · ${tlbs.length}`]]
   const practiceRow = (practice) => (
     <li key={practice.id}>
-      <button className="flex w-full items-center gap-4 rounded-xl px-3 py-3 text-left hover:bg-subtle" onClick={() => openPractice(practice)}>
+      <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums"><span className="font-semibold text-ink-soft">{practice.module_id}</span><span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">{practice.id}</span></span>
           <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>
@@ -258,16 +273,18 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
 
   return <div className="space-y-6">
     <button type="button" className="back-link" onClick={onBack}>← Módulos</button>
-    <section>
+    <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
       <span className="badge bg-accent-soft text-accent-strong">{module.id}</span>
       <h2 className="mt-2 text-2xl font-semibold text-ink">{module.name}</h2>
       <p className="mt-1 max-w-2xl text-sm text-muted">{module.description || 'Sin descripción'}</p>
-      <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{[['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]].map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
+      <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{(isStudent
+        ? [['Prácticas', practices.length], ['Horas', totalHours], ['Mi asistencia', studentData?.rate == null ? '—' : `${studentData.rate}%`], ['Mis faltas', studentData?.linked ? studentData.absences.length : '—']]
+        : [['Prácticas', practices.length], ['Horas', totalHours], ['Profesores', teachers.length], ['Alumnos', students.length]]).map(([label, value]) => <div key={label} className="card px-5 py-4"><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 text-xl font-semibold text-ink">{value}</dd></div>)}</dl>
     </section>
     <nav aria-label="Contenido del módulo" className="tabs">{tabs.map(([id, label, count]) => <button key={id} aria-current={(id === 'practicas' ? inPractices : section === id) ? 'page' : undefined} className="tab" onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}>{label}{count != null && <span className="ml-1.5 text-xs font-normal tabular-nums text-muted">{count}</span>}</button>)}</nav>
 
     {inPractices && (
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Task Log Book">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Prácticas y Technical Log Book">
         {practiceViews.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => { setSection(id); setSelectedPractice(null); setPracticeToOpen(null); setTlbToOpen(null) }}
             className={`rounded-xl border px-3.5 py-1.5 text-sm font-medium ${section === id ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-ink-soft hover:bg-subtle'}`}>
@@ -284,8 +301,9 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
           onOpenPractice={(id) => { const practice = practices.find((item) => item.id === id); if (practice) openPractice(practice); else setSection('practicas') }}
           onOpenTheory={() => setSection('teoria')} />
       </section>
+      {isStudent && <StudentModuleSummary data={studentData} moduleId={moduleId} color={moduleColor(module.color)} />}
       <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Profesores</h3>{teachers.length ? <ul className="space-y-3">{teachers.map((teacher) => <li key={teacher.id} className="flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent-strong">{(teacher.full_name || 'P')[0].toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-medium text-ink">{teacher.full_name || 'Profesor'}</span><span className="block truncate text-xs text-muted">{teacher.email || ''}</span></span></li>)}</ul> : <p className="text-sm text-muted">No hay profesores asociados.</p>}</section>
-      <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>
+      {!isStudent && <section className="card p-5"><h3 className="mb-3 font-semibold text-ink">Alumnos</h3>{students.length ? <ul className="max-h-72 space-y-3 overflow-y-auto">{students.map((student) => <li key={student.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-ink">{student.name}</span><span className="shrink-0 text-xs text-muted">{student.group_name || '—'} · {student.promo || '—'}</span></li>)}</ul> : <p className="text-sm text-muted">No hay alumnos asociados.</p>}</section>}
     </div>}
 
     {section === 'teoria' && <Suspense fallback={tabFallback}><TheoryClassList key={`th-${moduleId}`} user={user} moduleId={moduleId} /></Suspense>}
@@ -298,7 +316,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     )}
 
     {section === 'practicas' && usesPracticePage && <Suspense fallback={tabFallback}><PracticeList key={`p-${moduleId}`} user={user} moduleId={moduleId} initialPracticeId={practiceToOpen} onClearInitial={() => setPracticeToOpen(null)} onCreateTLB={createTLB} /></Suspense>}
-    {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul>{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
+    {section === 'practicas' && !usesPracticePage && <section className="card p-3">{practices.length ? <ul className="space-y-1.5">{practices.map(practiceRow)}</ul> : <p className="empty">No hay prácticas en este módulo.</p>}</section>}
 
     {section === 'tlb' && <Suspense fallback={tabFallback}><TLBList key={`t-${moduleId}`} user={user} moduleId={moduleId} initialTlbId={tlbToOpen} onClearInitialTlb={() => setTlbToOpen(null)} initialCreate={tlbToCreate} onClearInitialCreate={() => setTlbToCreate(null)} /></Suspense>}
 

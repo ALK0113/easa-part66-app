@@ -5,7 +5,7 @@ import { KIND_LABEL, groupLabel } from '../lib/academic.js'
 import { ROLES, teachesLikeProfessor } from '../lib/roles.js'
 import { addDays, fetchSessions, parseISODate, time, toISODate } from '../lib/schedule.js'
 import Icon from './Icon.jsx'
-import { moduleColor } from '../lib/moduleColors.js'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
 import { fetchEvents } from '../lib/personalEvents.js'
 import { EventCard } from './PersonalEvents.jsx'
 
@@ -110,8 +110,10 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
                   const detail = teachesLikeProfessor(user.role) ? groupLabel(assignment.class_groups) : assignment.profiles?.full_name
                   return (
                     <li key={key}>
-                      <button type="button" onClick={() => openSession(session)} style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}
-                        className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-line px-3 py-2.5 text-left hover:bg-subtle ${cancelled ? 'opacity-60' : ''}`}>
+                      {/* Al pasar el cursor, un pastel muy suave del color del módulo */}
+                      <button type="button" onClick={() => openSession(session)}
+                        style={moduleStyle(assignment.degree_modules?.modules?.color)}
+                        className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-2.5 text-left ${MODULE_HOVER} ${cancelled ? 'opacity-60' : ''}`}>
                         <span className={`w-14 shrink-0 text-sm tabular-nums ${live ? 'font-semibold text-accent-strong' : 'text-muted'}`}>{time(session.start_time)}</span>
                         <span className="min-w-0 flex-1">
                           <span className={`block truncate font-medium text-ink ${cancelled ? 'line-through' : ''}`}>

@@ -4,7 +4,7 @@ import { useSchool } from '../contexts/useSchool.js'
 
 // Los permisos de cada entrada salen de PAGE_ACCESS (src/lib/roles.js).
 // Agrupado por uso: lo diario arriba, la administración abajo.
-// Prácticas, Task Log Book y Vídeos no tienen entrada propia: se ven dentro de cada módulo.
+// Prácticas, Technical Log Book y Vídeos no tienen entrada propia: se ven dentro de cada módulo.
 const sections = [
   {
     id: 'daily',

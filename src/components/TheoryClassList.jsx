@@ -8,6 +8,8 @@ import { HoursStatus, SessionsEditor } from './PracticeSessions.jsx'
 import { ClassSessions, SessionPage } from './SessionAttendance.jsx'
 import Assessments from './Assessments.jsx'
 import Icon from './Icon.jsx'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 const NONE = 'sin'
 
@@ -15,6 +17,7 @@ const NONE = 'sin'
 // presentaciones (enlaces), sesiones en el calendario y sus exámenes/evaluaciones.
 export default function TheoryClassList({ user, moduleId }) {
   const { submodules, outcomes, schoolId } = useModuleStructure(moduleId)
+  const moduleColors = useModuleColors()
   const [classes, setClasses] = useState(null)
   const [links, setLinks] = useState([])
   const [sessions, setSessions] = useState([])
@@ -244,7 +247,7 @@ export default function TheoryClassList({ user, moduleId }) {
               {items.map((item) => {
                 const outcome = outcomeOf(item.learning_outcome_id)
                 return (
-                  <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className="card flex w-full items-center gap-4 p-4 text-left transition-shadow hover:shadow-lift">
+                  <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className={`card flex w-full items-center gap-4 border-l-[3px] border-r-[3px] p-4 text-left ${MODULE_HOVER}`} style={moduleStyle(moduleColors[moduleId])}>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-ink">{item.title}</span>
                       <span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">

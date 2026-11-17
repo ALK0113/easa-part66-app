@@ -213,7 +213,7 @@ function App() {
     'module-detail': selectedModuleId ? `Módulo ${selectedModuleId}` : 'Módulo',
     students: user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos',
     practices: 'Prácticas',
-    tlb: user.role === ROLES.STUDENT ? 'Mi Task Log Book' : 'Task Log Book',
+    tlb: user.role === ROLES.STUDENT ? 'Mi Technical Log Book' : 'Technical Log Book',
     videos: 'Vídeos formativos',
     assignments: 'Escuela',
     setup: 'Escuela',
@@ -400,7 +400,7 @@ function DashboardHome({ user, setActivePage, onOpenPractice, openSetup }) {
   }, [user.id, user.role, filterId])
 
   const isStudent = user.role === ROLES.STUDENT
-  const cards = [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Task Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
+  const cards = [['students', user.role === ROLES.TEACHER ? 'Mis alumnos' : 'Alumnos', 'users', 'students'], ['modules', 'Módulos', 'book', 'modules'], ['tlbs', 'Technical Log Books', 'clipboard', 'tlb'], ['videos', 'Vídeos', 'play', 'videos']]
 
   const firstName = (user.name || '').split(' ')[0]
   const todayText = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })

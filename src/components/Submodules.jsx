@@ -4,11 +4,14 @@ import { getSupabaseErrorMessage } from '../lib/supabaseErrors.js'
 import { buildSubmodulesPlan, compareCodes, downloadSubmodulesTemplate, readSubmodules } from '../lib/curriculum.js'
 import Modal from './Modal.jsx'
 import Icon from './Icon.jsx'
+import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
 
 // Submódulos EASA (11.1, 11.2…) de los módulos de un grado: a mano o importados.
 export default function Submodules({ degree, schoolId, moduleNames, onClose }) {
   const moduleIds = [...new Set((degree.degree_modules || []).map((item) => item.module_id))].sort(compareCodes)
   const [items, setItems] = useState(null)
+  const moduleColors = useModuleColors()
   const [moduleId, setModuleId] = useState(moduleIds[0] || '')
   const [form, setForm] = useState({ code: '', name: '' })
   const [pasted, setPasted] = useState('')
@@ -96,15 +99,15 @@ export default function Submodules({ degree, schoolId, moduleNames, onClose }) {
             </div>
             <p className="text-sm text-muted">{moduleId} · {moduleNames[moduleId] || ''}</p>
             {items === null ? <p className="text-sm text-muted">Cargando…</p> : (
-              <ul className="divide-y divide-line rounded-xl border border-line">
+              <ul className="space-y-1.5">
                 {ofModule.map((item) => (
-                  <li key={item.id} className="flex items-center gap-3 px-4 py-2 text-sm">
+                  <li key={item.id} className={`flex items-center gap-3 rounded-xl border border-l-[3px] border-r-[3px] border-line px-4 py-2 text-sm ${MODULE_HOVER}`} style={moduleStyle(moduleColors[moduleId])}>
                     <span className="w-14 shrink-0 font-semibold tabular-nums text-ink">{item.code}</span>
                     <span className="min-w-0 flex-1 truncate text-ink-soft">{item.name}</span>
                     <button type="button" className="rounded-lg p-1 text-muted hover:bg-danger-soft hover:text-danger" disabled={busy} aria-label={`Quitar ${item.code}`} onClick={() => remove(item)}><Icon name="x" size={14} /></button>
                   </li>
                 ))}
-                {!ofModule.length && <li className="px-4 py-3 text-sm text-muted">Sin submódulos todavía.</li>}
+                {!ofModule.length && <li className="rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">Sin submódulos todavía.</li>}
               </ul>
             )}
             <form className="grid gap-2 sm:grid-cols-[6rem_1fr_auto]" onSubmit={add}>

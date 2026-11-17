@@ -31,7 +31,7 @@ export const practices = [
       'Inspeccionar visualmente el sistema en busca de fugas o daños',
       'Realizar el procedimiento de purgado del sistema hidráulico',
       'Reemplazar filtros hidráulicos siguiendo el manual de mantenimiento',
-      'Documentar todas las acciones realizadas en el Task Log Book'
+      'Documentar todas las acciones realizadas en el Technical Log Book'
     ]
   },
   { 
@@ -194,7 +194,7 @@ export const practices = [
       'Verificar la presión de nitrógeno del strut utilizando equipo especializado',
       'Inspeccionar sellos y wipers en busca de fugas de fluido hidráulico',
       'Realizar servicio de nitrógeno si la presión está fuera de límites',
-      'Documentar mediciones y acciones en el Task Log Book'
+      'Documentar mediciones y acciones en el Technical Log Book'
     ]
   },
   { 

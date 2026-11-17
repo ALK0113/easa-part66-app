@@ -153,7 +153,7 @@ export default function StudentDashboard({ studentId, user, onBack, selfView = f
                 ))}
               </ul>
             )}
-            {data.tlbs.length > 0 && <p className="mt-3 text-xs text-muted">Task Log Book: {data.tlbs.filter((row) => row.signed_at).length} firmados de {data.tlbs.length}.</p>}
+            {data.tlbs.length > 0 && <p className="mt-3 text-xs text-muted">Technical Log Book: {data.tlbs.filter((row) => row.signed_at).length} firmados de {data.tlbs.length}.</p>}
           </Card>
 
           <Card title="Comentarios" icon="edit">
