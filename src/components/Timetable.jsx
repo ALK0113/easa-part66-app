@@ -12,6 +12,8 @@ import Modal from './Modal.jsx'
 import ImportSchedule from './ImportSchedule.jsx'
 import { ConflictConfirm, RoomSelect } from './ScheduleControls.jsx'
 import { moduleColor } from '../lib/moduleColors.js'
+import { fetchEvents } from '../lib/personalEvents.js'
+import { EventCard, EventForm, EventView } from './PersonalEvents.jsx'
 import { checkConflicts, fetchTemplateConflicts, fetchWeekConflicts, roomValues, useRooms } from '../lib/scheduleTools.js'
 
 // Horario semanal. Profesor: sus clases y pasar lista. Alumno: sus clases.
@@ -173,6 +175,10 @@ function WeekView({ user, onOpenPractice }) {
   const [version, setVersion] = useState(0)
   const [conflicts, setConflicts] = useState(new Map())
   const [notice, setNotice] = useState(null)
+  // Eventos personales (propios y compartidos conmigo): editing = { event } o { date } para uno nuevo
+  const [events, setEvents] = useState([])
+  const [eventEditing, setEventEditing] = useState(null)
+  const [eventViewing, setEventViewing] = useState(null)
   const reload = useCallback(() => setVersion((value) => value + 1), [])
   const { groups, teachers, assignments } = useCurrentAssignments(canManageSessions, isAdmin ? null : user.id)
   const { schoolId } = useSchool()
@@ -219,14 +225,24 @@ function WeekView({ user, onOpenPractice }) {
     return () => { active = false }
   }, [from, to, filterId])
 
+  // Eventos personales de la semana
+  useEffect(() => {
+    let active = true
+    fetchEvents(from, to).then((list) => { if (active) setEvents(list) }).catch(() => { if (active) setEvents([]) })
+    return () => { active = false }
+  }, [from, to, version])
+
+  // Clases y eventos de cada día, por hora (los eventos de todo el día, arriba)
   const days = useMemo(() => {
     const list = WEEKDAYS.map((label, index) => {
       const date = toISODate(addDays(weekStart, index))
-      return { label, date, sessions: [], holiday: holidays.find((item) => item.starts_on <= date && item.ends_on >= date)?.name || null }
+      return { label, date, items: [], holiday: holidays.find((item) => item.starts_on <= date && item.ends_on >= date)?.name || null }
     })
-    ;(sessions || []).forEach((session) => list.find((day) => day.date === session.date)?.sessions.push(session))
-    return list.filter((day, index) => index < 5 || day.sessions.length)
-  }, [sessions, weekStart, holidays])
+    ;(sessions || []).forEach((session) => list.find((day) => day.date === session.date)?.items.push({ key: session.id, start: time(session.start_time), session }))
+    events.forEach((event) => list.find((day) => day.date === event.occurrence)?.items.push({ key: `e-${event.id}-${event.occurrence}`, start: event.all_day ? '00:00' : time(event.start_time), event }))
+    list.forEach((day) => day.items.sort((a, b) => a.start.localeCompare(b.start)))
+    return list.filter((day, index) => index < 5 || day.items.length)
+  }, [sessions, events, weekStart, holidays])
 
   const today = toISODate(new Date())
   const weekTitle = `${weekStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
@@ -283,9 +299,12 @@ function WeekView({ user, onOpenPractice }) {
             {rooms.length > 0 && <optgroup label="Aulas">{rooms.map((room) => <option key={room.id} value={`room:${room.id}`}>{room.name}</option>)}</optgroup>}
           </select>
         )}
-        {canManageSessions && assignments.length > 0 && (
-          <button type="button" className="btn-secondary ml-auto" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Clase suelta</button>
-        )}
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary" onClick={() => setEventEditing({ date: from <= today && today <= to ? today : from })}><Icon name="plus" size={16} />Evento</button>
+          {canManageSessions && assignments.length > 0 && (
+            <button type="button" className="btn-secondary" onClick={() => setCreating(true)}><Icon name="plus" size={16} />Clase suelta</button>
+          )}
+        </div>
       </div>
 
       {error && <p role="alert" className="notice-error">{error}</p>}
@@ -306,9 +325,12 @@ function WeekView({ user, onOpenPractice }) {
                 <span className="text-xs text-muted">{parseISODate(day.date).getDate()}</span>
               </h3>
               {day.holiday && <p className="mb-1.5 rounded-lg bg-warn-soft px-2 py-1 text-xs font-medium text-warn">Festivo · {day.holiday}</p>}
-              {day.sessions.length === 0 ? <p className="px-1 py-2 text-xs text-faint">{day.holiday ? 'No lectivo' : 'Sin clases'}</p> : (
+              {day.items.length === 0 ? <p className="px-1 py-2 text-xs text-faint">{day.holiday ? 'No lectivo' : 'Sin clases'}</p> : (
                 <ul className="space-y-1.5">
-                  {day.sessions.map((session) => {
+                  {day.items.map(({ key, session, event }) => {
+                    if (event) {
+                      return <li key={key}><EventCard event={event} onOpen={(item) => (item.is_owner ? setEventEditing({ event: item }) : setEventViewing(item))} /></li>
+                    }
                     const assignment = session.teaching_assignments
                     const cancelled = session.status === 'cancelada'
                     const conflict = visibleConflicts.get(session.id)
@@ -337,6 +359,14 @@ function WeekView({ user, onOpenPractice }) {
       )}
 
       {creating && <OneOffForm assignments={assignments} rooms={rooms} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload() }} />}
+      {eventEditing && (
+        <EventForm event={eventEditing.event} date={eventEditing.date} onClose={() => setEventEditing(null)}
+          onSaved={(text) => { setEventEditing(null); setNotice({ error: false, text }); reload() }} />
+      )}
+      {eventViewing && (
+        <EventView event={eventViewing} userId={user.id} onClose={() => setEventViewing(null)}
+          onLeft={(text) => { setEventViewing(null); setNotice({ error: false, text }); reload() }} />
+      )}
       {conflictModal}
     </div>
   )
