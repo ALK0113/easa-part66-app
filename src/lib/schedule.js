@@ -27,6 +27,19 @@ async function studentClasses(userId) {
   return { studentId: link.student_id, pairs: (data || []).map((row) => `${row.group_id}|${row.degree_modules?.module_id}`) }
 }
 
+// Alumno dado de alta sin grupo: va a todas las clases de su curso (el que eligió en su ficha; 1º si no lo indicó)
+// hasta que la coordinación le asigne grupo en Escuela → Alumnos. Devuelve los grupos de ese curso.
+export async function studentLevelGroups(userId) {
+  const [{ data: form }, { data: link }] = await Promise.all([
+    supabase.from('signup_forms').select('level').eq('profile_id', userId).maybeSingle(),
+    supabase.from('school_profiles').select('school_id').eq('profile_id', userId).maybeSingle(),
+  ])
+  if (!link) return []
+  const { data } = await supabase.from('class_groups').select('id,academic_years!inner(is_current,school_id)')
+    .eq('level', form?.level || 1).eq('academic_years.is_current', true).eq('academic_years.school_id', link.school_id)
+  return (data || []).map((group) => group.id)
+}
+
 // Clases entre dos fechas según el rol. filter: { groupId, profileId, roomId } para administración.
 export async function fetchSessions(user, from, to, filter = {}) {
   let query = supabase.from('class_sessions').select(SESSION_COLUMNS).gte('date', from).lte('date', to).order('date').order('start_time')
@@ -36,8 +49,13 @@ export async function fetchSessions(user, from, to, filter = {}) {
   else if (user.role === ROLES.STUDENT) {
     const classes = await studentClasses(user.id)
     studentId = classes.studentId
-    pairs = new Set(classes.pairs)
-    const groups = [...new Set(classes.pairs.map((pair) => pair.split('|')[0]))]
+    let groups = [...new Set(classes.pairs.map((pair) => pair.split('|')[0]))]
+    if (groups.length) {
+      pairs = new Set(classes.pairs)
+    } else if (studentId) {
+      // Sin grupo todavía: todas las clases de su curso
+      groups = await studentLevelGroups(user.id)
+    }
     if (!groups.length) return { sessions: [], studentId }
     query = query.in('teaching_assignments.group_id', groups)
   } else {

@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { ROLES, isManager } from './roles.js'
+import { studentLevelGroups } from './schedule.js'
 
 // Exámenes con fecha que se ven en el horario y en Inicio → Clases.
 // Alumno: los de sus módulos del curso actual (los no avisados ya los oculta la base de datos).
@@ -12,7 +13,13 @@ async function ownModuleIds(user) {
     if (!link) return []
     const { data } = await supabase.from('module_enrollments').select('status,degree_modules(module_id),academic_years!inner(is_current)')
       .eq('student_id', link.student_id).eq('academic_years.is_current', true)
-    return (data || []).filter((row) => !['baja', 'convalidado', 'exento'].includes(row.status)).map((row) => row.degree_modules?.module_id).filter(Boolean)
+    const ids = (data || []).filter((row) => !['baja', 'convalidado', 'exento'].includes(row.status)).map((row) => row.degree_modules?.module_id).filter(Boolean)
+    if (ids.length || data?.length) return ids
+    // Sin grupo todavía: los exámenes de los módulos que se imparten en los grupos de su curso
+    const groups = await studentLevelGroups(user.id)
+    if (!groups.length) return []
+    const { data: taught } = await supabase.from('teaching_assignments').select('degree_modules(module_id)').in('group_id', groups)
+    return (taught || []).map((row) => row.degree_modules?.module_id).filter(Boolean)
   }
   const { data } = await supabase.from('teaching_assignments').select('degree_modules(module_id),class_groups!inner(academic_years!inner(is_current))')
     .eq('profile_id', user.id).eq('class_groups.academic_years.is_current', true)
