@@ -8,6 +8,9 @@ import Icon from './Icon.jsx'
 import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
 import { fetchEvents } from '../lib/personalEvents.js'
 import { EventCard } from './PersonalEvents.jsx'
+import { fetchExams } from '../lib/exams.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
+import ExamCard from './ExamCard.jsx'
 
 // «Clases» en el inicio (profesor y alumno): hoy y los próximos días en una sola lista por día,
 // con unas 4 clases a la vista y desplazamiento para el resto.
@@ -26,6 +29,8 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
   const [sessions, setSessions] = useState(null)
   const [practices, setPractices] = useState([])
   const [events, setEvents] = useState([])
+  const [exams, setExams] = useState([])
+  const moduleColors = useModuleColors()
   const today = toISODate(new Date())
 
   useEffect(() => {
@@ -35,12 +40,14 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
     async function load() {
       try {
         // El coordinador ve en el inicio sus propias clases
-        const [result, practiceRows, eventRows] = await Promise.all([
+        const [result, practiceRows, eventRows, examRows] = await Promise.all([
           fetchSessions(user, from, to, user.role === ROLES.SUPERVISOR ? { profileId: user.id } : {}),
           teachesLikeProfessor(user.role) ? ownPractices(user.id, from, to) : [],
           fetchEvents(from, to).catch(() => []),
+          fetchExams(user, from, to),
         ])
         if (!active) return
+        setExams(examRows)
         setEvents(eventRows)
         setSessions(result.sessions)
         const linked = new Set(result.sessions.map((session) => session.practice_id).filter(Boolean))
@@ -60,11 +67,12 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
       ...(sessions || []).map((session) => ({ key: session.id, date: session.date, start: time(session.start_time), session })),
       ...practices.map((practice) => ({ key: `p-${practice.id}`, date: practice.date, start: practice.start_time ? time(practice.start_time) : '', practice })),
       ...events.map((event) => ({ key: `e-${event.id}-${event.occurrence}`, date: event.occurrence, start: event.all_day ? '00:00' : time(event.start_time), event })),
+      ...exams.map((exam) => ({ key: `x-${exam.id}`, date: exam.date, start: exam.start_time ? time(exam.start_time) : '00:00', exam })),
     ].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
     const map = new Map()
     entries.forEach((entry) => { if (!map.has(entry.date)) map.set(entry.date, []); map.get(entry.date).push(entry) })
     return [...map.entries()]
-  }, [sessions, practices, events])
+  }, [sessions, practices, events, exams])
 
   const now = new Date().toTimeString().slice(0, 5)
   const openSession = (session) => {
@@ -87,7 +95,8 @@ export default function TodayClasses({ user, onOpen, onOpenPractice }) {
             <div key={date}>
               <p className={`sticky top-0 z-10 bg-surface py-1.5 text-xs font-medium ${date === today ? 'text-accent-strong' : 'text-faint'}`}>{dayLabel(date, today)}</p>
               <ul className="space-y-1.5 pb-2">
-                {entries.map(({ key, session, practice, event }) => {
+                {entries.map(({ key, session, practice, event, exam }) => {
+                  if (exam) return <li key={key}><ExamCard exam={exam} color={moduleColors[exam.module_id]} compact onOpen={(item) => onOpenPractice?.(item.practice_id || null, item.module_id)} /></li>
                   if (event) return <li key={key}><EventCard event={event} compact onOpen={() => onOpen()} /></li>
                   if (practice) {
                     return (

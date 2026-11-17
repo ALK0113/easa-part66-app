@@ -12,6 +12,7 @@ import UpcomingSessions from './UpcomingSessions.jsx'
 import { MODULE_HOVER, moduleColor, moduleStyle } from '../lib/moduleColors.js'
 import { useStudentModule } from '../lib/studentModule.js'
 import StudentModuleSummary from './StudentModuleSummary.jsx'
+import PracticeDescription from './PracticeDescription.jsx'
 
 // Prácticas, TLB y vídeos viven dentro del módulo: se reutilizan sus páginas completas filtradas al módulo
 const PracticeList = lazy(() => import('./PracticeList.jsx'))
@@ -57,7 +58,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     async function load() {
       const [moduleResult, practiceResult, studentModuleResult, teacherModuleResult, tlbResult, videoResult, theoryResult] = await Promise.all([
         supabase.from('modules').select('id,name,description,color').eq('id', moduleId).maybeSingle(),
-        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,date,start_time,hours').eq('module_id', moduleId).order('date')),
+        bySchool(supabase.from('practices').select('id,module_id,ata,title,detail,description,objectives,date,start_time,hours').eq('module_id', moduleId).order('date')),
         supabase.from('student_modules').select('student_id').eq('module_id', moduleId),
         supabase.from('teacher_modules').select('profile_id').eq('module_id', moduleId),
         bySchool(supabase.from('tlbs').select('id,practice_id,module_id,aircraft,registration,msn,date,teacher_name,published,crs').eq('module_id', moduleId).order('date', { ascending: false })),
@@ -209,6 +210,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="users" size={14} className="text-faint" />{students.length} alumnos</span>
         </div>
       </section>
+      <PracticeDescription practice={selectedPractice} />
       {!canEdit && <>
         <StudentPracticeResult record={practiceRecords[0]} />
         <StudentPracticeSessions practiceId={selectedPractice.id} requiredHours={selectedPractice.hours} moduleId={module.id} />

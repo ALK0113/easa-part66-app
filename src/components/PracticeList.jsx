@@ -15,17 +15,13 @@ import { compareCodes, outcomeLabel, useModuleStructure } from '../lib/curriculu
 import Assessments from './Assessments.jsx'
 import { MODULE_HOVER, moduleStyle } from '../lib/moduleColors.js'
 import { useModuleColors } from '../lib/useModuleColors.js'
+import PracticeDescription from './PracticeDescription.jsx'
+import { parseObjectives } from '../lib/format.js'
 
 const inputClass = 'input'
 const buttonClass = 'btn-primary'
 
 
-// Parsear objectives (puede venir como string o array desde Supabase)
-function parseObjectives(value) {
-  if (!value) return []
-  if (Array.isArray(value)) return value
-  try { return JSON.parse(value) } catch { return [] }
-}
 
 // Con una escuela elegida por el admin, solo sus prácticas y alumnos
 const bySchool = (query, filterId) => (filterId ? query.eq('school_id', filterId) : query)
@@ -354,7 +350,6 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
       if (record.attendance) summary[record.attendance] += 1
       if (record.evaluation === 'Apto') summary.apto += 1
     })
-    const objectives = parseObjectives(selectedPractice.objectives)
     const hasSessions = sessionsOf(selectedPractice.id).length > 0
     const practiceSessions = sessionsOf(selectedPractice.id)
     const openSession = practiceSessions.find((session) => session.id === openSessionId)
@@ -388,29 +383,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
         </div>
       </section>
 
-      {(selectedPractice.description || objectives.length > 0) && (
-        <section className="card grid gap-5 p-6 md:grid-cols-2">
-          {selectedPractice.description && (
-            <div>
-              <h3 className="mb-2 text-sm font-semibold text-ink">Descripción</h3>
-              <p className="text-sm leading-relaxed text-ink-soft">{selectedPractice.description}</p>
-            </div>
-          )}
-          {objectives.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-sm font-semibold text-ink">Objetivos</h3>
-              <ul className="space-y-2 text-sm text-ink-soft">
-                {objectives.map((obj, idx) => (
-                  <li key={idx} className="flex gap-2.5">
-                    <Icon name="check" size={16} className="mt-0.5 text-accent" />
-                    <span>{obj}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-      )}
+      <PracticeDescription practice={selectedPractice} />
 
       <ClassSessions key={reloadKey} sessions={practiceSessions} requiredHours={selectedPractice.hours} canEdit={canEdit(selectedPractice)} isStudent={user.role === ROLES.STUDENT} editHint={canEdit(selectedPractice) ? 'Edita la práctica para añadir sus sesiones.' : ''} onOpenSession={setOpenSessionId} owner={{ practice_id: selectedPractice.id }} moduleId={selectedPractice.module_id} user={user} onSessionsChanged={refreshSessions} />
 

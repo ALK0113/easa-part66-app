@@ -13,6 +13,9 @@ import ImportSchedule from './ImportSchedule.jsx'
 import { ConflictConfirm, RoomSelect } from './ScheduleControls.jsx'
 import { MODULE_HOVER, MODULE_HOVER_ENABLED, moduleStyle } from '../lib/moduleColors.js'
 import { fetchEvents } from '../lib/personalEvents.js'
+import { fetchExams } from '../lib/exams.js'
+import { useModuleColors } from '../lib/useModuleColors.js'
+import ExamCard from './ExamCard.jsx'
 import { EventCard, EventForm, EventView } from './PersonalEvents.jsx'
 import { checkConflicts, fetchTemplateConflicts, fetchWeekConflicts, roomValues, useRooms } from '../lib/scheduleTools.js'
 
@@ -177,6 +180,8 @@ function WeekView({ user, onOpenPractice }) {
   const [notice, setNotice] = useState(null)
   // Eventos personales (propios y compartidos conmigo): editing = { event } o { date } para uno nuevo
   const [events, setEvents] = useState([])
+  const [exams, setExams] = useState([])
+  const moduleColors = useModuleColors()
   const [eventEditing, setEventEditing] = useState(null)
   const [eventViewing, setEventViewing] = useState(null)
   const reload = useCallback(() => setVersion((value) => value + 1), [])
@@ -232,7 +237,22 @@ function WeekView({ user, onOpenPractice }) {
     return () => { active = false }
   }, [from, to, version])
 
-  // Clases y eventos de cada día, por hora (los eventos de todo el día, arriba)
+  // Exámenes de la semana: los de mis módulos; la gestión, los de los módulos del grupo o profesor que mira
+  const viewKind = effectiveFilter?.kind
+  const viewId = effectiveFilter?.id
+  const examModules = !isAdmin ? null
+    : viewKind === 'group' ? assignments.filter((item) => item.group_id === viewId).map((item) => item.degree_modules?.module_id)
+      : viewKind === 'teacher' ? assignments.filter((item) => item.profile_id === viewId).map((item) => item.degree_modules?.module_id)
+        : []
+  const examKey = examModules ? [...new Set(examModules)].sort().join(',') : 'own'
+  useEffect(() => {
+    let active = true
+    const moduleIds = examKey === 'own' ? null : examKey.split(',').filter(Boolean)
+    fetchExams(user, from, to, { moduleIds, schoolId: isAdmin ? schoolId : null }).then((list) => { if (active) setExams(list) })
+    return () => { active = false }
+  }, [user, from, to, examKey, isAdmin, schoolId, version])
+
+  // Clases, exámenes y eventos de cada día, por hora (los de todo el día, arriba)
   const days = useMemo(() => {
     const list = WEEKDAYS.map((label, index) => {
       const date = toISODate(addDays(weekStart, index))
@@ -240,9 +260,10 @@ function WeekView({ user, onOpenPractice }) {
     })
     ;(sessions || []).forEach((session) => list.find((day) => day.date === session.date)?.items.push({ key: session.id, start: time(session.start_time), session }))
     events.forEach((event) => list.find((day) => day.date === event.occurrence)?.items.push({ key: `e-${event.id}-${event.occurrence}`, start: event.all_day ? '00:00' : time(event.start_time), event }))
+    exams.forEach((exam) => list.find((day) => day.date === exam.date)?.items.push({ key: `x-${exam.id}`, start: exam.start_time ? time(exam.start_time) : '00:00', exam }))
     list.forEach((day) => day.items.sort((a, b) => a.start.localeCompare(b.start)))
     return list.filter((day, index) => index < 5 || day.items.length)
-  }, [sessions, events, weekStart, holidays])
+  }, [sessions, events, exams, weekStart, holidays])
 
   const today = toISODate(new Date())
   const weekTitle = `${weekStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(weekStart, 6).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
@@ -327,7 +348,10 @@ function WeekView({ user, onOpenPractice }) {
               {day.holiday && <p className="mb-1.5 rounded-lg bg-warn-soft px-2 py-1 text-xs font-medium text-warn">Festivo · {day.holiday}</p>}
               {day.items.length === 0 ? <p className="px-1 py-2 text-xs text-faint">{day.holiday ? 'No lectivo' : 'Sin clases'}</p> : (
                 <ul className="space-y-1.5">
-                  {day.items.map(({ key, session, event }) => {
+                  {day.items.map(({ key, session, event, exam }) => {
+                    if (exam) {
+                      return <li key={key}><ExamCard exam={exam} color={moduleColors[exam.module_id]} onOpen={(item) => onOpenPractice?.(item.practice_id || null, item.module_id)} /></li>
+                    }
                     if (event) {
                       return <li key={key}><EventCard event={event} onOpen={(item) => (item.is_owner ? setEventEditing({ event: item }) : setEventViewing(item))} /></li>
                     }
