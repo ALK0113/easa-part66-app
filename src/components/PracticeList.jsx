@@ -495,7 +495,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}</span>
-            <span className="mt-0.5 flex min-w-0 items-baseline gap-2"><span className="shrink-0 tabular-nums text-muted" title="Nº de práctica">{practice.id}</span><span className="truncate font-medium text-ink">{practice.title}</span></span>
+            <span className="mt-0.5 flex min-w-0 items-baseline gap-2"><span className="shrink-0 font-medium tabular-nums text-ink" title="Nº de práctica">{practice.id}</span><span className="truncate font-medium text-ink">{practice.title}</span></span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}
               <span>{practice.ata}</span>
