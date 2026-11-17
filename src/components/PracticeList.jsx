@@ -504,7 +504,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
               <span>· {enrolledCount} alumnos</span>
             </span>
           </span>
-          <span className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-ink" style={{ backgroundColor: 'color-mix(in srgb, var(--module) 12%, var(--surface))' }} title="Nº de práctica">Nº {practice.id}</span>
+          <span className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-ink-soft" title="Nº de práctica"><span className="font-normal text-faint">Nº </span>{practice.id}</span>
         </button>
         {canEdit(practice) && <div className="flex gap-1 text-muted">
           {onCreateTLB && <button className="rounded-lg p-2 hover:bg-subtle hover:text-ink" aria-label={`Crear TLB de ${practice.title}`} title="Crear TLB" onClick={() => onCreateTLB({ module_id: practice.module_id, practice_id: practice.id })}><Icon name="clipboard" size={16} /></button>}

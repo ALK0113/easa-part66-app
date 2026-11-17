@@ -255,7 +255,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
           <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>
-        <span className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-ink" style={{ backgroundColor: 'color-mix(in srgb, var(--module) 12%, var(--surface))' }} title="Nº de práctica">Nº {practice.id}</span>
+        <span className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-ink-soft" title="Nº de práctica"><span className="font-normal text-faint">Nº </span>{practice.id}</span>
         {!canEdit && (() => {
           const evaluation = recordsForPractice(practice.id)[0]?.evaluation
           return <span className={`badge ${evaluation === 'Apto' ? 'bg-success-soft text-success' : evaluation === 'No Apto' ? 'bg-danger-soft text-danger' : 'text-faint'}`}>{evaluation === 'Apto' ? 'Apto' : evaluation === 'No Apto' ? 'No apto' : 'Pendiente'}</span>
