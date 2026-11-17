@@ -2,19 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { subscribeToTables } from '../lib/supabaseRealtime.js'
 import { KIND_LABEL } from '../lib/academic.js'
-import { addDays, fetchSessions, parseISODate, time, toISODate } from '../lib/schedule.js'
+import { parseISODate, toISODate } from '../lib/schedule.js'
 import { buildStudentView, useStudentData } from '../lib/studentData.js'
 import TodayClasses from './TodayClasses.jsx'
 import Icon from './Icon.jsx'
-import { moduleColor } from '../lib/moduleColors.js'
 
-// Inicio del alumno: aviso de faltas, clases de hoy y próximas, próximos exámenes y últimas notas.
+// Inicio del alumno: aviso de faltas, clases (hoy y próximos días), próximos exámenes y últimas notas.
 
 const MIN_ATTENDANCE = 85 // mismo umbral que la ficha
-const dayLabel = (iso) => {
-  const text = parseISODate(iso).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
 const shortDate = (iso) => parseISODate(String(iso).slice(0, 10)).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 const number = (value) => String(Number(value)).replace('.', ',')
 
@@ -32,7 +27,6 @@ export default function StudentHome({ user, setActivePage, onOpenPractice }) {
       {link && <StudentSections studentId={link} onOpen={() => setActivePage('progress')} before={(
         <>
           <TodayClasses user={user} onOpen={() => setActivePage('timetable')} onOpenPractice={onOpenPractice} />
-          <UpcomingClasses user={user} onOpen={() => setActivePage('timetable')} />
         </>
       )} />}
       {link === null && (
@@ -89,65 +83,6 @@ function AttendanceWarning({ data, onOpen }) {
       </span>
       <Icon name="next" size={16} className="mt-0.5 text-faint" />
     </button>
-  )
-}
-
-function UpcomingClasses({ user, onOpen }) {
-  const [sessions, setSessions] = useState(null)
-  useEffect(() => {
-    let active = true
-    const tomorrow = addDays(new Date(), 1)
-    async function load() {
-      try {
-        const { sessions: rows } = await fetchSessions(user, toISODate(tomorrow), toISODate(addDays(tomorrow, 6)))
-        if (active) setSessions(rows.filter((session) => session.status !== 'cancelada').slice(0, 6))
-      } catch {
-        if (active) setSessions([])
-      }
-    }
-    load()
-    const unsubscribe = subscribeToTables(['class_sessions'], load, `home-upcoming-${user.id}`)
-    return () => { active = false; unsubscribe() }
-  }, [user])
-
-  const days = useMemo(() => {
-    const map = new Map()
-    ;(sessions || []).forEach((session) => { if (!map.has(session.date)) map.set(session.date, []); map.get(session.date).push(session) })
-    return [...map.entries()]
-  }, [sessions])
-
-  return (
-    <section className="card">
-      <div className="flex items-center justify-between px-5 pb-2 pt-5">
-        <h3 className="font-semibold text-ink">Próximos días</h3>
-        <button type="button" className="link" onClick={onOpen}>Ver horario</button>
-      </div>
-      {sessions === null && <p className="empty">Cargando…</p>}
-      {sessions?.length === 0 && <p className="empty">No tienes clases en los próximos días.</p>}
-      {days.length > 0 && (
-        <div className="space-y-3 px-5 pb-5">
-          {days.map(([date, rows]) => (
-            <div key={date}>
-              <p className="mb-1 text-xs font-medium text-faint">{dayLabel(date)}</p>
-              <ul className="space-y-1.5">
-                {rows.map((session) => {
-                  const assignment = session.teaching_assignments
-                  return (
-                    <li key={session.id} className="flex items-center gap-3 rounded-xl border border-l-[3px] border-line px-3 py-2 text-sm" style={{ borderLeftColor: moduleColor(assignment.degree_modules?.modules?.color) }}>
-                      <span className="w-12 shrink-0 tabular-nums text-muted">{time(session.start_time)}</span>
-                      <span className="min-w-0 flex-1 truncate text-ink">
-                        {assignment.degree_modules?.module_id} · {session.theory_classes?.title || KIND_LABEL[assignment.degree_modules?.kind]}
-                      </span>
-                      <span className="hidden truncate text-xs text-muted sm:block">{[assignment.profiles?.full_name, session.room].filter(Boolean).join(' · ')}</span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   )
 }
 
