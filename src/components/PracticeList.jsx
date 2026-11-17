@@ -364,13 +364,14 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     const moduleName = modules.find((module) => module.id === selectedPractice.module_id)?.name
     const practiceSub = structure.submodules.find((sub) => sub.id === selectedPractice.submodule_id)
     const practiceOutcome = structure.outcomes.find((outcome) => outcome.id === selectedPractice.learning_outcome_id)
-    const meta = [selectedPractice.id, selectedPractice.ata].filter(Boolean).join(' · ')
+    const meta = [selectedPractice.ata].filter(Boolean).join(' · ')
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setOpenSessionId(null) }}>← Prácticas</button>
       <section>
-        <p className="text-xs font-medium uppercase tracking-wide text-faint">{selectedPractice.module_id}{moduleName ? ` · ${moduleName}` : ''}</p>
+        {/* Encima del título: módulo, submódulo y nº de práctica, en negro */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink tabular-nums" title={moduleName || undefined}>{[selectedPractice.module_id, practiceSub?.code, selectedPractice.id].filter(Boolean).join(' · ')}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-        <p className="mt-1 text-sm text-muted">{meta}</p>
+        {meta && <p className="mt-1 text-sm text-muted">{meta}</p>}
         {(practiceSub || practiceOutcome) && (
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
             {practiceSub && <span className="badge bg-subtle py-0.5 text-ink-soft" title="Submódulo">{practiceSub.code} · {practiceSub.name}</span>}

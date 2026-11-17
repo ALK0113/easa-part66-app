@@ -199,9 +199,10 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
       <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
-        <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
+        {/* Encima del título: módulo y nº de práctica, en negro */}
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink tabular-nums">{module.id} · {selectedPractice.id}</p>
         <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-        {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
+        {(selectedPractice.ata || selectedPractice.detail) && <p className="mt-1 text-sm text-muted">{[selectedPractice.ata, selectedPractice.detail].filter(Boolean).join(' · ')}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
           {selectedPractice.start_time && <span className="badge gap-1.5 bg-surface py-1"><Icon name="clock" size={14} className="text-faint" />{String(selectedPractice.start_time).slice(0, 5)} · {selectedPractice.hours} h</span>}
