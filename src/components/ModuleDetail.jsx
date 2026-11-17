@@ -248,7 +248,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     <li key={practice.id}>
       <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">{practice.id}</span></span>
           <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>

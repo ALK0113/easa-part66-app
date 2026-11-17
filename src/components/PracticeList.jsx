@@ -491,7 +491,7 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
             <span className="text-lg font-semibold leading-none text-ink">{practice.date ? Number(String(practice.date).slice(8, 10)) : ''}</span>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span><span className="font-semibold text-ink-soft">{practice.id}</span></span>
             <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}
