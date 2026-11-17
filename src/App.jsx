@@ -32,6 +32,7 @@ const Bulletins = lazy(() => import('./components/Bulletins.jsx'))
 const SettingsPage = lazy(() => loadManagementPages().then((mod) => ({ default: mod.SettingsPage })))
 const StudentDashboard = lazy(() => import('./components/StudentDashboard.jsx'))
 const StudentHome = lazy(() => import('./components/StudentHome.jsx'))
+const SignupForm = lazy(() => import('./components/SignupForm.jsx'))
 
 const ProfileManagement = lazy(() => import('./components/ProfileManagement.jsx'))
 const ProfileSettings = lazy(() => import('./components/ProfileSettings.jsx'))
@@ -176,6 +177,8 @@ function App() {
 
   // Cuenta registrada que la escuela aún no ha aprobado (o ha rechazado)
   if (user.status !== 'activo') {
+    // Pendiente: acceso temporal para rellenar la ficha y enviarla a coordinación. Rechazada: aviso.
+    if (user.status === 'pendiente') return <Suspense fallback={<FullScreenMessage>Cargando…</FullScreenMessage>}><SignupForm user={user} onLogout={handleLogout} /></Suspense>
     return <PendingApproval user={user} onLogout={handleLogout} />
   }
 

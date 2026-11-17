@@ -1,98 +1,73 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { groupLabel } from '../lib/academic.js'
-import { ROLES, ROLE_LABELS, isManager } from '../lib/roles.js'
+import { ROLES, isManager } from '../lib/roles.js'
+import SignupReview from './SignupReview.jsx'
 
-// Solicitudes de alta pendientes que puede revisar el usuario:
-// supervisión y admin → alumnos y profesores; profesor → alumnos de su escuela.
-// Si no hay ninguna, no se muestra nada. `schoolId` (admin) limita la lista a esa escuela.
+// Solicitudes de alta para la coordinación (y admin). Cada persona rellena su ficha tras confirmar el correo;
+// aquí se revisa: rojo = se registra como profesor (confirmar), ámbar = alumno en un curso distinto de 1º (verificar).
+// Las que aún se están rellenando salen aparte y atenuadas. `schoolId` (admin) limita la lista a esa escuela.
+const FLAG = {
+  profesor: ['Profesor · confirmar', 'bg-danger-soft text-danger'],
+  curso: ['verificar curso', 'bg-warn-soft text-warn'],
+}
+
 export default function PendingRequests({ user, schoolId = null }) {
   const [requests, setRequests] = useState([])
-  const [groups, setGroups] = useState([])
-  const [groupFor, setGroupFor] = useState({})
-  const [busyId, setBusyId] = useState(null)
-  const [error, setError] = useState('')
+  const [open, setOpen] = useState(null)
 
   const load = useCallback(async () => {
-    const { data, error: loadError } = await supabase.rpc('list_pending_profiles')
-    if (loadError) return
-    const list = (data || []).filter((request) => !schoolId || request.school_id === schoolId)
-    setRequests(list)
-    if (!list.some((request) => request.role === ROLES.STUDENT)) return
-
-    // Grupos del curso actual donde se puede matricular al aprobar
-    let query = supabase.from('class_groups').select('id,level,name,degrees(code),academic_years!inner(is_current,school_id)').eq('academic_years.is_current', true)
-    if (!isManager(user.role)) {
-      const { data: own } = await supabase.from('teaching_assignments').select('group_id').eq('profile_id', user.id)
-      query = query.in('id', [...new Set((own || []).map((item) => item.group_id))])
-    }
-    const { data: groupRows } = await query.order('level').order('name')
-    setGroups(groupRows || [])
-  }, [user.id, user.role, schoolId])
+    const { data, error } = await supabase.rpc('list_signup_requests')
+    if (error) return
+    setRequests((data || []).filter((request) => !schoolId || request.school_id === schoolId))
+  }, [schoolId])
 
   useEffect(() => {
+    if (!isManager(user.role)) return undefined
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial: el setState ocurre tras el await
     load()
     // Las altas llegan sin aviso: se revisa cada minuto mientras el panel está abierto
     const timer = setInterval(load, 60000)
     return () => clearInterval(timer)
-  }, [load])
+  }, [load, user.role])
 
-  // Grupos donde puede ir cada solicitud; si solo hay uno, viene propuesto (se puede cambiar a «Sin grupo»)
-  const groupsFor = (request) => groups.filter((group) => group.academic_years?.school_id === request.school_id)
-  const chosenGroup = (request) => {
-    if (request.id in groupFor) return groupFor[request.id]
-    const options = groupsFor(request)
-    return options.length === 1 ? options[0].id : ''
+  if (!isManager(user.role) || !requests.length) return null
+  const sent = requests.filter((request) => request.form?.status === 'enviado')
+  const waiting = requests.filter((request) => request.form?.status !== 'enviado')
+
+  const row = (request, dim) => {
+    const [flagText, flagTone] = FLAG[request.flag] || []
+    const name = request.form?.full_name || request.email
+    return (
+      <li key={request.id}>
+        <button type="button" onClick={() => setOpen(request)} className={`flex w-full flex-wrap items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-subtle ${dim ? 'opacity-60' : ''}`}>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-ink">{name}</span>
+            <span className="block truncate text-xs text-muted">
+              {[request.role === ROLES.TEACHER ? 'Profesor' : 'Alumno', request.email, user.role === ROLES.ADMIN && !schoolId && request.school_name,
+                request.form?.submitted_at && `enviada ${new Date(request.form.submitted_at).toLocaleDateString('es-ES')}`].filter(Boolean).join(' · ')}
+            </span>
+          </span>
+          {flagText && <span className={`badge ${flagTone}`}>{request.flag === 'curso' ? `Curso ${request.form?.level}º · ${flagText}` : flagText}</span>}
+          {dim && <span className="text-xs text-muted">{request.form?.status === 'devuelto' ? 'Devuelta, pendiente de corregir' : 'Aún rellenando'}</span>}
+        </button>
+      </li>
+    )
   }
-
-  async function review(request, approve) {
-    setBusyId(request.id)
-    setError('')
-    const { error: reviewError } = approve
-      ? await supabase.rpc('approve_profile', { p_profile_id: request.id, p_group_id: chosenGroup(request) || null })
-      : await supabase.rpc('reject_profile', { p_profile_id: request.id })
-    setBusyId(null)
-    if (reviewError) { setError(reviewError.message || 'No se pudo guardar. Inténtalo de nuevo.'); return }
-    setRequests((current) => current.filter((item) => item.id !== request.id))
-  }
-
-  if (!requests.length) return null
 
   return (
     <section className="card">
       <div className="px-5 pb-2 pt-5">
-        <h3 className="font-semibold text-ink">Solicitudes de acceso <span className="badge ml-1">{requests.length}</span></h3>
-        <p className="mt-1 text-sm text-muted">Personas que se han registrado con el código de tu escuela.</p>
+        <h3 className="font-semibold text-ink">Solicitudes de alta {sent.length > 0 && <span className="badge ml-1">{sent.length}</span>}</h3>
+        <p className="mt-1 text-sm text-muted">Revisa los datos y los módulos de cada persona: corrige lo que haga falta y apruébala, o devuélvela con un motivo.</p>
       </div>
-      {error && <p role="alert" className="notice-error mx-5 mb-2">{error}</p>}
-      <ul className="divide-y divide-line px-5 pb-3">
-        {requests.map((request) => (
-          <li key={request.id} className="flex flex-wrap items-center gap-3 py-3">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-ink">{request.full_name || request.email}</span>
-              <span className="block truncate text-xs text-muted">
-                {[ROLE_LABELS[request.role], request.email, user.role === ROLES.ADMIN && !schoolId && request.school_name].filter(Boolean).join(' · ')}
-              </span>
-            </span>
-            {request.role === ROLES.STUDENT && groupsFor(request).length > 0 && (
-              <select
-                className="input h-9 w-auto py-0 text-sm"
-                aria-label={`Grupo de ${request.full_name || request.email}`}
-                value={chosenGroup(request)}
-                onChange={(event) => setGroupFor((current) => ({ ...current, [request.id]: event.target.value }))}
-              >
-                <option value="">Sin grupo</option>
-                {groupsFor(request).map((group) => <option key={group.id} value={group.id}>{group.degrees?.code} · {groupLabel(group)}</option>)}
-              </select>
-            )}
-            <span className="flex gap-2">
-              <button type="button" className="btn-secondary h-9" disabled={busyId === request.id} onClick={() => review(request, false)}>Rechazar</button>
-              <button type="button" className="btn-primary h-9" disabled={busyId === request.id} onClick={() => review(request, true)}>Aprobar</button>
-            </span>
-          </li>
-        ))}
-      </ul>
+      {sent.length > 0 && <ul className="px-2 pb-2">{sent.map((request) => row(request, false))}</ul>}
+      {waiting.length > 0 && (
+        <div className="px-2 pb-3">
+          <p className="px-3 pb-1 text-xs font-medium text-faint">Todavía no la han enviado</p>
+          <ul>{waiting.map((request) => row(request, true))}</ul>
+        </div>
+      )}
+      {open && <SignupReview request={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load() }} />}
     </section>
   )
 }

@@ -37,19 +37,18 @@ export default function ProfileSettings({ user }) {
     return () => { cancelled = true }
   }, [user.id])
 
+  const canEditData = user.role === 'admin'
+
   async function handleSave(event) {
     event.preventDefault()
     setSaving(true)
     setMessage('')
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: formData.full_name.trim(),
-        phone: formData.phone.trim(),
-        bio: formData.bio.trim()
-      })
-      .eq('id', user.id)
+    // Nombre y teléfono solo los cambia la coordinación (o administración); cada uno edita su presentación
+    const values = canEditData
+      ? { full_name: formData.full_name.trim(), phone: formData.phone.trim(), bio: formData.bio.trim() }
+      : { bio: formData.bio.trim() }
+    const { error } = await supabase.from('profiles').update(values).eq('id', user.id)
 
     setSaving(false)
     if (error) setMessage('❌ Error al guardar: ' + error.message)
@@ -90,6 +89,7 @@ export default function ProfileSettings({ user }) {
             value={formData.full_name}
             onChange={(e) => setFormData({...formData, full_name: e.target.value})}
             required
+            disabled={!canEditData}
           />
         </label>
 
@@ -100,8 +100,10 @@ export default function ProfileSettings({ user }) {
             value={formData.phone}
             onChange={(e) => setFormData({...formData, phone: e.target.value})}
             placeholder="+34 600 000 000"
+            disabled={!canEditData}
           />
         </label>
+        {!canEditData && <p className="-mt-2 text-xs text-muted">Para cambiar tu nombre o tu teléfono, habla con la coordinación de tu escuela.</p>}
 
         <label className="field">
           Sobre mí
