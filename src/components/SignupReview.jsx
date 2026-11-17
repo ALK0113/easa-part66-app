@@ -70,9 +70,10 @@ export default function SignupReview({ request, onClose, onDone }) {
       p_profile_id: request.id,
       p_action: action,
       p_data: action === 'reject' ? null : { ...form, level: Number(form.level) },
-      p_group_id: action === 'approve' && isStudent ? chosenGroup : null,
+      // Sin grupo («Asignar más tarde») se envía null, nunca un texto vacío
+      p_group_id: action === 'approve' && isStudent ? chosenGroup || null : null,
       p_reason: action === 'return' ? reason : null,
-      p_extra_groups: extraGroups,
+      p_extra_groups: Object.fromEntries(Object.entries(extraGroups).filter(([, value]) => value)),
     })
     setBusy(false)
     if (reviewError) { setError(getSupabaseErrorMessage(reviewError)); return }
