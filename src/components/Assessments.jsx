@@ -25,7 +25,7 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
   const ownerId = theoryClassId || practiceId
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from('assessments').select('id,kind,scope,learning_outcome_id,title,date,max_grade').eq(ownerColumn, ownerId).order('date', { nullsFirst: false }).order('created_at')
+    const { data, error } = await supabase.from('assessments').select('id,kind,scope,learning_outcome_id,title,date,start_time,end_time,visible_to_students,max_grade').eq(ownerColumn, ownerId).order('date', { nullsFirst: false }).order('created_at')
     if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return }
     setItems(data || [])
     const ids = (data || []).map((item) => item.id)
@@ -36,7 +36,7 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
 
   useEffect(() => {
     let active = true
-    supabase.from('assessments').select('id,kind,scope,learning_outcome_id,title,date,max_grade').eq(ownerColumn, ownerId).order('date', { nullsFirst: false }).order('created_at')
+    supabase.from('assessments').select('id,kind,scope,learning_outcome_id,title,date,start_time,end_time,visible_to_students,max_grade').eq(ownerColumn, ownerId).order('date', { nullsFirst: false }).order('created_at')
       .then(async ({ data, error }) => {
         if (!active) return
         if (error) { setNotice({ error: true, text: getSupabaseErrorMessage(error) }); return }
@@ -75,8 +75,12 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
       learning_outcome_id: form.learning_outcome_id || null,
       title: form.title.trim(),
       date: form.date || null,
+      start_time: form.date && form.start_time ? form.start_time : null,
+      end_time: form.date && form.start_time && form.end_time ? form.end_time : null,
+      visible_to_students: form.visible_to_students !== false,
       max_grade: Number(form.max_grade) || 10,
     }
+    if (values.start_time && values.end_time && values.end_time <= values.start_time) { setBusy(false); setNotice({ error: true, text: 'La hora de fin tiene que ser posterior al inicio.' }); return }
     const { error } = form.id
       ? await supabase.from('assessments').update(values).eq('id', form.id)
       : await supabase.from('assessments').insert({ ...values, school_id: schoolId, module_id: moduleId, [ownerColumn]: ownerId })
@@ -110,13 +114,13 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
   }
 
   const outcomeOf = (id) => outcomes.find((outcome) => outcome.id === id)
-  const describe = (item) => [item.kind === 'examen' ? `${KIND.examen} ${SCOPE[item.scope] || ''}` : KIND.evaluacion, outcomeOf(item.learning_outcome_id) && outcomeLabel(outcomeOf(item.learning_outcome_id)), item.date && formatDate(item.date), `sobre ${Number(item.max_grade)}`].filter(Boolean).join(' · ')
+  const describe = (item) => [item.kind === 'examen' ? `${KIND.examen} ${SCOPE[item.scope] || ''}` : KIND.evaluacion, outcomeOf(item.learning_outcome_id) && outcomeLabel(outcomeOf(item.learning_outcome_id)), item.date && `${formatDate(item.date)}${item.start_time ? ` · ${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : ''}`, `sobre ${Number(item.max_grade)}`, item.kind === 'examen' && item.date && item.visible_to_students === false && 'solo profesorado'].filter(Boolean).join(' · ')
 
   return (
     <section className="card p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold text-ink">Exámenes y evaluaciones</h3>
-        {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => setForm({ kind: 'examen', scope: 'parcial', learning_outcome_id: '', title: '', date: '', max_grade: 10 })}><Icon name="plus" size={14} />Nuevo</button>}
+        {canEdit && <button type="button" className="btn-secondary h-9" onClick={() => setForm({ kind: 'examen', scope: 'parcial', learning_outcome_id: '', title: '', date: '', start_time: '', end_time: '', visible_to_students: true, max_grade: 10 })}><Icon name="plus" size={14} />Nuevo</button>}
       </div>
       {notice && <p role={notice.error ? 'alert' : 'status'} className={`mb-3 ${notice.error ? 'notice-error' : 'notice-success'}`}>{notice.text}</p>}
       {items === null ? <p className="text-sm text-muted">Cargando…</p> : items.length === 0 ? <p className="text-sm text-muted">Sin exámenes ni evaluaciones.</p> : (
@@ -154,7 +158,7 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
                       </ul>
                     )}
                     <div className="flex justify-end gap-2">
-                      <button type="button" className="btn-ghost text-sm" onClick={() => setForm({ ...item, learning_outcome_id: item.learning_outcome_id || '', date: item.date || '' })}><Icon name="edit" size={14} />Editar</button>
+                      <button type="button" className="btn-ghost text-sm" onClick={() => setForm({ ...item, learning_outcome_id: item.learning_outcome_id || '', date: item.date || '', start_time: item.start_time ? String(item.start_time).slice(0, 5) : '', end_time: item.end_time ? String(item.end_time).slice(0, 5) : '', visible_to_students: item.visible_to_students !== false })}><Icon name="edit" size={14} />Editar</button>
                       <button type="button" className="btn-ghost text-sm text-danger" onClick={() => remove(item)}><Icon name="trash" size={14} />Eliminar</button>
                     </div>
                   </div>
@@ -190,6 +194,20 @@ export default function Assessments({ user, schoolId, moduleId, theoryClassId = 
               <label className="field">Fecha<input className="input" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></label>
               <label className="field">Nota máxima<input className="input" type="number" min="1" step="0.5" required value={form.max_grade} onChange={(event) => setForm({ ...form, max_grade: event.target.value })} /></label>
             </div>
+            {form.kind === 'examen' && form.date && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="field">Empieza (opcional)<input className="input" type="time" value={form.start_time || ''} onChange={(event) => setForm({ ...form, start_time: event.target.value })} /></label>
+                  <label className="field">Termina (opcional)<input className="input" type="time" value={form.end_time || ''} disabled={!form.start_time} onChange={(event) => setForm({ ...form, end_time: event.target.value })} /></label>
+                </div>
+                <label className="flex items-start gap-2 text-sm text-ink-soft">
+                  <input type="checkbox" className="mt-0.5" checked={form.visible_to_students !== false} onChange={(event) => setForm({ ...form, visible_to_students: event.target.checked })} />
+                  <span>Avisar a los alumnos
+                    <span className="block text-xs text-muted">{form.visible_to_students !== false ? 'Saldrá en el horario y en las próximas clases de los alumnos del módulo, de su profesorado y de coordinación.' : 'Solo lo verán el profesorado del módulo y coordinación; los alumnos no.'}</span>
+                  </span>
+                </label>
+              </>
+            )}
             <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setForm(null)}>Cancelar</button><button className="btn-primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
           </form>
         </Modal>
