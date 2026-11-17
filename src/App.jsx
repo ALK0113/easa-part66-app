@@ -203,7 +203,7 @@ function App() {
       case 'schools': return <SchoolManagement user={user} />
       case 'timetable': return <Timetable user={user} onOpenPractice={(practiceId, moduleId) => openModule(moduleId, practiceId)} />
       case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
-      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} openSetup={openSetup} />
+      default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId, moduleId) => (moduleId ? openModule(moduleId, practiceId) : goWith('practices', { practice_id: practiceId }))} openSetup={openSetup} />
     }
   }
 
