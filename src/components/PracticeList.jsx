@@ -364,16 +364,13 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
     const moduleName = modules.find((module) => module.id === selectedPractice.module_id)?.name
     const practiceSub = structure.submodules.find((sub) => sub.id === selectedPractice.submodule_id)
     const practiceOutcome = structure.outcomes.find((outcome) => outcome.id === selectedPractice.learning_outcome_id)
-    const meta = [selectedPractice.ata].filter(Boolean).join(' · ')
+    const meta = [selectedPractice.id, selectedPractice.ata].filter(Boolean).join(' · ')
     return <div className="space-y-6">
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setOpenSessionId(null) }}>← Prácticas</button>
       <section>
         <p className="text-xs font-medium uppercase tracking-wide text-faint">{selectedPractice.module_id}{moduleName ? ` · ${moduleName}` : ''}</p>
-        <div className="mt-1 flex items-start justify-between gap-4">
-          <h2 className="min-w-0 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-          <span className="shrink-0 text-right"><span className="block text-[11px] font-medium uppercase tracking-wide text-faint">Nº de práctica</span><span className="block text-2xl font-semibold tabular-nums text-ink">{selectedPractice.id}</span></span>
-        </div>
-        {meta && <p className="mt-1 text-sm text-muted">{meta}</p>}
+        <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
+        <p className="mt-1 text-sm text-muted">{meta}</p>
         {(practiceSub || practiceOutcome) && (
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
             {practiceSub && <span className="badge bg-subtle py-0.5 text-ink-soft" title="Submódulo">{practiceSub.code} · {practiceSub.name}</span>}
@@ -494,8 +491,8 @@ export default function PracticeList({ user, moduleId = null, initialModuleId = 
             <span className="text-lg font-semibold leading-none text-ink">{practice.date ? Number(String(practice.date).slice(8, 10)) : ''}</span>
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}</span>
-            <span className="mt-0.5 flex min-w-0 items-baseline gap-2"><span className="shrink-0 font-medium tabular-nums text-ink" title="Nº de práctica">{practice.id}</span><span className="truncate font-medium text-ink">{practice.title}</span></span>
+            <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}{structure.submodules.find((sub) => sub.id === practice.submodule_id) && <><span className="mx-1.5 text-line-strong">·</span>{structure.submodules.find((sub) => sub.id === practice.submodule_id).code}</>}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+            <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               {structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id) && <span className="badge py-0">{outcomeLabel(structure.outcomes.find((outcome) => outcome.id === practice.learning_outcome_id))}</span>}
               <span>{practice.ata}</span>

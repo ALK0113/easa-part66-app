@@ -192,10 +192,7 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
       <button type="button" className="back-link" onClick={() => { setSelectedPractice(null); setMessage('') }}>← {module.id} · {module.name}</button>
       <section className="border-l-[3px] pl-4" style={{ borderLeftColor: moduleColor(module.color) }}>
         <p className="text-sm text-muted">{module.id} · {selectedPractice.ata}</p>
-        <div className="mt-1 flex items-start justify-between gap-4">
-          <h2 className="min-w-0 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
-          <span className="shrink-0 text-right"><span className="block text-[11px] font-medium uppercase tracking-wide text-faint">Nº de práctica</span><span className="block text-2xl font-semibold tabular-nums text-ink">{selectedPractice.id}</span></span>
-        </div>
+        <h2 className="mt-1 text-2xl font-semibold text-ink">{selectedPractice.title}</h2>
         {selectedPractice.detail && <p className="mt-1 text-sm text-muted">{selectedPractice.detail}</p>}
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           <span className="badge gap-1.5 bg-surface py-1"><Icon name="calendar" size={14} className="text-faint" />{formatDate(selectedPractice.date)}</span>
@@ -251,8 +248,8 @@ export default function ModuleDetail({ moduleId, user, onBack, initialPracticeId
     <li key={practice.id}>
       <button className={`flex w-full items-center gap-4 rounded-xl border border-l-[3px] border-r-[3px] border-line px-3 py-3 text-left ${MODULE_HOVER}`} style={moduleStyle(module.color)} onClick={() => openPractice(practice)}>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}</span>
-          <span className="mt-0.5 flex min-w-0 items-baseline gap-2"><span className="shrink-0 font-medium tabular-nums text-ink" title="Nº de práctica">{practice.id}</span><span className="truncate font-medium text-ink">{practice.title}</span></span>
+          <span className="block truncate text-[11px] font-medium uppercase tracking-wide text-faint tabular-nums">{practice.module_id}<span className="mx-1.5 text-line-strong">·</span>{practice.id}</span>
+          <span className="mt-0.5 block truncate font-medium text-ink">{practice.title}</span>
           <span className="mt-0.5 block text-xs text-muted">{practice.ata} · {practice.hours || 0} h</span>
         </span>
         {!canEdit && (() => {
