@@ -47,17 +47,27 @@ export function useStudentData(studentId, version) {
   return state
 }
 
+const moduleKey = (item) => `${item.degree_modules?.module_id}-${item.degree_modules?.kind}`
+
+// Pendientes: arrastrados en el curso de referencia + suspendidos de cursos anteriores que no se han aprobado después.
+// `isCurrent` marca el curso de referencia (por defecto, el curso actual); el boletín de un curso pasado pasa el suyo.
+export function pendingModules(modules, isCurrent = (item) => item.academic_years?.is_current) {
+  const current = modules.filter(isCurrent)
+  const currentStart = current[0]?.academic_years?.starts_on || ''
+  const approved = new Set(modules.filter((item) => ['aprobado', 'convalidado', 'exento'].includes(item.status)).map(moduleKey))
+  return [
+    ...current.filter((item) => item.is_carryover),
+    ...modules.filter((item) => !isCurrent(item) && item.status === 'suspendido' && !approved.has(moduleKey(item))
+      && (!currentStart || (item.academic_years?.starts_on || '') < currentStart)
+      && !current.some((cur) => moduleKey(cur) === moduleKey(item))),
+  ]
+}
+
 // Cálculos de la ficha (también los usa el inicio del alumno)
 export function buildStudentView(data) {
   const currentEnrollment = data.enrollments.find((item) => item.academic_years?.is_current)
   const current = data.modules.filter((item) => item.academic_years?.is_current).sort((a, b) => (a.degree_modules?.module_id || '').localeCompare(b.degree_modules?.module_id || ''))
-  // Pendientes: arrastrados este curso + suspendidos de cursos anteriores que no se han aprobado después
-  const approved = new Set(data.modules.filter((item) => ['aprobado', 'convalidado', 'exento'].includes(item.status)).map((item) => `${item.degree_modules?.module_id}-${item.degree_modules?.kind}`))
-  const pending = [
-    ...current.filter((item) => item.is_carryover),
-    ...data.modules.filter((item) => !item.academic_years?.is_current && item.status === 'suspendido' && !approved.has(`${item.degree_modules?.module_id}-${item.degree_modules?.kind}`)
-      && !current.some((cur) => cur.degree_modules?.module_id === item.degree_modules?.module_id && cur.degree_modules?.kind === item.degree_modules?.kind)),
-  ]
+  const pending = pendingModules(data.modules)
   const marked = data.attendance.filter((row) => row.status && row.class_sessions.status !== 'cancelada')
   const count = (status) => marked.filter((row) => row.status === status).length
   const byModule = {}
