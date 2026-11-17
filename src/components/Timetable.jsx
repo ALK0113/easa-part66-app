@@ -10,14 +10,14 @@ import { AttendanceSheet } from './SessionAttendance.jsx'
 import Icon from './Icon.jsx'
 import Modal from './Modal.jsx'
 import ImportSchedule from './ImportSchedule.jsx'
-import TimeGrid from './TimeGrid.jsx'
 import { ConflictConfirm, RoomSelect } from './ScheduleControls.jsx'
 import { checkConflicts, fetchTemplateConflicts, fetchWeekConflicts, roomValues, useRooms } from '../lib/scheduleTools.js'
 
 // Horario semanal. Profesor: sus clases y pasar lista. Alumno: sus clases.
 // Administración: por grupo, profesor o aula, y la plantilla semanal de cada grupo.
-// En pantalla grande, rejilla por horas donde se arrastran las clases; en el móvil, lista por días.
+// Columnas por día; en pantalla grande se arrastra una tarjeta a otro día (la hora se cambia en su formulario).
 // Los choques (mismo profesor, aula o grupo a la misma hora) se marcan en rojo y se avisan antes de guardar.
+// Al tocar una clase con práctica vinculada se va a esa práctica; si no, a la página de la clase.
 
 const formRoom = (item) => ({ room_id: item?.room_id || '', room_new: '' })
 
@@ -32,6 +32,38 @@ function useWideScreen() {
     return () => media.removeEventListener('change', update)
   }, [])
   return wide
+}
+
+// Arrastrar una tarjeta a otra columna (otro día). Pointer events: ratón y tablet. Un toque sin mover abre la clase.
+// Las columnas llevan data-day con su índice.
+function useDayDrag({ canDrag, onDrop, onOpen }) {
+  const [drag, setDrag] = useState(null)
+  const bind = (item, dayIndex) => ({
+    onPointerDown: (event) => {
+      if (event.button !== 0) return
+      if (canDrag(item)) event.currentTarget.setPointerCapture(event.pointerId)
+      setDrag({ item, from: dayIndex, x: event.clientX, y: event.clientY, moved: false, over: null, draggable: canDrag(item) })
+    },
+    onPointerMove: (event) => {
+      if (!drag?.draggable) return
+      if (!drag.moved && Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) < 8) return
+      const column = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-day]')
+      const over = column ? Number(column.dataset.day) : null
+      if (!drag.moved || over !== drag.over) setDrag({ ...drag, moved: true, over })
+    },
+    onPointerUp: () => {
+      const current = drag
+      setDrag(null)
+      if (!current) return
+      if (!current.moved) onOpen(item)
+      else if (current.over !== null && current.over !== current.from) onDrop(item, current.over)
+    },
+    onPointerCancel: () => setDrag(null),
+    onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(item) } },
+  })
+  const dragging = (item) => Boolean(drag?.moved && drag.item === item)
+  const isTarget = (dayIndex) => Boolean(drag?.moved && drag.over === dayIndex && drag.over !== drag.from)
+  return { bind, dragging, isTarget, active: Boolean(drag?.moved) }
 }
 
 // Comprueba choques antes de guardar: si los hay, pide confirmación
@@ -55,7 +87,7 @@ const assignmentLabel = (assignment) => assignment
   ? `${assignment.degree_modules?.module_id} ${KIND_LABEL[assignment.degree_modules?.kind]?.toLowerCase() || ''}`
   : ''
 
-export default function Timetable({ user }) {
+export default function Timetable({ user, onOpenPractice }) {
   const isAdmin = isManager(user.role)
   // El profesor también edita la plantilla semanal, pero solo de sus clases
   const canEditTemplate = isAdmin || teachesLikeProfessor(user.role)
@@ -76,7 +108,7 @@ export default function Timetable({ user }) {
           {isAdmin && <button type="button" role="tab" className="tab" aria-selected={tab === 'import'} onClick={() => setTab('import')}>Importar</button>}
         </div>
       )}
-      {tab === 'week' && <WeekView user={user} />}
+      {tab === 'week' && <WeekView user={user} onOpenPractice={onOpenPractice} />}
       {tab === 'template' && <TemplateEditor user={user} />}
       {tab === 'import' && isAdmin && <ImportSchedule user={user} />}
     </div>
@@ -127,7 +159,7 @@ function useCurrentAssignments(enabled, profileId) {
 /* Semana                                                              */
 /* ------------------------------------------------------------------ */
 
-function WeekView({ user }) {
+function WeekView({ user, onOpenPractice }) {
   const isAdmin = isManager(user.role)
   const canManageSessions = user.role !== ROLES.STUDENT
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
@@ -202,30 +234,34 @@ function WeekView({ user }) {
   const canEditSession = (session) => session.status !== 'cancelada' && (isAdmin || session.teaching_assignments?.profile_id === user.id)
   const visibleConflicts = useMemo(() => new Map([...conflicts].filter(([id]) => (sessions || []).some((session) => session.id === id))), [conflicts, sessions])
 
-  const gridDays = days.map((day) => ({ key: day.date, label: day.label, sublabel: String(parseISODate(day.date).getDate()), highlight: day.date === today, note: day.holiday ? `Festivo · ${day.holiday}` : null }))
-  const gridItems = (sessions || []).map((session) => ({ id: session.id, day: days.findIndex((day) => day.date === session.date), start: time(session.start_time), end: time(session.end_time), session }))
-    .filter((item) => item.day >= 0)
-
-  // Al tocar una clase se abre su página (con los datos al día tras cada cambio)
-  const openSession = open ? (sessions || []).find((session) => session.id === open.id) || open : null
-  if (openSession) {
-    return <SessionDetail asPage session={openSession} user={user} rooms={rooms} conflicts={visibleConflicts.get(openSession.id)} onClose={() => setOpen(null)} onChanged={reload} />
+  // Al tocar una clase: atajo a su práctica si la tiene; si no, la página de la clase
+  const openClass = (session) => {
+    if (session.practice_id && onOpenPractice && user.role !== ROLES.STUDENT) onOpenPractice(session.practice_id)
+    else setOpen(session)
   }
 
-  // Arrastrar una clase en la semana cambia solo ese día
-  function moveSession(item, dayIndex, start, end) {
-    const { session } = item
+  // Arrastrar una tarjeta a otro día cambia solo ese día (misma hora)
+  function moveSession(session, dayIndex) {
     const date = days[dayIndex].date
+    const start = time(session.start_time)
+    const end = time(session.end_time)
     guard(
       { kind: 'session', id: session.id, assignmentId: session.teaching_assignment_id, date, start, end, roomId: session.room_id },
       async () => {
         const { error: moveError } = await supabase.from('class_sessions').update({ date, start_time: start, end_time: end }).eq('id', session.id)
         if (moveError) { setNotice({ error: true, text: getSupabaseErrorMessage(moveError) }); return }
-        setNotice({ error: false, text: `${assignmentLabel(session.teaching_assignments)} movida al ${days[dayIndex].label.toLowerCase()} de ${start} a ${end}. Solo cambia ese día.` })
+        setNotice({ error: false, text: `${assignmentLabel(session.teaching_assignments)} movida al ${days[dayIndex].label.toLowerCase()} ${parseISODate(date).getDate()}, de ${start} a ${end}. Solo cambia ese día.` })
         reload()
       },
       'Mover igualmente',
     )
+  }
+  const dayDrag = useDayDrag({ canDrag: (session) => wide && canManageSessions && canEditSession(session), onDrop: moveSession, onOpen: openClass })
+
+  // Página de la clase (con los datos al día tras cada cambio)
+  const openSession = open ? (sessions || []).find((session) => session.id === open.id) || open : null
+  if (openSession) {
+    return <SessionDetail asPage session={openSession} user={user} rooms={rooms} conflicts={visibleConflicts.get(openSession.id)} onClose={() => setOpen(null)} onChanged={reload} />
   }
 
   return (
@@ -255,32 +291,14 @@ function WeekView({ user }) {
       {visibleConflicts.size > 0 && (
         <p className="notice-error">{visibleConflicts.size === 1 ? '1 clase choca' : `${visibleConflicts.size} clases chocan`} con otra esta semana (mismo profesor, aula o grupo). Están marcadas en rojo; toca una para ver con cuál.</p>
       )}
-      {wide && sessions && canManageSessions && <p className="text-xs text-faint">Arrastra una clase para moverla solo ese día. Para cambiarla todas las semanas, usa la plantilla semanal.</p>}
+      {wide && sessions && canManageSessions && <p className="text-xs text-faint">Arrastra una tarjeta a otro día para moverla solo esa semana; la hora se cambia al abrirla. Para cambiarla todas las semanas, usa la plantilla semanal.</p>}
       {isAdmin && !groups.length && <div className="card empty"><p className="font-medium text-ink-soft">No hay grupos en el curso actual</p></div>}
       {sessions === null && !error && (!isAdmin || groups.length > 0) && <p className="text-sm text-muted">Cargando…</p>}
 
-      {sessions && wide && (
-        <TimeGrid items={gridItems} days={gridDays} conflicts={visibleConflicts} canDrag={(item) => canEditSession(item.session)}
-          onOpen={(item) => setOpen(item.session)} onMove={canManageSessions ? moveSession : null}
-          renderItem={({ session }) => {
-            const assignment = session.teaching_assignments
-            const cancelled = session.status === 'cancelada'
-            return (
-              <span className={`block leading-tight ${cancelled ? 'opacity-60' : ''}`}>
-                <span className="block text-[11px] tabular-nums text-muted">{time(session.start_time)}–{time(session.end_time)}</span>
-                <span className={`block truncate text-xs font-semibold text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}</span>
-                <span className="block truncate text-[11px] text-muted">
-                  {cancelled ? 'Cancelada' : [showGroup && groupLabel(assignment.class_groups), showTeacher && assignment.profiles?.full_name, effectiveFilter?.kind !== 'room' && session.room].filter(Boolean).join(' · ')}
-                </span>
-              </span>
-            )
-          }} />
-      )}
-
-      {sessions && !wide && (
+      {sessions && (
         <div className="grid gap-3 md:grid-cols-5">
-          {days.map((day) => (
-            <section key={day.date} className={`card p-3 ${day.date === today ? 'ring-1 ring-accent' : ''}`}>
+          {days.map((day, dayIndex) => (
+            <section key={day.date} data-day={dayIndex} className={`card p-3 transition-shadow ${dayDrag.isTarget(dayIndex) ? 'ring-2 ring-accent' : day.date === today ? 'ring-1 ring-accent' : ''}`}>
               <h3 className="mb-2 flex items-baseline justify-between px-1">
                 <span className={`text-sm font-semibold ${day.date === today ? 'text-accent-strong' : 'text-ink'}`}>{day.label}</span>
                 <span className="text-xs text-muted">{parseISODate(day.date).getDate()}</span>
@@ -291,13 +309,16 @@ function WeekView({ user }) {
                   {day.sessions.map((session) => {
                     const assignment = session.teaching_assignments
                     const cancelled = session.status === 'cancelada'
+                    const conflict = visibleConflicts.get(session.id)
                     return (
                       <li key={session.id}>
-                        <button type="button" onClick={() => setOpen(session)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle ${cancelled ? 'border-line opacity-60' : assignment.degree_modules?.kind === 'practica' ? 'border-line border-l-2 border-l-accent' : 'border-line'}`}>
+                        <button type="button" {...dayDrag.bind(session, dayIndex)} title={conflict ? `Choque: ${conflict.join(' · ')}` : session.practice_id && user.role !== ROLES.STUDENT ? 'Ir a la práctica' : undefined}
+                          className={`w-full select-none rounded-xl border px-3 py-2 text-left transition-colors hover:bg-subtle
+                            ${conflict ? 'border-danger' : 'border-line'} ${cancelled ? 'opacity-60' : assignment.degree_modules?.kind === 'practica' && !conflict ? 'border-l-2 border-l-accent' : ''}
+                            ${dayDrag.dragging(session) ? 'opacity-40' : ''} ${wide && canManageSessions && canEditSession(session) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                           <span className="block text-xs tabular-nums text-muted">{time(session.start_time)}–{time(session.end_time)}{session.room ? ` · ${session.room}` : ''}</span>
-                          <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}{visibleConflicts.has(session.id) && <span className="ml-1 text-danger">· choque</span>}</span>
-                          {session.theory_classes?.title && <span className="block truncate text-xs text-ink-soft">{session.theory_classes.title}</span>}
+                          <span className={`block text-sm font-medium text-ink ${cancelled ? 'line-through' : ''}`}>{assignmentLabel(assignment)}{conflict && <span className="ml-1 text-danger">· choque</span>}</span>
+                          {(session.theory_classes?.title || session.practices?.title) && <span className="block truncate text-xs text-ink-soft">{session.theory_classes?.title || session.practices?.title}</span>}
                           <span className="block truncate text-xs text-muted">
                             {cancelled ? 'Cancelada' : [showGroup && groupLabel(assignment.class_groups), showTeacher && (assignment.profiles?.full_name || '')].filter(Boolean).join(' · ')}
                           </span>
@@ -516,15 +537,12 @@ export function TemplateEditor({ user }) {
   const [guard, conflictModal] = useConflictGuard()
   const [groupId, setGroupId] = useState('')
   const [slots, setSlots] = useState([])
-  const [others, setOthers] = useState([])
   const [conflicts, setConflicts] = useState(new Map())
   const [editing, setEditing] = useState(null)
   const [notice, setNotice] = useState(null)
   const [version, setVersion] = useState(0)
   const activeGroup = groupId || groups[0]?.id || ''
   const groupAssignments = assignments.filter((item) => item.group_id === activeGroup)
-  const teacherIds = useMemo(() => [...new Set(groupAssignments.map((item) => item.profile_id))].sort(), [groupAssignments])
-  const teacherKey = teacherIds.join(',')
 
   useEffect(() => {
     if (!activeGroup) return undefined
@@ -541,18 +559,6 @@ export function TemplateEditor({ user }) {
     const unsubscribe = subscribeToTables(['schedule_slots'], load, `template-${activeGroup}`)
     return () => { active = false; unsubscribe() }
   }, [activeGroup, version])
-
-  // Clases de los mismos profesores en otros grupos (en gris, para ver huecos libres)
-  useEffect(() => {
-    if (!activeGroup || !teacherKey) return undefined
-    let active = true
-    supabase.from('schedule_slots')
-      .select('id,weekday,start_time,end_time,teaching_assignments!inner(group_id,profile_id,class_groups!inner(level,name,academic_years!inner(is_current)),degree_modules(module_id,kind))')
-      .in('teaching_assignments.profile_id', teacherKey.split(',')).neq('teaching_assignments.group_id', activeGroup)
-      .eq('teaching_assignments.class_groups.academic_years.is_current', true)
-      .then(({ data }) => { if (active) setOthers(data || []) })
-    return () => { active = false }
-  }, [activeGroup, teacherKey, version])
 
   useEffect(() => {
     if (!schoolId) return undefined
@@ -581,12 +587,13 @@ export function TemplateEditor({ user }) {
   }
 
   // Arrastrar en la plantilla cambia ese hueco para el resto del curso
-  function moveSlot(item, dayIndex, start, end) {
-    const { slot } = item
+  function moveSlot(slot, dayIndex) {
     const weekday = dayIndex + 1
+    const start = time(slot.start_time)
+    const end = time(slot.end_time)
     guard(
       { kind: 'slot', id: slot.id, assignmentId: slot.teaching_assignment_id, weekday, start, end, roomId: slot.room_id },
-      () => persist(slot.id, { weekday, start_time: start, end_time: end }, `${assignmentLabel(slot.teaching_assignments)} pasa al ${WEEKDAYS[dayIndex].toLowerCase()} de ${start} a ${end}. Se han movido las clases de aquí a fin de curso (las que ya tienen asistencia o se cambiaron a mano se quedan como estaban).`),
+      () => persist(slot.id, { weekday }, `${assignmentLabel(slot.teaching_assignments)} pasa al ${WEEKDAYS[dayIndex].toLowerCase()} de ${start} a ${end}. Se han movido las clases de aquí a fin de curso (las que ya tienen asistencia o se cambiaron a mano se quedan como estaban).`),
       'Mover igualmente',
     )
   }
@@ -600,6 +607,8 @@ export function TemplateEditor({ user }) {
     setVersion((value) => value + 1)
   }
 
+  const slotDrag = useDayDrag({ canDrag: (slot) => wide && isMine(slot), onDrop: moveSlot, onOpen: (slot) => isMine(slot) && setEditing(slot) })
+
   if (!groups.length) {
     return (
       <div className="card empty">
@@ -611,13 +620,6 @@ export function TemplateEditor({ user }) {
   const isMine = (slot) => groupAssignments.some((item) => item.id === slot.teaching_assignment_id)
   const groupConflicts = new Map([...conflicts].filter(([id]) => slots.some((slot) => slot.id === id)))
   const newSlot = (weekday, start = '09:00', end = '10:00') => setEditing({ weekday, teaching_assignment_id: groupAssignments[0].id, start_time: start, end_time: end, room_id: '' })
-  const gridDays = WEEKDAYS.slice(0, 5).map((label) => ({ key: label, label }))
-  const gridItems = slots.filter((slot) => slot.weekday <= 5).map((slot) => ({ id: slot.id, day: slot.weekday - 1, start: time(slot.start_time), end: time(slot.end_time), slot }))
-  const ghostItems = others.filter((slot) => slot.weekday <= 5).map((slot) => ({
-    id: slot.id, day: slot.weekday - 1, start: time(slot.start_time), end: time(slot.end_time),
-    label: `${slot.teaching_assignments.degree_modules?.module_id} · ${groupLabel(slot.teaching_assignments.class_groups)}`,
-  }))
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Grupo">
@@ -635,33 +637,20 @@ export function TemplateEditor({ user }) {
 
       {groupAssignments.length === 0 ? (
         <div className="card empty"><p className="font-medium text-ink-soft">Este grupo aún no tiene profesores asignados</p><p className="mt-1">Asígnalos en Escuela → Profesores.</p></div>
-      ) : wide ? (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-faint">Arrastra una clase para cambiarla todas las semanas. En gris, las clases de sus profesores con otros grupos.</p>
-            <button type="button" className="btn-secondary" onClick={() => newSlot(1)}><Icon name="plus" size={16} />Añadir clase</button>
-          </div>
-          <TimeGrid items={gridItems} days={gridDays} conflicts={groupConflicts} ghostItems={ghostItems}
-            canDrag={(item) => isMine(item.slot)} onOpen={(item) => isMine(item.slot) && setEditing(item.slot)} onMove={moveSlot}
-            renderItem={({ slot }) => (
-              <span className="block leading-tight">
-                <span className="block text-[11px] tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}</span>
-                <span className="block truncate text-xs font-semibold text-ink">{assignmentLabel(slot.teaching_assignments)}</span>
-                <span className="block truncate text-[11px] text-muted">{[slot.teaching_assignments.profiles?.full_name, slot.room].filter(Boolean).join(' · ')}</span>
-              </span>
-            )} />
-        </>
       ) : (
+        <>
+        {wide && <p className="text-xs text-faint">Arrastra una tarjeta a otro día para cambiarla todas las semanas; la hora se cambia al abrirla.</p>}
         <div className="grid gap-3 md:grid-cols-5">
           {WEEKDAYS.slice(0, 5).map((label, index) => {
             const items = slots.filter((slot) => slot.weekday === index + 1)
             return (
-              <section key={label} className="card p-3">
+              <section key={label} data-day={index} className={`card p-3 transition-shadow ${slotDrag.isTarget(index) ? 'ring-2 ring-accent' : ''}`}>
                 <h3 className="mb-2 px-1 text-sm font-semibold text-ink">{label}</h3>
                 <ul className="space-y-1.5">
                   {items.map((slot) => (
                     <li key={slot.id}>
-                      <button type="button" onClick={() => setEditing(slot)} disabled={!isMine(slot)} className={`w-full rounded-xl border px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60 ${groupConflicts.has(slot.id) ? 'border-danger' : 'border-line'}`}>
+                      <button type="button" {...slotDrag.bind(slot, index)} disabled={!isMine(slot)} title={groupConflicts.has(slot.id) ? `Choque: ${groupConflicts.get(slot.id).join(' · ')}` : undefined}
+                        className={`w-full select-none rounded-xl border px-3 py-2 text-left enabled:hover:bg-subtle disabled:cursor-default disabled:opacity-60 ${groupConflicts.has(slot.id) ? 'border-danger' : 'border-line'} ${slotDrag.dragging(slot) ? 'opacity-40' : ''} ${wide && isMine(slot) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         <span className="block text-xs tabular-nums text-muted">{time(slot.start_time)}–{time(slot.end_time)}{slot.room ? ` · ${slot.room}` : ''}</span>
                         <span className="block text-sm font-medium text-ink">{assignmentLabel(slot.teaching_assignments)}{groupConflicts.has(slot.id) && <span className="ml-1 text-danger">· choque</span>}</span>
                         <span className="block truncate text-xs text-muted">{slot.teaching_assignments.profiles?.full_name}</span>
@@ -676,6 +665,7 @@ export function TemplateEditor({ user }) {
             )
           })}
         </div>
+        </>
       )}
 
       {editing && <SlotForm slot={editing} assignments={groupAssignments} rooms={rooms} conflicts={editing.id ? groupConflicts.get(editing.id) : null} onSave={save} onDelete={editing.id ? remove : null} onClose={() => setEditing(null)} />}

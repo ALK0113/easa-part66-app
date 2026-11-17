@@ -199,7 +199,7 @@ function App() {
       case 'mydata': return <ProfileSettings user={user} />
       case 'progress': return <MyProgress user={user} />
       case 'schools': return <SchoolManagement user={user} />
-      case 'timetable': return <Timetable user={user} />
+      case 'timetable': return <Timetable user={user} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} />
       case 'grades': return <Grades user={user} initialClass={intentFor('grades')} />
       default: return <Home user={user} setActivePage={setActivePage} onOpenModule={openModule} onOpenPractice={(practiceId) => goWith('practices', { practice_id: practiceId })} openSetup={openSetup} />
     }
